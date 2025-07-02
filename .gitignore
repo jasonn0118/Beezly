@@ -1,0 +1,7 @@
+node_modules/
+.turbo/
+dist/
+build/
+.env
+apps/**/node_modules/
+apps/**/.expo/
