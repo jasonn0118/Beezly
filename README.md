@@ -36,7 +36,7 @@ pnpm install
 pnpm dev --filter=web
 pnpm dev --filter=api
 cd apps/mobile && npx expo start
-cd apps/ai && uvicorn app.main:app --port 8000
+cd apps/ai && uvicorn app.main:app --port 8000 #Add later
 ```
 
 ## 🧠 Core Technologies
@@ -59,4 +59,3 @@ pnpm lint       # Lint all apps
 ```
 
 ## 📄 License
-
