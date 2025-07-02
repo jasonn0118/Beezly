@@ -59,3 +59,4 @@ pnpm lint       # Lint all apps
 ```
 
 ## 📄 License
+Updated here
