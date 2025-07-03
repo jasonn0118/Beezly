@@ -58,4 +58,33 @@ pnpm build      # Build all apps
 pnpm lint       # Lint all apps
 ```
 
+## Commit & Branch Workflow
+
+To keep the codebase stable and enable safe testing, we use a `staging` branch as an integration environment before merging to `main`.
+
+**Workflow:**
+
+1. **Create a feature branch:**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+2. **Make your changes and commit:**
+   ```bash
+   git add .
+   git commit -m "feat: short description of your change"
+   ```
+3. **Push your branch:**
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+4. **Open a Pull Request:**
+   - Go to GitHub and open a PR **into `staging`** (not `main`).
+   - Wait for code review and CI checks.
+5. **Testing:**
+   - All new features and fixes are tested on `staging` before merging to `main`.
+6. **Merging to main:**
+   - After successful testing and review, changes from `staging` are merged into `main`.
+
+> **Note:** Never commit directly to `main` or `staging`. Always use feature branches and PRs.
+
 ## 📄 License
