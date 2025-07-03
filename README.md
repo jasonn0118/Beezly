@@ -22,7 +22,7 @@ beezly/
 
 1. Clone the repo:
 ```bash
-git clone https://github.com/your-org/beezly.git
+git clone https://github.com/BeezlyAI/Beezly.git
 cd beezly
 ```
 
