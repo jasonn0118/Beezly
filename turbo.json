@@ -11,6 +11,16 @@
       },
       "lint": {
         "outputs": []
+      },
+      "test": {
+        "outputs": ["coverage/**"],
+        "dependsOn": ["^build"]
+      },
+      "test:e2e": {
+        "outputs": []
+      },
+      "type-check": {
+        "outputs": []
       }
     }
   }

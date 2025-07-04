@@ -56,7 +56,21 @@ cd apps/ai && uvicorn app.main:app --port 8000 #Add later
 pnpm dev        # Start all dev apps with Turbo
 pnpm build      # Build all apps
 pnpm lint       # Lint all apps
+pnpm test       # Run tests for all apps
+pnpm type-check # TypeScript type checking
 ```
+
+## 🚀 CI/CD & Deployment
+
+This project includes automated CI/CD pipelines for testing and deployment. For detailed deployment instructions and configuration, see:
+
+📋 **[Deployment Guide](.github/workflows/deploy.md)**
+
+**Quick Overview:**
+- **Staging**: Auto-deploy on push to `staging` branch
+- **Production**: Auto-deploy on push to `main` branch
+- **Pipeline**: Lint → Test → Build → Deploy
+- **Apps**: Web (Next.js), API (NestJS), Mobile (Expo)
 
 ## Commit & Branch Workflow
 
