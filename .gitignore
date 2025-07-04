@@ -5,3 +5,40 @@ build/
 .env
 apps/**/node_modules/
 apps/**/.expo/
+CLAUDE.md
+.mcp.json
+
+# Environment variables
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+# Dependency directories
+# Environment variables
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+.DS_Store
+
+# Task Master files
+.taskmaster/ 
+.clinerules/
+.cursor/
+.github/
+.roo/
+.trae/
+.windsurf/
+.roomodes
+AGENTS.md
