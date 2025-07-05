@@ -41,3 +41,6 @@ dev-debug.log
 .windsurf/
 .roomodes
 AGENTS.md
+
+# Turborepo
+.turbo
