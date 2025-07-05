@@ -7,8 +7,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "type-check": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "type-check": "pnpm exec tsc --noEmit",
+    "lint": "pnpm exec tsc --noEmit"
   },
   "dependencies": {
     "expo": "~53.0.16",

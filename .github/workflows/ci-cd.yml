@@ -229,12 +229,12 @@ jobs:
       - name: Check mobile app TypeScript
         run: |
           cd apps/mobile
-          npx tsc --noEmit
+          pnpm run type-check
 
       - name: Export web version of mobile app
         run: |
           cd apps/mobile
-          npx expo export:web
+          pnpm exec expo export:web
 
   # Security scan
   security-scan:
