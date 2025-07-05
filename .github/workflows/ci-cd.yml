@@ -226,15 +226,8 @@ jobs:
         if: needs.install.outputs.cache-hit != 'true'
         run: bash .github/workflows/install-deps.sh
 
-      - name: Check mobile app TypeScript
-        run: |
-          cd apps/mobile
-          pnpm run type-check
-
-      - name: Export web version of mobile app
-        run: |
-          cd apps/mobile
-          pnpm exec expo export:web
+      - name: Build mobile app
+        run: pnpm run build --filter=mobile
 
   # Security scan
   security-scan:

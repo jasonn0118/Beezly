@@ -7,14 +7,17 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "build": "pnpm exec tsc --noEmit",
     "type-check": "pnpm exec tsc --noEmit",
     "lint": "pnpm exec tsc --noEmit"
   },
   "dependencies": {
     "expo": "~53.0.16",
     "expo-status-bar": "~2.2.3",
-    "react": "19.0.0",
-    "react-native": "0.79.5"
+    "react": "19.1.0",
+    "react-native": "0.79.5",
+    "react-native-web": "^0.20.0",
+    "@expo/metro-runtime": "~5.0.4"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
