@@ -62,14 +62,23 @@ pnpm type-check # TypeScript type checking
 
 ## 🧪 CI/CD Pipeline
 
-This project includes automated CI/CD pipelines for testing and quality assurance:
+This project includes comprehensive automated CI/CD pipelines for testing, building, and quality assurance. All workflows run on pull requests and pushes to main branches.
+
+📋 **[Complete CI/CD Guide](.github/workflows/deploy.md)**
 
 **Pipeline Overview:**
-- **Lint**: Code style and quality checks
-- **Test**: Unit and integration tests
-- **Build**: Production build verification
-- **Security**: Dependency vulnerability scanning
-- **Apps Covered**: Web (Next.js), API (NestJS), Mobile (Expo)
+- **🔍 Lint**: Code style and quality checks across all apps
+- **🧪 Test**: Unit and integration tests with coverage
+- **🏗️ Build**: Production build verification and optimization
+- **🛡️ Security**: Automated dependency vulnerability scanning
+- **⚡ Performance**: Smart caching with Turborepo and GitHub Actions
+- **📱 Apps**: Web (Next.js), API (NestJS), Mobile (React Native/Expo)
+
+**Key Features:**
+- Node.js 23 + pnpm 10 with smart dependency caching
+- Parallel job execution for faster builds
+- Automatic lockfile handling and error recovery
+- TypeScript validation across all applications
 
 ## Commit & Branch Workflow
 

@@ -1,140 +1,230 @@
-# Deployment Configuration
+# CI/CD Pipeline Guide
 
-This document outlines the deployment strategies for each application in the Beezly monorepo.
+This document outlines the CI/CD pipeline configuration for the Beezly monorepo, including testing, building, and quality assurance workflows.
 
-## Deployment Environments
+## Pipeline Overview
 
-### Staging Environment
-- **Trigger**: Push to `staging` branch
-- **Purpose**: Testing and validation before production
-- **Apps Deployed**: Web, API, Mobile (Expo staging channel)
+Our CI/CD pipeline focuses on **testing and quality assurance** with automated workflows triggered on pull requests and pushes to main branches.
 
-### Production Environment
-- **Trigger**: Push to `main` branch
-- **Purpose**: Live production environment
-- **Apps Deployed**: Web, API, Mobile (Expo production channel)
+### Pipeline Triggers
+- **Pull Requests**: All quality checks run on PRs to `main` and `staging`
+- **Branch Pushes**: Pipeline runs on pushes to `main` and `staging` branches
+- **Manual**: Can be triggered manually via GitHub Actions
 
-## Application-Specific Deployment
+## Pipeline Stages
+
+### 1. Install Dependencies
+- **Purpose**: Install and cache project dependencies
+- **Tools**: pnpm v10 with Node.js v23
+- **Caching**: Smart dependency caching for faster builds
+- **Fallback**: Automatic lockfile handling for compatibility
+
+### 2. Linting & Code Quality
+- **Web App**: Next.js ESLint rules
+- **API**: TypeScript ESLint with NestJS best practices  
+- **Mobile**: TypeScript compilation checking
+- **Performance**: Runs in parallel for all apps
+
+### 3. Testing
+- **API Tests**: Jest unit tests and e2e tests
+- **Type Checking**: TypeScript validation across all apps
+- **Coverage**: Test coverage reporting (API)
+
+### 4. Building
+- **Web App**: Next.js production build with optimization
+- **API**: NestJS compilation and bundling
+- **Mobile**: TypeScript compilation validation
+- **Outputs**: Cached build artifacts for potential deployment
+
+### 5. Security Scanning
+- **Dependencies**: Automated vulnerability scanning
+- **Reports**: Security audit artifacts uploaded
+- **Thresholds**: High-severity vulnerabilities flagged
+
+## Application-Specific Configuration
 
 ### Web App (Next.js)
-- **Build Command**: `pnpm run build --filter=web`
-- **Output**: `.next/` directory
-- **Suggested Platforms**: 
-  - Vercel (recommended for Next.js)
-  - Netlify
-  - AWS Amplify
-  - Custom server with PM2
+```bash
+# Commands
+pnpm run lint --filter=web      # ESLint checking
+pnpm run build --filter=web     # Production build
+pnpm run type-check --filter=web # TypeScript validation
+
+# Outputs
+apps/web/.next/                  # Build output
+apps/web/out/                    # Static export (if configured)
+```
 
 ### API (NestJS)
-- **Build Command**: `pnpm run build --filter=api`
-- **Output**: `dist/` directory
-- **Suggested Platforms**:
-  - Railway
-  - Render
-  - Heroku
-  - AWS ECS
-  - DigitalOcean App Platform
+```bash
+# Commands  
+pnpm run lint --filter=api       # ESLint with TypeScript
+pnpm run build --filter=api      # NestJS compilation
+pnpm run test --filter=api       # Jest unit tests
+pnpm run test:e2e --filter=api   # End-to-end tests
+
+# Outputs
+apps/api/dist/                   # Compiled JavaScript
+apps/api/coverage/               # Test coverage reports
+```
 
 ### Mobile App (React Native/Expo)
-- **Build Command**: `expo build` (for native builds)
-- **Publishing**: `expo publish` (for OTA updates)
-- **Channels**: 
-  - Staging: `expo publish --release-channel=staging`
-  - Production: `expo publish --release-channel=production`
+```bash
+# Commands
+pnpm run lint --filter=mobile    # TypeScript checking
+pnpm run build --filter=mobile   # TypeScript validation
+pnpm run type-check --filter=mobile # Type checking
+
+# Dependencies
+react-native-web@^0.20.0         # Web compatibility
+@expo/metro-runtime@~5.0.4       # Metro bundler runtime
+```
 
 ## Environment Variables
 
-### Required Environment Variables
-Create these in your CI/CD environment:
-
-#### Web App
-- `NEXT_PUBLIC_API_URL`: API base URL
-- `NEXT_PUBLIC_SUPABASE_URL`: Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anonymous key
-
-#### API
-- `DATABASE_URL`: PostgreSQL connection string
-- `JWT_SECRET`: JWT signing secret
-- `SUPABASE_URL`: Supabase project URL
-- `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key
-
-#### Mobile App
-- `EXPO_ACCESS_TOKEN`: Expo access token for publishing
-- `EXPO_PUBLIC_API_URL`: API base URL
-
-## GitHub Secrets Configuration
-
-Add these secrets to your GitHub repository:
-
-```
-# Deployment
-STAGING_DEPLOY_KEY
-PRODUCTION_DEPLOY_KEY
-
-# Environment Variables
-NEXT_PUBLIC_API_URL
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY
-DATABASE_URL
-JWT_SECRET
-SUPABASE_URL
-SUPABASE_SERVICE_ROLE_KEY
-EXPO_ACCESS_TOKEN
-EXPO_PUBLIC_API_URL
-```
-
-## Deployment Steps
-
-### Automatic Deployment
-1. Push to `staging` branch → Deploy to staging
-2. Push to `main` branch → Deploy to production
-3. All tests must pass before deployment
-
-### Manual Deployment
-If you need to deploy manually:
+### Local Development
+Create a `.env` file in project root:
 
 ```bash
-# Build all apps
-pnpm run build
+# Web App (Next.js)
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
-# Deploy web app (example with Vercel)
-cd apps/web && vercel --prod
+# API (NestJS) 
+DATABASE_URL=postgresql://user:password@localhost:5432/beezly
+JWT_SECRET=your_jwt_secret_here
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-# Deploy API (example with Railway)
-cd apps/api && railway deploy
-
-# Deploy mobile app (example with Expo)
-cd apps/mobile && expo publish --release-channel=production
+# Mobile App (Expo)
+EXPO_PUBLIC_API_URL=http://localhost:3001
 ```
 
-## Post-Deployment Verification
+### CI/CD Environment
+GitHub Actions automatically handles:
+- Node.js v23 installation
+- pnpm v10 setup
+- Dependency caching
+- Build artifact caching
 
-After each deployment, verify:
-- [ ] Web app loads correctly
-- [ ] API health check returns 200
-- [ ] Mobile app receives OTA update
-- [ ] Database migrations completed
-- [ ] Environment variables are set correctly
-- [ ] External services are accessible
+## Running Locally
 
-## Rollback Strategy
+### Prerequisites
+- Node.js 23+
+- pnpm 10+
+- Git
 
-If deployment fails:
-1. Check the GitHub Actions logs
-2. Revert the commit if necessary
-3. Redeploy the previous working version
-4. For mobile apps, publish a rollback update via Expo
+### Setup
+```bash
+# Clone repository
+git clone https://github.com/jasonn0118/Breezly.git
+cd beezly
 
-## Monitoring
+# Install dependencies
+pnpm install
 
-Set up monitoring for:
-- Application uptime
-- Error rates
-- Performance metrics
-- Database health
-- API response times
+# Run development servers
+pnpm dev --filter=web        # Web app on :3000
+pnpm dev --filter=api        # API on :3001  
+pnpm dev --filter=mobile     # Mobile with Expo
+```
 
-Consider using:
-- Sentry for error tracking
-- Datadog/New Relic for performance monitoring
-- UptimeRobot for uptime monitoring
+### Quality Checks
+```bash
+# Run all quality checks (same as CI)
+pnpm run lint                 # Lint all apps
+pnpm run build               # Build all apps  
+pnpm run test --filter=api   # Run API tests
+pnpm run type-check          # TypeScript validation
+```
+
+## GitHub Actions Configuration
+
+### Workflow File
+- **Location**: `.github/workflows/ci-cd.yml`
+- **Node Version**: 23
+- **Package Manager**: pnpm v10
+- **Caching**: Dependency and build caching enabled
+
+### Key Features
+- **Parallel Jobs**: Lint, test, and build run in parallel
+- **Smart Caching**: Dependencies and builds cached for speed
+- **Error Handling**: Graceful fallbacks for lockfile issues
+- **Security**: Automated dependency vulnerability scanning
+
+### Performance Optimizations
+- **Turbo Caching**: Monorepo build caching with Turborepo
+- **Dependency Caching**: GitHub Actions cache for node_modules
+- **Build Caching**: Cached build outputs between runs
+- **Lockfile Handling**: Smart fallback for outdated lockfiles
+
+## Troubleshooting
+
+### Common Issues
+
+#### Lockfile Out of Date
+```bash
+# Solution: Update lockfile locally
+pnpm install --no-frozen-lockfile
+git add pnpm-lock.yaml
+git commit -m "update lockfile"
+```
+
+#### TypeScript Compilation Errors
+```bash
+# Check types locally
+pnpm run type-check --filter=web
+pnpm run type-check --filter=api  
+pnpm run type-check --filter=mobile
+```
+
+#### Dependency Installation Issues
+```bash
+# Clear cache and reinstall
+rm -rf node_modules apps/*/node_modules
+pnpm install
+```
+
+### CI/CD Debugging
+- Check GitHub Actions logs for detailed error messages
+- Verify Node.js and pnpm versions match local setup
+- Ensure all required dependencies are in package.json
+
+## Future Deployment Integration
+
+When ready to add deployment:
+
+### Suggested Platforms
+- **Web**: Vercel, Netlify, AWS Amplify
+- **API**: Railway, Render, DigitalOcean App Platform  
+- **Mobile**: Expo Application Services (EAS)
+
+### Environment Setup
+- Configure GitHub Secrets for deployment keys
+- Set up staging and production environments
+- Add deployment jobs to workflow after testing stages
+
+### Deployment Commands
+```bash
+# Web deployment example
+vercel --prod
+
+# API deployment example  
+railway deploy
+
+# Mobile publishing example
+eas submit --platform ios
+eas submit --platform android
+```
+
+---
+
+## Monitoring & Maintenance
+
+- **Dependencies**: Dependabot configured for weekly updates
+- **Security**: Automated vulnerability scanning
+- **Performance**: Turbo caching for optimal build times
+- **Quality**: Comprehensive linting and testing coverage
+
+For questions or issues with the CI/CD pipeline, check the GitHub Actions logs or open an issue in the repository.
