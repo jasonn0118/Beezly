@@ -60,17 +60,16 @@ pnpm test       # Run tests for all apps
 pnpm type-check # TypeScript type checking
 ```
 
-## 🚀 CI/CD & Deployment
+## 🧪 CI/CD Pipeline
 
-This project includes automated CI/CD pipelines for testing and deployment. For detailed deployment instructions and configuration, see:
+This project includes automated CI/CD pipelines for testing and quality assurance:
 
-📋 **[Deployment Guide](.github/workflows/deploy.md)**
-
-**Quick Overview:**
-- **Staging**: Auto-deploy on push to `staging` branch
-- **Production**: Auto-deploy on push to `main` branch
-- **Pipeline**: Lint → Test → Build → Deploy
-- **Apps**: Web (Next.js), API (NestJS), Mobile (Expo)
+**Pipeline Overview:**
+- **Lint**: Code style and quality checks
+- **Test**: Unit and integration tests
+- **Build**: Production build verification
+- **Security**: Dependency vulnerability scanning
+- **Apps Covered**: Web (Next.js), API (NestJS), Mobile (Expo)
 
 ## Commit & Branch Workflow
 
