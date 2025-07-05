@@ -17,7 +17,7 @@ if pnpm install --frozen-lockfile 2>/dev/null; then
     echo "✅ Frozen lockfile install successful"
     exit 0
 else
-    echo "⚠️  Frozen lockfile failed, falling back to regular install"
-    pnpm install
+    echo "⚠️  Frozen lockfile failed, falling back to install without frozen lockfile"
+    pnpm install --no-frozen-lockfile
     exit $?
 fi
