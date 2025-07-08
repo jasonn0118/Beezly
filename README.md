@@ -71,6 +71,7 @@ This project includes comprehensive automated CI/CD pipelines for testing, build
 - **🧪 Test**: Unit and integration tests with coverage
 - **🏗️ Build**: Production build verification and optimization
 - **🛡️ Security**: Automated dependency vulnerability scanning
+- **📱 Mobile Deploy**: Automated Expo builds and deployments via EAS
 - **⚡ Performance**: Smart caching with Turborepo and GitHub Actions
 - **📱 Apps**: Web (Next.js), API (NestJS), Mobile (React Native/Expo)
 
