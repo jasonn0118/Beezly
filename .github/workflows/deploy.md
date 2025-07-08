@@ -24,6 +24,7 @@ pnpm run test --filter=api
 ### 2. Configure GitHub Secrets
 - Add `DISCORD_WEBHOOK_URL` for notifications
 - Add `EXPO_TOKEN` for mobile deployments
+- Add `EXPO_PROJECT_ID` for Expo project identification
 - See detailed setup in [GitHub Secrets Configuration](#github-secrets-configuration)
 
 ### 3. Development Workflow
@@ -106,7 +107,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 # Mobile App (Expo)
 EXPO_PUBLIC_API_URL=http://localhost:3001
-EXPO_PROJECT_ID=523ce246-775f-4d34-97d0-4c5b7f375946
+EXPO_PROJECT_ID=your_expo_project_id_here
 ```
 
 ### Development Commands
@@ -152,6 +153,16 @@ Purpose: Mobile app building and publishing (Required)
 3. Name it "GitHub Actions CI/CD"
 4. Select permissions: `read:project`, `write:project`, `read:user`
 5. Copy token and add as GitHub secret
+
+```
+Secret Name: EXPO_PROJECT_ID
+Purpose: Expo project identification (Required)
+Value: 523ce246-775f-4d34-97d0-4c5b7f375946
+```
+
+**Setup Steps:**
+1. Copy the project ID from your Expo dashboard or app.config.js
+2. Add as GitHub secret for security
 
 #### 3. Future Deployment Keys
 ```
@@ -300,6 +311,8 @@ pnpm install
 ```
 
 #### 4. Expo Build Failures
+- **"EAS project not configured"**: The CI/CD includes initialization steps, but if this persists, manually run `eas init` locally
+- **"cli.appVersionSource" not set**: This is handled in the updated `eas.json` configuration
 - Check build logs in Expo dashboard
 - Verify `EXPO_TOKEN` permissions
 - Ensure app.config.js is properly configured

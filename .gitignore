@@ -5,6 +5,7 @@ build/
 .env
 apps/**/node_modules/
 apps/**/.expo/
+apps/**/.eas/
 CLAUDE.md
 .mcp.json
 
