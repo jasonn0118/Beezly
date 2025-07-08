@@ -272,6 +272,8 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PROJECT_ID: ${{ secrets.EXPO_PROJECT_ID }}
         run: |
+          # Create .env file with secrets for the build
+          echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
           # Initialize EAS project if not already configured
           eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
           eas build --platform all --profile preview --non-interactive --no-wait
@@ -283,6 +285,8 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PROJECT_ID: ${{ secrets.EXPO_PROJECT_ID }}
         run: |
+          # Create .env file with secrets for the build
+          echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
           # Initialize EAS project if not already configured
           eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
           eas build --platform all --profile production --non-interactive --no-wait
@@ -329,6 +333,8 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PROJECT_ID: ${{ secrets.EXPO_PROJECT_ID }}
         run: |
+          # Create .env file with secrets for the build
+          echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
           # Initialize EAS project if not already configured
           eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
           eas update --branch production --message "Deploy from GitHub Actions"
