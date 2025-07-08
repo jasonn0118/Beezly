@@ -13,10 +13,8 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "PNPM_FLAGS": "--no-frozen-lockfile"
-      },
-      "prebuild": {
-        "command": "cd ../.. && pnpm install --no-frozen-lockfile"
+        "NODE_ENV": "development",
+        "EXPO_ENV": "preview"
       },
       "ios": {
         "resourceClass": "m-medium"
@@ -29,10 +27,7 @@
     "production": {
       "channel": "production",
       "env": {
-        "PNPM_FLAGS": "--no-frozen-lockfile"
-      },
-      "prebuild": {
-        "command": "cd ../.. && pnpm install --no-frozen-lockfile"
+        "NODE_ENV": "production"
       },
       "ios": {
         "resourceClass": "m-medium"

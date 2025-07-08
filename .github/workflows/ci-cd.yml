@@ -274,6 +274,8 @@ jobs:
         run: |
           # Create .env file with secrets for the build
           echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
+          # Sync workspace lockfile to prevent lockfile mismatch
+          cd ../.. && pnpm install --no-frozen-lockfile && cd apps/mobile
           # Initialize EAS project if not already configured
           eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
           # Generate new keystore if it doesn't exist, then build
@@ -289,6 +291,8 @@ jobs:
         run: |
           # Create .env file with secrets for the build
           echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
+          # Sync workspace lockfile to prevent lockfile mismatch
+          cd ../.. && pnpm install --no-frozen-lockfile && cd apps/mobile
           # Initialize EAS project if not already configured
           eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
           # Generate new keystore if it doesn't exist, then build
