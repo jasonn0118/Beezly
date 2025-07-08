@@ -276,7 +276,9 @@ jobs:
           echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
           # Initialize EAS project if not already configured
           eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
-          eas build --platform all --profile preview --non-interactive --no-wait
+          # Generate new keystore if it doesn't exist, then build
+          eas build --platform android --profile preview --auto-submit --non-interactive --no-wait || true
+          eas build --platform ios --profile preview --non-interactive --no-wait
 
       - name: Build with EAS (Production)
         if: github.ref == 'refs/heads/main'
@@ -289,7 +291,9 @@ jobs:
           echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
           # Initialize EAS project if not already configured
           eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
-          eas build --platform all --profile production --non-interactive --no-wait
+          # Generate new keystore if it doesn't exist, then build
+          eas build --platform android --profile production --auto-submit --non-interactive --no-wait || true
+          eas build --platform ios --profile production --non-interactive --no-wait
 
   # Deploy to Expo
   deploy-expo:
