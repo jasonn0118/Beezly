@@ -12,20 +12,34 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "env": {
+        "PNPM_FLAGS": "--no-frozen-lockfile"
+      },
+      "prebuild": {
+        "command": "cd ../.. && pnpm install --no-frozen-lockfile"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },
       "android": {
-        "resourceClass": "medium"
+        "resourceClass": "medium",
+        "buildType": "apk"
       }
     },
     "production": {
       "channel": "production",
+      "env": {
+        "PNPM_FLAGS": "--no-frozen-lockfile"
+      },
+      "prebuild": {
+        "command": "cd ../.. && pnpm install --no-frozen-lockfile"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },
       "android": {
-        "resourceClass": "medium"
+        "resourceClass": "medium",
+        "buildType": "app-bundle"
       }
     }
   },
