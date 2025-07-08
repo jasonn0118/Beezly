@@ -14,9 +14,19 @@ describe('AppController', () => {
     appController = app.get<AppController>(AppController);
   });
 
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+  describe('getUsers', () => {
+    it('should return an array of users', async () => {
+      const users = await appController.getUsers();
+      console.log(users);
+
+      expect(Array.isArray(users)).toBe(true);
+
+      expect(users.length).toBeGreaterThanOrEqual(0);
+
+      if (users.length > 0) {
+        expect(users[0]).toHaveProperty('id');
+        expect(users[0]).toHaveProperty('email');
+      }
     });
   });
 });
