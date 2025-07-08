@@ -12,6 +12,12 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "env": {
+        "PNPM_FLAGS": "--no-frozen-lockfile"
+      },
+      "prebuild": {
+        "command": "cd ../.. && pnpm install --no-frozen-lockfile"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },
@@ -22,6 +28,12 @@
     },
     "production": {
       "channel": "production",
+      "env": {
+        "PNPM_FLAGS": "--no-frozen-lockfile"
+      },
+      "prebuild": {
+        "command": "cd ../.. && pnpm install --no-frozen-lockfile"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },
