@@ -1,9 +1,10 @@
 {
-    "compilerOptions": {
-      "baseUrl": ".",
-      "paths": {
-        "@beezly/shared/*": ["packages/shared/*"]
-      }
-    }
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@beezly/types/*": ["packages/types/*"]
+    },
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
   }
-  
+}
