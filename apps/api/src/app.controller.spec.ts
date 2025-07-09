@@ -1,32 +1,45 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuthService } from './auth/auth.service';
+import { ProductService } from './product/product.service';
+import { ReceiptService } from './receipt/receipt.service';
+import { ReceiptItemService } from './receiptItem/receiptItem.service';
+import { StoreService } from './store/store.service';
+import { UserService } from './user/user.service';
 
 describe('AppController', () => {
   let appController: AppController;
 
   beforeEach(async () => {
-    const app: TestingModule = await Test.createTestingModule({
+    const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
-      providers: [AppService],
+      providers: [
+        AppService,
+        { provide: AuthService, useValue: {} },
+        { provide: ProductService, useValue: {} },
+        { provide: ReceiptService, useValue: {} },
+        { provide: ReceiptItemService, useValue: {} },
+        { provide: StoreService, useValue: {} },
+        {
+          provide: UserService,
+          useValue: {
+            getAllUsers: jest.fn().mockResolvedValue([]),
+          },
+        },
+      ],
     }).compile();
 
-    appController = app.get<AppController>(AppController);
+    appController = moduleRef.get<AppController>(AppController);
   });
 
   describe('getUsers', () => {
-    it('should return an array of users', async () => {
-      const users = await appController.getUsers();
-      console.log(users);
+    it('should return an array (mock test)', async () => {
+      const result = await appController.getUsers();
+      console.log(result);
 
-      expect(Array.isArray(users)).toBe(true);
-
-      expect(users.length).toBeGreaterThanOrEqual(0);
-
-      if (users.length > 0) {
-        expect(users[0]).toHaveProperty('id');
-        expect(users[0]).toHaveProperty('email');
-      }
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBe(0);
     });
   });
 });
