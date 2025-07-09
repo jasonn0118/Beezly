@@ -4,12 +4,13 @@
   "main": "index.ts",
   "scripts": {
     "dev": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "build": "pnpm exec tsc --noEmit",
     "type-check": "pnpm exec tsc --noEmit",
-    "lint": "pnpm exec tsc --noEmit"
+    "lint": "pnpm exec tsc --noEmit",
+    "start": "expo start --dev-client"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",
