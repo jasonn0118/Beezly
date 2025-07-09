@@ -1,4 +1,4 @@
-// File: C:\Users\kst\Desktop\Beezly\Beezly\apps\demo\app\layout.tsx
+// File: /Users/jeaminshin/Study/beezly/apps/demo/app/layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
