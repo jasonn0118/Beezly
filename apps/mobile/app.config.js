@@ -24,6 +24,9 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.jasonn0118.beezly",
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false
+      }
     },
     android: {
       adaptiveIcon: {
