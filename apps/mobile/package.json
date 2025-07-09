@@ -20,7 +20,7 @@
     "expo-updates": "~0.28.17",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "react-native": "0.79.5",
+    "react-native": "0.80.1",
     "react-native-web": "^0.20.0"
   },
   "devDependencies": {
