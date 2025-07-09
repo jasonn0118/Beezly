@@ -1,0 +1,48 @@
+name: Discord Notifications
+
+on:
+  pull_request:
+    types: [opened, closed, reopened, synchronize]
+  issues:
+    types: [opened, closed, reopened]
+
+jobs:
+  discord-pr-notifications:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Send PR notification
+        uses: Ilshidur/action-discord@0.3.2
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            🔀 **Pull Request ${{ github.event.action }} in ${{ github.repository }}**
+            
+            **PR:** #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}
+            👤 **Author:** ${{ github.event.pull_request.user.login }}
+            🌿 **Branch:** ${{ github.event.pull_request.head.ref }} → ${{ github.event.pull_request.base.ref }}
+            
+            ${{ github.event.action == 'opened' && '🆕 New pull request created!' || github.event.action == 'closed' && github.event.pull_request.merged == true && '✅ Pull request merged!' || github.event.action == 'closed' && '❌ Pull request closed without merge' || github.event.action == 'reopened' && '🔄 Pull request reopened' || github.event.action == 'synchronize' && '📝 New commits pushed' }}
+            
+            🔗 [View Pull Request](${{ github.event.pull_request.html_url }})
+
+  discord-issue-notifications:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues'
+    steps:
+      - name: Send issue notification
+        uses: Ilshidur/action-discord@0.3.2
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            🐛 **Issue ${{ github.event.action }} in ${{ github.repository }}**
+            
+            **Issue:** #${{ github.event.issue.number }} - ${{ github.event.issue.title }}
+            👤 **Author:** ${{ github.event.issue.user.login }}
+            🏷️ **Labels:** ${{ join(github.event.issue.labels.*.name, ', ') }}
+            
+            ${{ github.event.action == 'opened' && '🆕 New issue created!' || github.event.action == 'closed' && '✅ Issue closed' || github.event.action == 'reopened' && '🔄 Issue reopened' }}
+            
+            🔗 [View Issue](${{ github.event.issue.html_url }})

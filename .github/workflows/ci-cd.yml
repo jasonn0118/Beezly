@@ -1,0 +1,423 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, staging ]
+  pull_request:
+    branches: [ main, staging ]
+
+env:
+  NODE_VERSION: '23'
+  PNPM_VERSION: '10'
+
+jobs:
+  # Install dependencies and cache
+  install:
+    runs-on: ubuntu-latest
+    outputs:
+      cache-hit: ${{ steps.cache-node-modules.outputs.cache-hit }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Check lockfile
+        run: |
+          echo "Checking pnpm lockfile..."
+          if [ -f pnpm-lock.yaml ]; then
+            echo "Lockfile exists"
+            head -5 pnpm-lock.yaml
+          else
+            echo "No lockfile found"
+          fi
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: bash .github/workflows/install-deps.sh
+
+  # Lint all apps
+  lint:
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        if: needs.install.outputs.cache-hit != 'true'
+        run: bash .github/workflows/install-deps.sh
+
+      - name: Run linting
+        run: pnpm run lint
+
+  # Build and test web app
+  test-web:
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        if: needs.install.outputs.cache-hit != 'true'
+        run: bash .github/workflows/install-deps.sh
+
+      - name: Build web app
+        run: pnpm run build --filter=web
+
+      - name: Cache web build
+        uses: actions/cache@v4
+        with:
+          path: apps/web/.next
+          key: ${{ runner.os }}-web-build-${{ github.sha }}
+
+  # Build and test API
+  test-api:
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        if: needs.install.outputs.cache-hit != 'true'
+        run: bash .github/workflows/install-deps.sh
+
+      - name: Build API
+        run: pnpm run build --filter=api
+
+      - name: Run API tests
+        run: pnpm run test --filter=api
+
+      - name: Run API e2e tests
+        run: pnpm run test:e2e --filter=api
+
+      - name: Cache API build
+        uses: actions/cache@v4
+        with:
+          path: apps/api/dist
+          key: ${{ runner.os }}-api-build-${{ github.sha }}
+
+  # Build mobile app
+  test-mobile:
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Expo CLI
+        run: npm install -g @expo/cli
+
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        if: needs.install.outputs.cache-hit != 'true'
+        run: bash .github/workflows/install-deps.sh
+
+      - name: Build mobile app
+        run: pnpm run build --filter=mobile
+
+  # Build Expo app with EAS
+  build-expo:
+    runs-on: ubuntu-latest
+    needs: install
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        if: needs.install.outputs.cache-hit != 'true'
+        run: bash .github/workflows/install-deps.sh
+
+      - name: Build with EAS (Preview)
+        if: github.ref == 'refs/heads/staging'
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PROJECT_ID: ${{ secrets.EXPO_PROJECT_ID }}
+        run: |
+          # Create .env file with secrets for the build
+          echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
+          # Sync workspace lockfile to prevent lockfile mismatch
+          cd ../.. && pnpm install --no-frozen-lockfile && cd apps/mobile
+          # Initialize EAS project if not already configured
+          eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
+          # Build for internal distribution (Android only for now)
+          eas build --platform android --profile preview --non-interactive --no-wait
+
+      - name: Build with EAS (Production)
+        if: github.ref == 'refs/heads/main'
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PROJECT_ID: ${{ secrets.EXPO_PROJECT_ID }}
+        run: |
+          # Create .env file with secrets for the build
+          echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
+          # Sync workspace lockfile to prevent lockfile mismatch
+          cd ../.. && pnpm install --no-frozen-lockfile && cd apps/mobile
+          # Initialize EAS project if not already configured
+          eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
+          # Build for production (without auto-submit due to credential requirements)
+          eas build --platform android --profile production --non-interactive --no-wait
+          # Note: Auto-submit requires interactive Google Service Account setup
+
+  # Deploy to Expo
+  deploy-expo:
+    runs-on: ubuntu-latest
+    needs: [build-expo, lint, test-web, test-api, test-mobile]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        if: needs.install.outputs.cache-hit != 'true'
+        run: bash .github/workflows/install-deps.sh
+
+      - name: Publish to Expo
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PROJECT_ID: ${{ secrets.EXPO_PROJECT_ID }}
+        run: |
+          # Create .env file with secrets for the build
+          echo "EXPO_PROJECT_ID=${{ secrets.EXPO_PROJECT_ID }}" > .env
+          # Initialize EAS project if not already configured
+          eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
+          eas update --branch production --message "Deploy from GitHub Actions"
+
+  # Security scan
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        if: needs.install.outputs.cache-hit != 'true'
+        run: bash .github/workflows/install-deps.sh
+
+      - name: Run security audit
+        run: pnpm audit --audit-level high
+
+      - name: Run dependency check
+        run: |
+          echo "🔍 Running dependency vulnerability check..."
+          pnpm audit --json > audit-report.json || true
+          
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-report
+          path: audit-report.json
+
+  # Discord notification job
+  discord-notification:
+    runs-on: ubuntu-latest
+    needs: [lint, test-web, test-api, test-mobile, security-scan, build-expo, deploy-expo]
+    if: always()
+    steps:
+      - name: Send Discord notification
+        uses: Ilshidur/action-discord@0.3.2
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            🔧 **Build Status for ${{ github.repository }}**
+            📝 **Commit:** ${{ github.sha }}
+            🌿 **Branch:** ${{ github.ref_name }}
+            👤 **Author:** ${{ github.actor }}
+            
+            **Job Results:**
+            • Lint: ${{ needs.lint.result == 'success' && '✅ Passed' || '❌ Failed' }}
+            • Web Build: ${{ needs.test-web.result == 'success' && '✅ Passed' || '❌ Failed' }}
+            • API Build: ${{ needs.test-api.result == 'success' && '✅ Passed' || '❌ Failed' }}
+            • Mobile Build: ${{ needs.test-mobile.result == 'success' && '✅ Passed' || '❌ Failed' }}
+            • Expo Build: ${{ needs.build-expo.result == 'success' && '✅ Passed' || (needs.build-expo.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}
+            • Expo Deploy: ${{ needs.deploy-expo.result == 'success' && '✅ Passed' || (needs.deploy-expo.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}
+            • Security Scan: ${{ needs.security-scan.result == 'success' && '✅ Passed' || '❌ Failed' }}
+            
+            **Overall Status:** ${{ (needs.lint.result == 'success' && needs.test-web.result == 'success' && needs.test-api.result == 'success' && needs.test-mobile.result == 'success' && needs.security-scan.result == 'success') && '🎉 SUCCESS' || '💥 FAILED' }}
+            
+            🔗 [View Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

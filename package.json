@@ -6,14 +6,24 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "type-check": "turbo run type-check"
   },
   "keywords": [],
   "author": "",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "license": "ISC",
   "packageManager": "pnpm@10.11.0",
   "devDependencies": {
     "turbo": "^2.5.4"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.3",
+    "@nestjs/swagger": "^11.2.0"
   }
 }

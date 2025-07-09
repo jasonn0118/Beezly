@@ -1,0 +1,61 @@
+version: 2
+updates:
+  # Root package.json
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "jasonn0118"
+    labels:
+      - "dependencies"
+      - "automerge"
+
+  # Web app dependencies
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "jasonn0118"
+    labels:
+      - "dependencies"
+      - "web"
+
+  # API dependencies
+  - package-ecosystem: "npm"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "jasonn0118"
+    labels:
+      - "dependencies"
+      - "api"
+
+  # Mobile app dependencies
+  - package-ecosystem: "npm"
+    directory: "/apps/mobile"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "jasonn0118"
+    labels:
+      - "dependencies"
+      - "mobile"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "jasonn0118"
+    labels:
+      - "github-actions"
+      - "dependencies"
