@@ -1,13 +1,14 @@
 import React from 'react';
+import Image from 'next/image';
 import { styles } from '../styles/globalStyles';
-import { ScreenProps } from '../types';
+import { ScreenProps, RecentInfo } from '../types';
 import { MOCK_RECENT_INFO, MOCK_PRICE_DATA } from '../data/mockData';
 import { theme } from '../styles/theme';
 import Card from '../components/Card';
 import { AppButton } from '../components/common';
 
 const ProductDetailScreen: React.FC<ScreenProps> = ({ navigation, route }) => {
-    const product = route?.params?.product || MOCK_RECENT_INFO[0]; // Fallback to mock data
+    const product = (route?.params?.product as RecentInfo) || MOCK_RECENT_INFO[0]; // Fallback to mock data
     
     return (
         <div style={{...styles.screenScroll, display: 'flex', flexDirection: 'column'}}>
@@ -18,7 +19,7 @@ const ProductDetailScreen: React.FC<ScreenProps> = ({ navigation, route }) => {
                     </button>
                 </header>
                 <Card style={{padding: theme.spacing.md, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, marginBottom: theme.spacing.lg}}>
-                    <img src={product.image.replace('40x40', '80x80')} alt={product.name} style={{width: 80, height: 80, borderRadius: 8}} />
+                    <Image src={product.image.replace('40x40', '80x80')} alt={product.name} style={{borderRadius: 8}} width={80} height={80} />
                     <div>
                         <h1 style={{...styles.h1, fontSize: 20, margin: 0}}>{product.name}</h1>
                         <p style={{fontSize: 12, margin: 0, marginTop: 4}}>Barcode: {product.barcode}</p>

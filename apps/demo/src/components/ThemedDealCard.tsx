@@ -1,10 +1,11 @@
 import React from 'react';
+import Image from 'next/image';
 import { ThemedDeal } from '../types';
 import { theme } from '../styles/theme';
 
 const ThemedDealCard: React.FC<{ item: ThemedDeal }> = ({ item }) => (
     <div style={themedDealCardStyles.dealCard}>
-        <img src={item.image} style={themedDealCardStyles.dealImage} alt={item.name} />
+        <Image src={item.image} style={themedDealCardStyles.dealImage} alt={item.name} width={180} height={135} />
         {item.badge && (
             <div style={{...themedDealCardStyles.badge, backgroundColor: item.badge === 'BEST' ? theme.colors.primary : theme.colors.green}}>
                 <span style={themedDealCardStyles.badgeText}>{item.badge}</span>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { styles } from '../styles/globalStyles';
 import { ScreenProps } from '../types';
 import { MOCK_SEARCH_RESULTS } from '../data/mockData';
@@ -6,7 +7,7 @@ import { theme } from '../styles/theme';
 import Card from '../components/Card';
 
 const SearchResultsScreen: React.FC<ScreenProps> = ({ navigation, route }) => {
-    const query = route?.params?.query || '';
+    const query = (route?.params?.query as string) || '';
     const [addedItems, setAddedItems] = useState<string[]>([]);
 
     const handleAddItem = (itemId: string) => {
@@ -24,14 +25,14 @@ const SearchResultsScreen: React.FC<ScreenProps> = ({ navigation, route }) => {
                     <h1 style={{...styles.h1, flex: 1, textAlign: 'center', marginRight: 24}}>Search Results</h1>
                 </header>
                 <p style={{textAlign: 'center', color: theme.colors.textSecondary, marginBottom: theme.spacing.lg}}>
-                    Showing results for "<span style={{fontWeight: theme.font.bold, color: theme.colors.textPrimary}}>{query}</span>"
+                    Showing results for &quot;<span style={{fontWeight: theme.font.bold, color: theme.colors.textPrimary}}>{query}</span>&quot;
                 </p>
                 <div style={{display: 'flex', flexDirection: 'column', gap: theme.spacing.sm}}>
                     {MOCK_SEARCH_RESULTS.map(item => {
                         const isAdded = addedItems.includes(item.id);
                         return (
                             <Card key={item.id} style={{padding: theme.spacing.md, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md}}>
-                                <img src={item.image} alt={item.name} style={{width: 64, height: 64, borderRadius: 8}}/>
+                                <Image src={item.image} alt={item.name} style={{borderRadius: 8}} width={64} height={64} />
                                 <div style={{flex: 1, overflow: 'hidden'}}>
                                     <p style={{fontWeight: theme.font.bold}}>{item.name}</p>
                                     <p style={{fontSize: 12, color: theme.colors.textSecondary}}>Lowest Price: ${item.lowestPrice.toFixed(2)} @ {item.store}</p>

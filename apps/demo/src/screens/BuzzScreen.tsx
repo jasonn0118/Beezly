@@ -4,7 +4,7 @@ import { ScreenProps } from '../types';
 import { theme } from '../styles/theme';
 import Card from '../components/Card';
 
-const BuzzScreen: React.FC<ScreenProps> = ({ navigation }) => (
+const BuzzScreen: React.FC<ScreenProps> = () => (
     <div style={styles.screenScroll}>
         <div style={{...styles.screenContainer, paddingTop: theme.spacing.xl, paddingBottom: theme.spacing.xl}}>
             <h1 style={{...styles.h1, textAlign: 'center', marginBottom: theme.spacing.lg}}>Buzz</h1>

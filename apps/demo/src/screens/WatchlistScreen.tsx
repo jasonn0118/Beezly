@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { styles } from '../styles/globalStyles';
 import { ScreenProps, WatchlistItem } from '../types';
 import { MOCK_WATCHLIST_DATA } from '../data/mockData';
 import { theme } from '../styles/theme';
 import Card from '../components/Card';
 
-const WatchlistScreen: React.FC<ScreenProps> = ({ navigation }) => {
+const WatchlistScreen: React.FC<ScreenProps> = () => {
     const [watchlist, setWatchlist] = useState(MOCK_WATCHLIST_DATA);
 
     const handleDelete = (itemId: string) => {
@@ -35,7 +36,7 @@ const WatchlistScreen: React.FC<ScreenProps> = ({ navigation }) => {
                         {watchlist.map(item => (
                             <div key={item.id} className="watchlist-item-wrapper" style={{position: 'relative', overflow: 'hidden', borderRadius: 16}}>
                                 <Card style={{ padding: theme.spacing.md, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, width: '100%' }}>
-                                    <img src={item.image} style={{ width: 64, height: 64, borderRadius: 8 }} alt={item.name} />
+                                    <Image src={item.image} style={{ borderRadius: 8 }} alt={item.name} width={64} height={64} />
                                     <div style={{ flex: 1, overflow: 'hidden' }}>
                                         <p style={{ fontWeight: theme.font.bold, color: theme.colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</p>
                                         <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: theme.spacing.xs, marginTop: theme.spacing.xs }}>

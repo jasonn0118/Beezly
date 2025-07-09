@@ -1,14 +1,14 @@
 'use client';
 import React, { useState } from 'react';
-import { ScreenName } from '../src/types';
+import { ScreenName, NavigationParams } from '../src/types';
 import { SCREENS, NavButton } from '../src/navigation/AppNavigator';
 import { styles } from '../src/styles/globalStyles';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenName>('home');
-  const [navParams, setNavParams] = useState<any>({});
+  const [navParams, setNavParams] = useState<NavigationParams>({});
 
-  const handleNavigation = (screenName: ScreenName, params: any = {}) => {
+  const handleNavigation = (screenName: ScreenName, params: NavigationParams = {}) => {
       setNavParams(params);
       setCurrentScreen(screenName);
   }

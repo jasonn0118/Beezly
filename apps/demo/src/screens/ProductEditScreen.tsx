@@ -8,8 +8,10 @@ import { AppButton } from '../components/common';
 const ProductEditScreen: React.FC<ScreenProps> = ({ navigation, route }) => {
     const { params } = route || {};
     const { originalName, matchedName } = params || {};
+    const originalNameString = originalName as string;
+    const matchedNameString = matchedName as string;
 
-    const [productName, setProductName] = useState(matchedName || '');
+    const [productName, setProductName] = useState(matchedNameString || '');
     const [price, setPrice] = useState('');
     const [category, setCategory] = useState('');
     const [capacity, setCapacity] = useState('');
@@ -34,10 +36,10 @@ const ProductEditScreen: React.FC<ScreenProps> = ({ navigation, route }) => {
                         </div>
                     </header>
 
-                    {originalName && (
+                    {originalNameString && (
                          <Card style={{padding: theme.spacing.md, marginBottom: theme.spacing.lg, backgroundColor: '#FFFBEB' }}>
                             <p style={{fontSize: 12, color: theme.colors.textSecondary, margin: 0}}>Original Receipt Item</p>
-                            <p style={{fontSize: 16, fontWeight: theme.font.semibold, color: theme.colors.amber600, marginTop: 4}}>{originalName}</p>
+                            <p style={{fontSize: 16, fontWeight: theme.font.semibold, color: theme.colors.amber600, marginTop: 4}}>{originalNameString}</p>
                         </Card>
                     )}
 

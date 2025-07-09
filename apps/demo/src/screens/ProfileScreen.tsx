@@ -1,15 +1,16 @@
 import React from 'react';
+import Image from 'next/image';
 import { styles } from '../styles/globalStyles';
 import { ScreenProps } from '../types';
 import { theme } from '../styles/theme';
 import Card from '../components/Card';
 
-const ProfileScreen: React.FC<ScreenProps> = ({ navigation }) => (
+const ProfileScreen: React.FC<ScreenProps> = () => (
     <div style={styles.screenScroll}>
         <div style={{...styles.screenContainer, paddingTop: theme.spacing.xl, paddingBottom: theme.spacing.xl}}>
             <h1 style={{...styles.h1, textAlign: 'center', marginBottom: theme.spacing.lg}}>Profile</h1>
             <Card style={{padding: theme.spacing.lg, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: theme.spacing.lg}}>
-                <img src="https://i.pravatar.cc/80?u=user1" style={{width: 80, height: 80, borderRadius: 40}} alt="profile"/>
+                <Image src="https://i.pravatar.cc/80?u=user1" style={{borderRadius: 40}} alt="profile" width={80} height={80} />
                 <div>
                     <h2 style={styles.h2}>Thrifty Shopper</h2>
                     <p style={{color: theme.colors.amber600, fontWeight: theme.font.semibold, margin:0}}>LV.5 / 5,800P</p>

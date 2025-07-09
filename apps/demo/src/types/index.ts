@@ -12,9 +12,13 @@ export type ScreenName =
   | 'productEdit'
   | 'confirmation';
 
+export interface NavigationParams {
+  [key: string]: string | number | boolean | object | undefined;
+}
+
 export interface ScreenProps {
-  navigation: (screenName: ScreenName, params?: any) => void;
-  route?: { params?: any };
+  navigation: (screenName: ScreenName, params?: NavigationParams) => void;
+  route?: { params?: NavigationParams };
 }
 
 export interface HotDeal {

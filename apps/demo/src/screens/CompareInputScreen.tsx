@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { styles } from '../styles/globalStyles';
 import { ScreenProps, PriceData } from '../types';
 import { MOCK_PRICE_DATA } from '../data/mockData';
@@ -40,7 +41,7 @@ const CompareInputScreen: React.FC<ScreenProps> = ({ navigation }) => {
                     </header>
 
                     <Card style={{padding: theme.spacing.md, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, marginBottom: theme.spacing.lg}}>
-                        <img src="https://placehold.co/64x64/3B82F6/FFFFFF?text=Milk" alt="Seoul Milk" style={{width: 64, height: 64, borderRadius: 8}} />
+                        <Image src="https://placehold.co/64x64/3B82F6/FFFFFF?text=Milk" alt="Seoul Milk" style={{borderRadius: 8}} width={64} height={64} />
                         <div>
                             <h3 style={{...styles.h2, fontSize: 18, margin: 0}}>Seoul Milk 1L</h3>
                             <p style={{fontSize: 12, margin: 0}}>Barcode: 8801115115115</p>
@@ -74,7 +75,7 @@ const CompareInputScreen: React.FC<ScreenProps> = ({ navigation }) => {
                         </div>
                     )}
 
-                    <h2 style={styles.h2}>Other Users' Submissions</h2>
+                    <h2 style={styles.h2}>Other Users&apos; Submissions</h2>
                     <div style={{display: 'flex', justifyContent: 'space-around', margin: `${theme.spacing.md}px 0`, borderRadius: theme.spacing.sm, overflow: 'hidden', border: `1px solid ${theme.colors.border}`}}>
                         <button onClick={() => sort('distance')} style={{...getSortButtonStyle('distance'), borderRight: `1px solid ${theme.colors.border}`}}>Distance</button>
                         <button onClick={() => sort('date')} style={getSortButtonStyle('date')}>Date</button>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { ScreenProps, StoreName } from '../types';
 import { MOCK_HOT_DEALS, MOCK_BEST_DEALS, MOCK_MOST_WANTED, MOCK_RECENT_INFO } from '../data/mockData';
 import { theme } from '../styles/theme';
@@ -24,7 +25,7 @@ const HomeScreen: React.FC<ScreenProps> = ({ navigation }) => {
         {/* Header */}
         <header style={styles.header}>
           <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-            <img src='https://i.pravatar.cc/40?u=user1' style={styles.avatar} alt="user avatar" />
+            <Image src='https://i.pravatar.cc/40?u=user1' style={styles.avatar} alt="user avatar" width={40} height={40} />
             <div>
               <p style={{ color: theme.colors.textSecondary, margin:0 }}>Hello!</p>
               <p style={{...styles.h1, margin:0}}>Thrifty Shopper</p>
@@ -51,7 +52,7 @@ const HomeScreen: React.FC<ScreenProps> = ({ navigation }) => {
 
         {/* Hot Deals */}
         <section>
-          <h2 style={styles.h2}>This Week's Hot Deals 🔥</h2>
+          <h2 style={styles.h2}>This Week&apos;s Hot Deals 🔥</h2>
           <div style={styles.hotDealTabs}>
             {(Object.keys(MOCK_HOT_DEALS) as StoreName[]).map(store => (
               <button key={store} onClick={() => setActiveTab(store)} style={{...styles.hotDealTab, ...(activeTab === store && styles.hotDealTabActive)}}>
@@ -69,7 +70,7 @@ const HomeScreen: React.FC<ScreenProps> = ({ navigation }) => {
       {/* Themed Picks Section */}
       <section style={{marginTop: theme.spacing.xl }}>
         <div style={styles.screenContainer}>
-            <h2 style={styles.h2}>Bees' Recommended Picks! 🐝</h2>
+            <h2 style={styles.h2}>Bees&apos; Recommended Picks! 🐝</h2>
             <div style={styles.hotDealTabs}>
                 <button onClick={() => setActiveThemedTab('best')} style={{...styles.hotDealTab, ...(activeThemedTab === 'best' && styles.hotDealTabActive)}}>
                     BEST Honey Deals 🍯
@@ -92,7 +93,7 @@ const HomeScreen: React.FC<ScreenProps> = ({ navigation }) => {
             <button key={item.id} onClick={() => navigation('productDetail', { product: item })} style={{background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer'}}>
                 <Card style={{ padding: theme.spacing.md, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
-                    <img src={item.image} style={{ width: 40, height: 40, borderRadius: 8 }} alt={item.name}/>
+                    <Image src={item.image} style={{ borderRadius: 8 }} alt={item.name} width={40} height={40} />
                     <div>
                       <p style={{ fontWeight: theme.font.bold, margin: 0 }}>{item.name}</p>
                       <p style={{ fontSize: 12, color: theme.colors.textSecondary, margin: 0 }}>

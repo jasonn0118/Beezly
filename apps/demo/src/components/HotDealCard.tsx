@@ -1,10 +1,11 @@
 import React from 'react';
+import Image from 'next/image';
 import { HotDeal } from '../types';
 import { theme } from '../styles/theme';
 
 const HotDealCard: React.FC<{ item: HotDeal }> = ({ item }) => (
     <div style={hotDealCardStyles.dealCard}>
-      <img src={item.image} style={hotDealCardStyles.dealImage} alt={item.name} />
+      <Image src={item.image} style={hotDealCardStyles.dealImage} alt={item.name} width={160} height={112} />
       <div style={{ padding: theme.spacing.md }}>
         <p style={hotDealCardStyles.dealName}>{item.name}</p>
         <p style={hotDealCardStyles.dealSpec}>{item.spec}</p>
