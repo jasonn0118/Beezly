@@ -294,9 +294,9 @@ jobs:
           cd ../.. && pnpm install --no-frozen-lockfile && cd apps/mobile
           # Initialize EAS project if not already configured
           eas init --id ${{ secrets.EXPO_PROJECT_ID }} --non-interactive || true
-          # Build for production (auto-submit to app stores)
-          eas build --platform android --profile production --auto-submit --non-interactive --no-wait
-          # Note: iOS builds require interactive credential setup initially
+          # Build for production (without auto-submit due to credential requirements)
+          eas build --platform android --profile production --non-interactive --no-wait
+          # Note: Auto-submit requires interactive Google Service Account setup
 
   # Deploy to Expo
   deploy-expo:
