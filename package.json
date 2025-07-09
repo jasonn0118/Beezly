@@ -13,10 +13,17 @@
   },
   "keywords": [],
   "author": "",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "license": "ISC",
   "packageManager": "pnpm@10.11.0",
   "devDependencies": {
     "turbo": "^2.5.4"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.3",
+    "@nestjs/swagger": "^11.2.0"
   }
 }
