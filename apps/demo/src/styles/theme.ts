@@ -1,0 +1,35 @@
+export const theme = {
+    colors: {
+        background: '#F8F9FA',
+        card: '#FFFFFF',
+        textPrimary: '#1F2937',
+        textSecondary: '#6B7280',
+        textTertiary: '#9CA3AF',
+        border: '#F1F3F5',
+        primary: '#FFC107',
+        primaryDark: '#FF9800',
+        amber600: '#D97706',
+        amber400: '#FBBF24',
+        amber50: '#FFFBEB',
+        blue: '#3B82F6',
+        gray: '#6B7280',
+        green: '#10B981',
+        red: '#EF4444',
+        white: '#FFFFFF',
+        black: '#000000',
+        phoneFrame: '#111827',
+        bodyBg: '#374151',
+    },
+    spacing: {
+        xs: 4,
+        sm: 8,
+        md: 16,
+        lg: 24,
+        xl: 32,
+    },
+    font: {
+        bold: '800',
+        semibold: '600',
+        regular: '400',
+    }
+};

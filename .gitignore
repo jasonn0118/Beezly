@@ -6,6 +6,9 @@ build/
 apps/**/node_modules/
 apps/**/.expo/
 apps/**/.eas/
+apps/**/.next/
+apps/**/android/
+apps/**/ios/
 CLAUDE.md
 .mcp.json
 
