@@ -1,20 +1,34 @@
----
-name: Feature request
-about: Suggest an idea for this project
-title: ''
-labels: ''
-assignees: ''
+### 🧠 Feature Name
+Short one-line summary of the feature.
 
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+#### 📌 Goal
+What should this feature accomplish?
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+---
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+#### 📲 User Flow
+1. [Action or input]
+2. [Expected processing]
+3. [Expected output in UI]
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+---
+
+#### ✅ Acceptance Criteria
+- [ ] [Behavior 1]
+- [ ] [Behavior 2]
+- [ ] [UI / response expectations]
+
+---
+
+#### 🔗 Related APIs / Services
+- Endpoint: `POST /upload-receipt` (example)
+- Consumes: `FormData` with image
+- Produces: `ReceiptDTO`
+
+---
+
+#### 👤 Owner
+- [Assign team member]
+
