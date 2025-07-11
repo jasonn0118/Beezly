@@ -9,7 +9,8 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
-    "type-check": "turbo run type-check"
+    "type-check": "turbo run type-check",
+    "fetch:stores": "ts-node apps/api/src/scripts/fetch-stores.ts"
   },
   "keywords": [],
   "author": "",

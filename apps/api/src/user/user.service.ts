@@ -8,6 +8,8 @@ export class UserService {
   async getAllUsers(): Promise<UserProfileDTO[]> {
     const { data, error }: PostgrestSingleResponse<UserProfileDTO[]> =
       await supabase.from('User').select('*');
+    console.log('Supabase data:', data);
+    console.log('Supabase error:', error);
 
     if (error) throw new Error(error.message);
     return data ?? [];

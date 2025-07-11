@@ -5,7 +5,7 @@ export class StoreDTO {
     example: "f1a2b3c4-5678-90ab-cdef-1234567890ab",
     description: "Store primary key (UUID)",
   })
-  id: string; // store_sk (UUID)
+  store_sk: string; // store_sk (UUID)
 
   @ApiProperty({
     example: "Walmart Supercentre",
@@ -35,29 +35,36 @@ export class StoreDTO {
     example: "M1A 1A1",
     description: "Postal code of the store location",
   })
-  postalCode?: string;
+  postal_code?: string;
 
   @ApiPropertyOptional({
     example: 43.6532,
     description: "Latitude coordinate of the store",
   })
-  latitude?: number;
+  latitude?: number | null;
 
   @ApiPropertyOptional({
     example: -79.3832,
     description: "Longitude coordinate of the store",
   })
-  longitude?: number;
+  longitude?: number | null;
 
   @ApiProperty({
     example: "2025-07-07T16:00:00Z",
     description: "Timestamp when the store was created (ISO string)",
   })
-  createdAt: string;
+  created_at: string;
 
   @ApiProperty({
     example: "2025-07-07T16:30:00Z",
     description: "Timestamp when the store was last updated (ISO string)",
   })
-  updatedAt: string;
+  updated_at: string;
+
+  @ApiProperty({
+    example: "ChIJd8BlQ2BZwokRAFUEcm_qrcA",
+    description:
+      "Google Place ID for the store (unique identifier from Google Places API)",
+  })
+  place_id: string;
 }
