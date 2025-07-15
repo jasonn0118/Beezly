@@ -154,6 +154,7 @@ jobs:
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: beezly_test
+          POSTGRES_USER: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -197,8 +198,8 @@ jobs:
             sleep 2
           done
           
-          # Create test database with PostGIS extension (using trust auth)
-          psql -h localhost -d beezly_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          # Create test database with PostGIS extension (using trust auth with postgres user)
+          psql -h localhost -U postgres -d beezly_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
           
           echo "✅ Test database created with PostGIS support"
 
@@ -230,13 +231,13 @@ jobs:
           echo "🔍 Testing database connection and PostGIS functionality..."
           
           # Test basic PostgreSQL connection
-          psql -h localhost -d beezly_test -c "SELECT version();"
+          psql -h localhost -U postgres -d beezly_test -c "SELECT version();"
           
           # Test PostGIS availability
-          psql -h localhost -d beezly_test -c "SELECT PostGIS_Version();"
+          psql -h localhost -U postgres -d beezly_test -c "SELECT PostGIS_Version();"
           
           # Test PostGIS geometric functions
-          psql -h localhost -d beezly_test -c "SELECT ST_GeomFromText('POINT(0 0)');"
+          psql -h localhost -U postgres -d beezly_test -c "SELECT ST_GeomFromText('POINT(0 0)');"
           
           echo "✅ Database and PostGIS validation successful"
 
@@ -284,6 +285,7 @@ jobs:
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: beezly_migration_test
+          POSTGRES_USER: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -327,8 +329,8 @@ jobs:
             sleep 2
           done
           
-          # Create migration test database with PostGIS (using trust auth)
-          psql -h localhost -d beezly_migration_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          # Create migration test database with PostGIS (using trust auth with postgres user)
+          psql -h localhost -U postgres -d beezly_migration_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
           
           echo "✅ Migration test database created"
 
@@ -371,7 +373,7 @@ jobs:
           echo "🗺️  Testing PostGIS spatial functionality for future geo features..."
           
           # Test spatial indexing capabilities
-          psql -h localhost -d beezly_migration_test -c "
+          psql -h localhost -U postgres -d beezly_migration_test -c "
             -- Test creating a spatial table (similar to future Store locations)
             CREATE TABLE test_spatial_table (
               id SERIAL PRIMARY KEY,

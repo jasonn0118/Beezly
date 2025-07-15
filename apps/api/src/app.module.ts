@@ -23,11 +23,18 @@ import { UserModule } from './user/user.module';
         port: parseInt(process.env.DB_PORT || '5432', 10),
         username: process.env.DB_USERNAME || 'postgres',
         password: process.env.DB_PASSWORD || 'password',
-        database: process.env.DB_NAME || (process.env.NODE_ENV === 'test' ? 'beezly_test' : 'beezly_db'),
+        database:
+          process.env.DB_NAME ||
+          (process.env.NODE_ENV === 'test' ? 'beezly_test' : 'beezly_db'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: process.env.NODE_ENV !== 'production', // Auto-sync schema in dev/test, not in production
-        logging: process.env.NODE_ENV === 'development' || process.env.DB_LOGGING === 'true',
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+        logging:
+          process.env.NODE_ENV === 'development' ||
+          process.env.DB_LOGGING === 'true',
+        ssl:
+          process.env.NODE_ENV === 'production'
+            ? { rejectUnauthorized: false }
+            : false,
         // Test environment specific settings
         dropSchema: process.env.NODE_ENV === 'test', // Clean slate for each test run
       }),
