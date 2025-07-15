@@ -154,7 +154,6 @@ jobs:
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: beezly_test
-          POSTGRES_USER: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -213,9 +212,6 @@ jobs:
           DB_USERNAME=postgres
           DB_NAME=beezly_test
           DB_LOGGING=false
-          JWT_SECRET=test_jwt_secret_key_for_ci
-          SUPABASE_URL=test_supabase_url
-          SUPABASE_SERVICE_ROLE_KEY=test_service_role_key
           EOF
           echo "✅ Test environment file created"
 
@@ -285,7 +281,6 @@ jobs:
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: beezly_migration_test
-          POSTGRES_USER: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
