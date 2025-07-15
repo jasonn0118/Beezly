@@ -23,7 +23,7 @@
     "turbo": "^2.5.4"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.50.3",
+    "@supabase/supabase-js": "^2.51.0",
     "@nestjs/swagger": "^11.2.0"
   }
 }
