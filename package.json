@@ -20,10 +20,12 @@
   "license": "ISC",
   "packageManager": "pnpm@10.11.0",
   "devDependencies": {
+    "@types/uuid": "^10.0.0",
     "turbo": "^2.5.4"
   },
   "dependencies": {
+    "@nestjs/swagger": "^11.2.0",
     "@supabase/supabase-js": "^2.50.3",
-    "@nestjs/swagger": "^11.2.0"
+    "uuid": "^11.1.0"
   }
 }
