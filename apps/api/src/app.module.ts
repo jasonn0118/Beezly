@@ -10,6 +10,7 @@ import { ReceiptModule } from './receipt/receipt.module';
 import { ReceiptItemModule } from './receiptItem/receiptItem.module';
 import { StoreModule } from './store/store.module';
 import { UserModule } from './user/user.module';
+import { CategoryModule } from './category/category.module';
 
 @Module({
   imports: [
@@ -19,24 +20,22 @@ import { UserModule } from './user/user.module';
     TypeOrmModule.forRootAsync({
       useFactory: () => ({
         type: 'postgres',
-        host: process.env.NEXT_PUBLIC_SUPABASE_URL || 'localhost',
-        port: parseInt(process.env.DB_PORT || '5000', 10),
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432', 10),
         username: process.env.DB_USERNAME || 'postgres',
         password: process.env.DB_PASSWORD || 'password',
         database:
           process.env.DB_NAME ||
           (process.env.NODE_ENV === 'test' ? 'beezly_test' : 'beezly_db'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: process.env.NODE_ENV !== 'production', // Auto-sync schema in dev/test, not in production
+        synchronize: process.env.NODE_ENV !== 'production',
         logging:
           process.env.NODE_ENV === 'development' ||
           process.env.DB_LOGGING === 'true',
-        ssl:
-          process.env.NODE_ENV === 'production'
-            ? { rejectUnauthorized: false }
-            : false,
-        // Test environment specific settings
-        dropSchema: process.env.NODE_ENV === 'test', // Clean slate for each test run
+        ssl: {
+          rejectUnauthorized: false,
+        },
+        dropSchema: process.env.NODE_ENV === 'test',
       }),
     }),
     AuthModule,
@@ -45,6 +44,7 @@ import { UserModule } from './user/user.module';
     ReceiptItemModule,
     StoreModule,
     UserModule,
+    CategoryModule,
   ],
   controllers: [AppController],
   providers: [AppService, DatabaseHealthCheckService],

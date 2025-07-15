@@ -67,4 +67,13 @@ export class AppController {
   getMe() {
     return this.appService.getMe();
   }
+
+  /**
+   * Retrieves all categories from the Category module.
+   * GET /categories
+   */
+  @Get('categories')
+  getCategories() {
+    return this.appService.getCategories();
+  }
 }
