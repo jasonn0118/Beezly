@@ -135,7 +135,7 @@ Go to Repository Settings → Secrets and variables → Actions, then add:
 #### 0. Turbo Remote Caching (Optional but Recommended)
 ```
 Secret Name: TURBO_TOKEN
-Purpose: Turbo remote caching for faster builds
+Purpose: Turbo remote caching authentication token
 ```
 
 ```
@@ -148,6 +148,13 @@ Purpose: Turbo team identifier for remote caching
 2. Create a team and get your team ID
 3. Generate a token for remote caching
 4. Add both as GitHub secrets for optimized build performance
+
+**Benefits:**
+- Faster builds by sharing cache across CI runs
+- Reduced build times for unchanged code
+- Shared cache between team members and CI
+
+**Note:** Artifact signing is disabled (`signature: false`) for simplified setup.
 
 #### 1. Discord Notifications
 ```
@@ -343,6 +350,13 @@ pnpm install
 - Verify Node.js and pnpm versions match local setup
 - Ensure all required secrets are configured
 - Check if GitHub Actions limits are reached
+
+#### 6. Turbo Remote Caching Issues
+```bash
+# If you see: "signing artifact failed: signature secret key not found"
+# This warning is expected and safe to ignore
+```
+**Note:** Artifact signing is disabled in `turbo.json` (`signature: false`) for simplified setup. The warning is harmless and remote caching will still work.
 
 ### Debug Commands
 ```bash
