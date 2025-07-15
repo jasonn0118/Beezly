@@ -1,7 +1,7 @@
-import { NestFactory } from '@nestjs/core';
 import { INestApplication } from '@nestjs/common';
-import { AppModule } from './app.module';
+import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app: INestApplication = await NestFactory.create(AppModule);
@@ -16,6 +16,6 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api-docs', app, document);
 
-  await app.listen(5000);
+  await app.listen(3001);
 }
 void bootstrap();

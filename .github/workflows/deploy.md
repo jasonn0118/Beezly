@@ -122,12 +122,39 @@ pnpm run lint                # Lint all apps
 pnpm run build               # Build all apps  
 pnpm run test --filter=api   # Run API tests
 pnpm run type-check          # TypeScript validation
+
+# Database operations
+pnpm dev --filter=api        # Starts API with database health check
 ```
 
 ## 🔧 GitHub Secrets Configuration
 
 ### Required Secrets
 Go to Repository Settings → Secrets and variables → Actions, then add:
+
+#### 0. Turbo Remote Caching (Optional but Recommended)
+```
+Secret Name: TURBO_TOKEN
+Purpose: Turbo remote caching authentication token
+```
+
+```
+Secret Name: TURBO_TEAM
+Purpose: Turbo team identifier for remote caching
+```
+
+**Setup Steps:**
+1. Sign up at https://vercel.com/turbo
+2. Create a team and get your team ID
+3. Generate a token for remote caching
+4. Add both as GitHub secrets for optimized build performance
+
+**Benefits:**
+- Faster builds by sharing cache across CI runs
+- Reduced build times for unchanged code
+- Shared cache between team members and CI
+
+**Note:** Artifact signing is disabled (`signature: false`) for simplified setup.
 
 #### 1. Discord Notifications
 ```
@@ -324,6 +351,13 @@ pnpm install
 - Ensure all required secrets are configured
 - Check if GitHub Actions limits are reached
 
+#### 6. Turbo Remote Caching Issues
+```bash
+# If you see: "signing artifact failed: signature secret key not found"
+# This warning is expected and safe to ignore
+```
+**Note:** Artifact signing is disabled in `turbo.json` (`signature: false`) for simplified setup. The warning is harmless and remote caching will still work.
+
 ### Debug Commands
 ```bash
 # Local debugging
@@ -344,8 +378,11 @@ gh run list
 - **Install Script**: `.github/workflows/install-deps.sh`
 
 ### Performance Optimizations
-- **Turbo Caching**: Monorepo build caching with Turborepo
+- **Turbo Remote Caching**: Cloud-based build caching with Vercel Turbo
+- **Turbo Local Caching**: Monorepo build caching with Turborepo
 - **Dependency Caching**: GitHub Actions cache for node_modules
+- **Build Parallelization**: Centralized build job with dependency management
+- **Smart Cache Keys**: SHA-based caching with fallback strategies
 - **Build Caching**: Cached build outputs between runs
 - **Parallel Jobs**: Lint, test, and build run simultaneously
 - **Smart Fallbacks**: Graceful handling of cache misses
