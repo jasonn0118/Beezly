@@ -1,61 +1,202 @@
 version: 2
 updates:
-  # Root package.json
+  # Root package.json - Workspace dependencies
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
     open-pull-requests-limit: 10
     reviewers:
+      - "jasonn0118"
+    assignees:
       - "jasonn0118"
     labels:
       - "dependencies"
       - "automerge"
+      - "workspace"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # Group minor and patch updates to reduce PR noise
+    groups:
+      workspace-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  # Web app dependencies
+  # Web app dependencies - Next.js and React ecosystem
   - package-ecosystem: "npm"
     directory: "/apps/web"
     schedule:
       interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
     open-pull-requests-limit: 5
     reviewers:
+      - "jasonn0118"
+    assignees:
       - "jasonn0118"
     labels:
       - "dependencies"
       - "web"
+      - "frontend"
+    commit-message:
+      prefix: "chore(deps-web)"
+      include: "scope"
+    # Ignore major updates for stability
+    ignore:
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+    groups:
+      react-ecosystem:
+        patterns:
+          - "react*"
+          - "@types/react*"
+        update-types:
+          - "minor"
+          - "patch"
+      nextjs-ecosystem:
+        patterns:
+          - "next*"
+          - "@next/*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  # API dependencies
+  # API dependencies - NestJS, TypeORM, Database drivers
   - package-ecosystem: "npm"
     directory: "/apps/api"
     schedule:
       interval: "weekly"
+      day: "wednesday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
     open-pull-requests-limit: 5
     reviewers:
+      - "jasonn0118"
+    assignees:
       - "jasonn0118"
     labels:
       - "dependencies"
       - "api"
+      - "backend"
+      - "database"
+    commit-message:
+      prefix: "chore(deps-api)"
+      include: "scope"
+    # Critical database and security dependencies get individual PRs
+    ignore:
+      - dependency-name: "@nestjs/core"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typeorm"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pg"
+        update-types: ["version-update:semver-major"]
+    groups:
+      nestjs-core:
+        patterns:
+          - "@nestjs/*"
+        update-types:
+          - "minor"
+          - "patch"
+      database-drivers:
+        patterns:
+          - "pg"
+          - "@types/pg"
+          - "typeorm"
+          - "@nestjs/typeorm"
+        update-types:
+          - "minor"
+          - "patch"
+      security-deps:
+        patterns:
+          - "*jwt*"
+          - "*crypto*"
+          - "*bcrypt*"
+          - "*helmet*"
+        # Security updates always get individual PRs
+        update-types: []
 
-  # Mobile app dependencies
+  # Mobile app dependencies - Expo and React Native
   - package-ecosystem: "npm"
     directory: "/apps/mobile"
     schedule:
       interval: "weekly"
+      day: "thursday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
     open-pull-requests-limit: 5
     reviewers:
+      - "jasonn0118"
+    assignees:
       - "jasonn0118"
     labels:
       - "dependencies"
       - "mobile"
+      - "expo"
+      - "react-native"
+    commit-message:
+      prefix: "chore(deps-mobile)"
+      include: "scope"
+    # Expo SDK updates require careful testing
+    ignore:
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major"]
+    groups:
+      expo-ecosystem:
+        patterns:
+          - "expo*"
+          - "@expo/*"
+        update-types:
+          - "minor"
+          - "patch"
+      react-native-ecosystem:
+        patterns:
+          - "react-native*"
+          - "@react-native*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  # GitHub Actions
+  # GitHub Actions - Security and CI/CD updates
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
     open-pull-requests-limit: 3
     reviewers:
+      - "jasonn0118"
+    assignees:
       - "jasonn0118"
     labels:
       - "github-actions"
       - "dependencies"
+      - "ci-cd"
+      - "security"
+    commit-message:
+      prefix: "chore(deps-actions)"
+      include: "scope"
+    # Group all GitHub Actions updates together
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
