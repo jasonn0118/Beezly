@@ -1,5 +1,8 @@
 {
     "$schema": "https://turborepo.org/schema.json",
+    "remoteCache": {
+      "signature": true
+    },
     "tasks": {
       "dev": {
         "cache": false,
@@ -7,20 +10,26 @@
       },
       "build": {
         "outputs": ["dist/**", ".next/**", "build/**"],
-        "dependsOn": ["^build"]
+        "dependsOn": ["^build"],
+        "inputs": ["src/**", "*.config.*", "package.json"]
       },
       "lint": {
-        "outputs": []
+        "outputs": [],
+        "inputs": ["src/**", "*.config.*", ".eslintrc.*", "package.json"]
       },
       "test": {
         "outputs": ["coverage/**"],
-        "dependsOn": ["^build"]
+        "dependsOn": ["^build"],
+        "inputs": ["src/**", "test/**", "*.config.*", "package.json"]
       },
       "test:e2e": {
-        "outputs": []
+        "outputs": [],
+        "dependsOn": ["^build"],
+        "inputs": ["src/**", "test/**", "*.config.*", "package.json"]
       },
       "type-check": {
-        "outputs": []
+        "outputs": [],
+        "inputs": ["src/**", "*.config.*", "tsconfig*.json", "package.json"]
       }
     }
   }
