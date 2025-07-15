@@ -12,7 +12,7 @@ export class CategoryService {
       data,
       error,
     }: { data: CategoryDTO[] | null; error: PostgrestError | null } =
-      await supabase.from(this.table).select('*');
+      await supabase.from('Category').select('*');
 
     if (error) throw new Error(error.message);
     return data ?? [];
@@ -23,7 +23,7 @@ export class CategoryService {
       data,
       error,
     }: { data: CategoryDTO | null; error: PostgrestError | null } =
-      await supabase.from(this.table).select('*').eq('id', id).single();
+      await supabase.from('Category').select('*').eq('id', id).single();
 
     if (error) throw new Error(error.message);
     return data!;
@@ -34,7 +34,7 @@ export class CategoryService {
       data,
       error,
     }: { data: CategoryDTO | null; error: PostgrestError | null } =
-      await supabase.from(this.table).insert([category]).select().single();
+      await supabase.from('Category').insert([category]).select().single();
 
     if (error) throw new Error(error.message);
     return data!;
