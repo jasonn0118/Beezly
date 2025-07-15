@@ -122,6 +122,9 @@ pnpm run lint                # Lint all apps
 pnpm run build               # Build all apps  
 pnpm run test --filter=api   # Run API tests
 pnpm run type-check          # TypeScript validation
+
+# Database operations
+pnpm dev --filter=api        # Starts API with database health check
 ```
 
 ## 🔧 GitHub Secrets Configuration

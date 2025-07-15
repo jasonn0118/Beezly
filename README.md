@@ -48,6 +48,7 @@ cd apps/ai && uvicorn app.main:app --port 8000 #Add later
 - [FastAPI + Python](https://fastapi.tiangolo.com/)
 - [Supabase](https://supabase.com/) (Auth, storage)
 - [PostgreSQL + PostGIS](https://postgis.net/)
+- [TypeORM](https://typeorm.io/) (Database ORM with geospatial support)
 - [OpenAI](https://openai.com/) (NLP summary)
 
 ## 📦 Scripts
