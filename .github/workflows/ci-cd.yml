@@ -152,8 +152,7 @@ jobs:
       postgres:
         image: postgis/postgis:17-3.5
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: beezly_test
         options: >-
           --health-cmd pg_isready
@@ -193,14 +192,13 @@ jobs:
       - name: Setup test database
         run: |
           # Wait for PostgreSQL to be ready
-          until pg_isready -h localhost -p 5432 -U postgres; do
+          until pg_isready -h localhost -p 5432; do
             echo "Waiting for PostgreSQL to start..."
             sleep 2
           done
           
-          # Create test database with PostGIS extension
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE beezly_test;" || true
-          PGPASSWORD=postgres psql -h localhost -U postgres -d beezly_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          # Create test database with PostGIS extension (using trust auth)
+          psql -h localhost -d beezly_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
           
           echo "✅ Test database created with PostGIS support"
 
@@ -212,7 +210,6 @@ jobs:
           DB_HOST=localhost
           DB_PORT=5432
           DB_USERNAME=postgres
-          DB_PASSWORD=postgres
           DB_NAME=beezly_test
           DB_LOGGING=false
           JWT_SECRET=test_jwt_secret_key_for_ci
@@ -228,19 +225,18 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USERNAME: postgres
-          DB_PASSWORD: postgres
           DB_NAME: beezly_test
         run: |
           echo "🔍 Testing database connection and PostGIS functionality..."
           
           # Test basic PostgreSQL connection
-          PGPASSWORD=postgres psql -h localhost -U postgres -d beezly_test -c "SELECT version();"
+          psql -h localhost -d beezly_test -c "SELECT version();"
           
           # Test PostGIS availability
-          PGPASSWORD=postgres psql -h localhost -U postgres -d beezly_test -c "SELECT PostGIS_Version();"
+          psql -h localhost -d beezly_test -c "SELECT PostGIS_Version();"
           
           # Test PostGIS geometric functions
-          PGPASSWORD=postgres psql -h localhost -U postgres -d beezly_test -c "SELECT ST_GeomFromText('POINT(0 0)');"
+          psql -h localhost -d beezly_test -c "SELECT ST_GeomFromText('POINT(0 0)');"
           
           echo "✅ Database and PostGIS validation successful"
 
@@ -257,7 +253,6 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USERNAME: postgres
-          DB_PASSWORD: postgres
           DB_NAME: beezly_test
           DB_LOGGING: false
         run: pnpm test
@@ -269,7 +264,6 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USERNAME: postgres
-          DB_PASSWORD: postgres
           DB_NAME: beezly_test
           DB_LOGGING: false
         run: pnpm test:e2e
@@ -288,8 +282,7 @@ jobs:
       postgres:
         image: postgis/postgis:17-3.5
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: beezly_migration_test
         options: >-
           --health-cmd pg_isready
@@ -329,14 +322,13 @@ jobs:
       - name: Setup migration test database
         run: |
           # Wait for PostgreSQL to be ready
-          until pg_isready -h localhost -p 5432 -U postgres; do
+          until pg_isready -h localhost -p 5432; do
             echo "Waiting for PostgreSQL to start..."
             sleep 2
           done
           
-          # Create migration test database with PostGIS
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE beezly_migration_test;" || true
-          PGPASSWORD=postgres psql -h localhost -U postgres -d beezly_migration_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          # Create migration test database with PostGIS (using trust auth)
+          psql -h localhost -d beezly_migration_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
           
           echo "✅ Migration test database created"
 
@@ -347,7 +339,6 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USERNAME: postgres
-          DB_PASSWORD: postgres
           DB_NAME: beezly_migration_test
         run: |
           echo "🔍 Checking for database migrations..."
@@ -380,7 +371,7 @@ jobs:
           echo "🗺️  Testing PostGIS spatial functionality for future geo features..."
           
           # Test spatial indexing capabilities
-          PGPASSWORD=postgres psql -h localhost -U postgres -d beezly_migration_test -c "
+          psql -h localhost -d beezly_migration_test -c "
             -- Test creating a spatial table (similar to future Store locations)
             CREATE TABLE test_spatial_table (
               id SERIAL PRIMARY KEY,
