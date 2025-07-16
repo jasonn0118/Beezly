@@ -5,7 +5,7 @@ import { Store } from './store.entity';
 
 @Entity('Price')
 export class Price extends BaseEntity {
-  @Column({ name: 'price_sk', unique: true })
+  @Column({ name: 'price_sk', type: 'uuid', unique: true })
   @Generated('uuid')
   priceSk: string;
 
@@ -13,14 +13,14 @@ export class Price extends BaseEntity {
   @JoinColumn({ name: 'product_sk', referencedColumnName: 'productSk' })
   product?: Product;
 
-  @Column({ name: 'product_sk', nullable: true })
+  @Column({ name: 'product_sk', type: 'uuid', nullable: true })
   productSk?: string;
 
   @ManyToOne(() => Store, { nullable: true })
   @JoinColumn({ name: 'store_sk', referencedColumnName: 'storeSk' })
   store?: Store;
 
-  @Column({ name: 'store_sk', nullable: true })
+  @Column({ name: 'store_sk', type: 'uuid', nullable: true })
   storeSk?: string;
 
   @Column({ type: 'numeric' })

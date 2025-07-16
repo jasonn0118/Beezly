@@ -5,7 +5,7 @@ import { Product } from './product.entity';
 
 @Entity('ReceiptItem')
 export class ReceiptItem extends BaseEntity {
-  @Column({ name: 'receiptitem_sk', unique: true })
+  @Column({ name: 'receiptitem_sk', type: 'uuid', unique: true })
   @Generated('uuid')
   receiptitemSk: string;
 
@@ -13,14 +13,14 @@ export class ReceiptItem extends BaseEntity {
   @JoinColumn({ name: 'receipt_sk', referencedColumnName: 'receiptSk' })
   receipt?: Receipt;
 
-  @Column({ name: 'receipt_sk', nullable: true })
+  @Column({ name: 'receipt_sk', type: 'uuid', nullable: true })
   receiptSk?: string;
 
   @ManyToOne(() => Product, { nullable: true })
   @JoinColumn({ name: 'product_sk', referencedColumnName: 'productSk' })
   product?: Product;
 
-  @Column({ name: 'product_sk', nullable: true })
+  @Column({ name: 'product_sk', type: 'uuid', nullable: true })
   productSk?: string;
 
   @Column({ type: 'numeric' })
@@ -32,7 +32,6 @@ export class ReceiptItem extends BaseEntity {
   @Column({
     name: 'line_total',
     type: 'numeric',
-    default: () => 'price * quantity',
   })
   lineTotal: number;
 }
