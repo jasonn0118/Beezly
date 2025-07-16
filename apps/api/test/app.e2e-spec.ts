@@ -10,7 +10,7 @@ import { ReceiptService } from './../src/receipt/receipt.service';
 import { ReceiptItemService } from './../src/receiptItem/receiptItem.service';
 import { StoreService } from './../src/store/store.service';
 import { UserService } from './../src/user/user.service';
-import { CategoryService } from 'src/category/category.service';
+import { CategoryService } from './../src/category/category.service';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
