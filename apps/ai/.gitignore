@@ -1,1 +1,5 @@
-.env
+*.env
+.ipynb_checkpoints
+models
+__pycache__
+

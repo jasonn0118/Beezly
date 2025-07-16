@@ -9,7 +9,7 @@ export class DatabaseHealthCheckService implements OnModuleInit {
   async onModuleInit() {
     const env = process.env.NODE_ENV || 'development';
     console.log(`\n🔧 Environment: ${env}`);
-    console.log(`📊 Database: ${process.env.DB_NAME || 'default'}`);
+    console.log(`📊 Database: ${process.env.DB_NAME || 'postgres'}`);
     console.log(
       `🖥️  Host: ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`,
     );

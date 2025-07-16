@@ -5,6 +5,7 @@ import { ReceiptService } from './receipt/receipt.service';
 import { ReceiptItemService } from './receiptItem/receiptItem.service';
 import { StoreService } from './store/store.service';
 import { UserService } from './user/user.service';
+import { CategoryService } from './category/category.service';
 
 @Injectable()
 export class AppService {
@@ -15,13 +16,14 @@ export class AppService {
     private readonly receiptItemService: ReceiptItemService,
     private readonly storeService: StoreService,
     private readonly userService: UserService,
+    private readonly categoryService: CategoryService,
   ) {}
 
   /**
    * Returns a health check message to confirm that the API is running.
    */
   getHello(): string {
-    return 'API is running!';
+    return 'Hey Guys! Beezly API is running!';
   }
 
   /**
@@ -64,5 +66,12 @@ export class AppService {
    */
   async getMe() {
     return this.authService.getUser();
+  }
+
+  /**
+   * Fetches all categories from the Category module.
+   */
+  async getCategories() {
+    return this.categoryService.findAll();
   }
 }
