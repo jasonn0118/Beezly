@@ -10,6 +10,20 @@ import { ReceiptModule } from './receipt/receipt.module';
 import { ReceiptItemModule } from './receiptItem/receiptItem.module';
 import { StoreModule } from './store/store.module';
 import { UserModule } from './user/user.module';
+import {
+  User,
+  Store,
+  Receipt,
+  Product,
+  ReceiptItem,
+  Category,
+  Badges,
+  ScoreType,
+  UserBadges,
+  UserScore,
+  Price,
+  VerificationLogs,
+} from './entities';
 
 @Module({
   imports: [
@@ -26,7 +40,20 @@ import { UserModule } from './user/user.module';
         database:
           process.env.DB_NAME ||
           (process.env.NODE_ENV === 'test' ? 'beezly_test' : 'beezly_db'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        entities: [
+          User,
+          Store,
+          Receipt,
+          Product,
+          ReceiptItem,
+          Category,
+          Badges,
+          ScoreType,
+          UserBadges,
+          UserScore,
+          Price,
+          VerificationLogs,
+        ],
         synchronize: process.env.NODE_ENV !== 'production', // Auto-sync schema in dev/test, not in production
         logging:
           process.env.NODE_ENV === 'development' ||
