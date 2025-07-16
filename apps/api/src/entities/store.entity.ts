@@ -4,7 +4,7 @@ import { Receipt } from './receipt.entity';
 
 @Entity('Store')
 export class Store extends BaseEntity {
-  @Column({ name: 'store_sk', unique: true })
+  @Column({ name: 'store_sk', type: 'uuid', unique: true })
   @Generated('uuid')
   storeSk: string;
 
