@@ -8,8 +8,9 @@ import {
   Body,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { ReceiptService } from './receipt.service';
+import { ReceiptService, CreateReceiptRequest } from './receipt.service';
 import { ReceiptDTO } from '../../../packages/types/dto/receipt';
+import { CreateReceiptRequestDto } from './dto/create-receipt-request.dto';
 
 @ApiTags('Receipts')
 @Controller('receipts')
@@ -49,8 +50,23 @@ export class ReceiptController {
     description: 'Receipt successfully created',
     type: ReceiptDTO,
   })
-  async createReceipt(@Body() receiptData: ReceiptDTO): Promise<ReceiptDTO> {
-    return this.receiptService.createReceipt(receiptData);
+  async createReceipt(
+    @Body() receiptData: CreateReceiptRequestDto,
+  ): Promise<ReceiptDTO> {
+    // Convert DTO to service interface
+    const createRequest: CreateReceiptRequest = {
+      userId: receiptData.userId,
+      storeName: receiptData.storeName,
+      storeId: receiptData.storeId,
+      imageUrl: receiptData.imageUrl,
+      purchaseDate: receiptData.purchaseDate
+        ? new Date(receiptData.purchaseDate)
+        : undefined,
+      items: receiptData.items,
+      totalAmount: receiptData.totalAmount,
+    };
+
+    return this.receiptService.createReceipt(createRequest);
   }
 
   @Put(':id')
