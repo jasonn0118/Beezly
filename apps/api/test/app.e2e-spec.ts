@@ -10,6 +10,7 @@ import { ReceiptService } from './../src/receipt/receipt.service';
 import { ReceiptItemService } from './../src/receiptItem/receiptItem.service';
 import { StoreService } from './../src/store/store.service';
 import { UserService } from './../src/user/user.service';
+import { CategoryService } from 'src/category/category.service';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -40,6 +41,10 @@ describe('AppController (e2e)', () => {
     getAllUsers: jest.fn().mockResolvedValue([]),
   };
 
+  const mockCategoryService = {
+    getAllCategories: jest.fn().mockResolvedValue([]),
+  };
+
   beforeEach(async () => {
     // Clear all mocks before each test
     jest.clearAllMocks();
@@ -55,6 +60,7 @@ describe('AppController (e2e)', () => {
         { provide: ReceiptItemService, useValue: mockReceiptItemService },
         { provide: StoreService, useValue: mockStoreService },
         { provide: UserService, useValue: mockUserService },
+        { provide: CategoryService, useValue: mockCategoryService },
       ],
     }).compile();
 
