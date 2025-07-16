@@ -13,7 +13,7 @@ import { ReceiptItem } from './receipt-item.entity';
 
 @Entity('Receipt')
 export class Receipt extends BaseEntity {
-  @Column({ name: 'receipt_sk', unique: true })
+  @Column({ name: 'receipt_sk', type: 'uuid', unique: true })
   @Generated('uuid')
   receiptSk: string;
 
@@ -21,14 +21,14 @@ export class Receipt extends BaseEntity {
   @JoinColumn({ name: 'user_sk', referencedColumnName: 'userSk' })
   user?: User;
 
-  @Column({ name: 'user_sk', nullable: true })
+  @Column({ name: 'user_sk', type: 'uuid', nullable: true })
   userSk?: string;
 
   @ManyToOne(() => Store, { nullable: true })
   @JoinColumn({ name: 'store_sk', referencedColumnName: 'storeSk' })
   store?: Store;
 
-  @Column({ name: 'store_sk', nullable: true })
+  @Column({ name: 'store_sk', type: 'uuid', nullable: true })
   storeSk?: string;
 
   @Column({ name: 'image_url', nullable: true })

@@ -12,7 +12,7 @@ import { Category } from './category.entity';
 
 @Entity('Product')
 export class Product extends BaseEntity {
-  @Column({ name: 'product_sk', unique: true })
+  @Column({ name: 'product_sk', type: 'uuid', unique: true })
   @Generated('uuid')
   productSk: string;
 
