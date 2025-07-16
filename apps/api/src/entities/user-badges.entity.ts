@@ -10,7 +10,11 @@ export class UserBadges {
   @PrimaryColumn({ name: 'badge_id', type: 'int' })
   badgeId: number;
 
-  @Column({ name: 'awarded_at', type: 'timestamp with time zone', default: () => 'now()' })
+  @Column({
+    name: 'awarded_at',
+    type: 'timestamp with time zone',
+    default: () => 'now()',
+  })
   awardedAt: Date;
 
   // Relationships

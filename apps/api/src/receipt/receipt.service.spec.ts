@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { ReceiptService } from './receipt.service';
 import { Receipt } from '../entities/receipt.entity';
 import { Store } from '../entities/store.entity';
@@ -10,11 +9,6 @@ import { ProductService } from '../product/product.service';
 
 describe('ReceiptService', () => {
   let service: ReceiptService;
-  let receiptRepository: Repository<Receipt>;
-  let storeRepository: Repository<Store>;
-  let userService: UserService;
-  let storeService: StoreService;
-  let productService: ProductService;
 
   const mockReceiptRepository = {
     find: jest.fn(),
@@ -73,11 +67,6 @@ describe('ReceiptService', () => {
     }).compile();
 
     service = module.get<ReceiptService>(ReceiptService);
-    receiptRepository = module.get<Repository<Receipt>>(getRepositoryToken(Receipt));
-    storeRepository = module.get<Repository<Store>>(getRepositoryToken(Store));
-    userService = module.get<UserService>(UserService);
-    storeService = module.get<StoreService>(StoreService);
-    productService = module.get<ProductService>(ProductService);
   });
 
   it('should be defined', () => {
@@ -115,7 +104,7 @@ describe('ReceiptService', () => {
       });
 
       const result = await service.getAllReceipts();
-      
+
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('receipt-uuid-1');
       expect(mockReceiptRepository.find).toHaveBeenCalledWith({
@@ -156,7 +145,7 @@ describe('ReceiptService', () => {
       });
 
       const result = await service.getReceiptById('receipt-uuid-1');
-      
+
       expect(result).toBeDefined();
       expect(result?.id).toBe('receipt-uuid-1');
       expect(mockReceiptRepository.findOne).toHaveBeenCalledWith({
@@ -169,7 +158,7 @@ describe('ReceiptService', () => {
       mockReceiptRepository.findOne.mockResolvedValue(null);
 
       const result = await service.getReceiptById('non-existent-uuid');
-      
+
       expect(result).toBeNull();
     });
   });
@@ -213,9 +202,11 @@ describe('ReceiptService', () => {
         findOne: jest.fn(),
       };
 
-      mockReceiptRepository.manager.transaction.mockImplementation(async (callback) => {
-        return callback(mockManager);
-      });
+      mockReceiptRepository.manager.transaction.mockImplementation(
+        (callback: (manager: any) => Promise<any>) => {
+          return Promise.resolve(callback(mockManager));
+        },
+      );
 
       // Mock services
       mockUserService.getUserById.mockResolvedValue(mockUser);
@@ -246,8 +237,12 @@ describe('ReceiptService', () => {
       expect(result.id).toBe('receipt-uuid-1');
       expect(result.status).toBe('done');
       expect(mockUserService.getUserById).toHaveBeenCalledWith('user-uuid-1');
-      expect(mockStoreService.getStoreById).toHaveBeenCalledWith('store-uuid-1');
-      expect(mockProductService.getProductByBarcode).toHaveBeenCalledWith('1234567890');
+      expect(mockStoreService.getStoreById).toHaveBeenCalledWith(
+        'store-uuid-1',
+      );
+      expect(mockProductService.getProductByBarcode).toHaveBeenCalledWith(
+        '1234567890',
+      );
     });
 
     it('should create a receipt without user', async () => {
@@ -281,9 +276,11 @@ describe('ReceiptService', () => {
         findOne: jest.fn(),
       };
 
-      mockReceiptRepository.manager.transaction.mockImplementation(async (callback) => {
-        return callback(mockManager);
-      });
+      mockReceiptRepository.manager.transaction.mockImplementation(
+        (callback: (manager: any) => Promise<any>) => {
+          return Promise.resolve(callback(mockManager));
+        },
+      );
 
       // Mock store lookup
       mockStoreRepository.findOne.mockResolvedValue(null);
@@ -343,7 +340,9 @@ describe('ReceiptService', () => {
       };
 
       // Mock getReceiptEntityById
-      jest.spyOn(service as any, 'getReceiptEntityById').mockResolvedValue(mockReceipt);
+      jest
+        .spyOn(service as any, 'getReceiptEntityById')
+        .mockResolvedValue(mockReceipt);
       mockReceiptRepository.save.mockResolvedValue(updatedReceipt);
       mockReceiptRepository.findOne.mockResolvedValue(updatedReceipt);
 
@@ -360,7 +359,9 @@ describe('ReceiptService', () => {
         updatedAt: new Date().toISOString(),
       });
 
-      const result = await service.updateReceipt('receipt-uuid-1', { status: 'done' });
+      const result = await service.updateReceipt('receipt-uuid-1', {
+        status: 'done',
+      });
 
       expect(result).toBeDefined();
       expect(result.status).toBe('done');

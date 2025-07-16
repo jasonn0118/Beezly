@@ -30,7 +30,7 @@ export class ProductService {
       order: { name: 'ASC' },
     });
 
-    return products.map(product => this.mapProductToDTO(product));
+    return products.map((product) => this.mapProductToDTO(product));
   }
 
   async getProductById(id: string): Promise<NormalizedProductDTO | null> {
@@ -51,7 +51,9 @@ export class ProductService {
     return product ? this.mapProductToDTO(product) : null;
   }
 
-  async getProductByBarcode(barcode: string): Promise<NormalizedProductDTO | null> {
+  async getProductByBarcode(
+    barcode: string,
+  ): Promise<NormalizedProductDTO | null> {
     const product = await this.productRepository.findOne({
       where: { barcode },
       relations: ['categoryEntity', 'receiptItems'],
@@ -60,7 +62,9 @@ export class ProductService {
     return product ? this.mapProductToDTO(product) : null;
   }
 
-  async createProduct(productData: Partial<NormalizedProductDTO>): Promise<NormalizedProductDTO> {
+  async createProduct(
+    productData: Partial<NormalizedProductDTO>,
+  ): Promise<NormalizedProductDTO> {
     // Handle category lookup if category name is provided
     let categoryId: number | undefined;
     if (productData.category) {
@@ -82,7 +86,10 @@ export class ProductService {
     return this.mapProductToDTO(savedProduct);
   }
 
-  async updateProduct(id: string, productData: Partial<NormalizedProductDTO>): Promise<NormalizedProductDTO> {
+  async updateProduct(
+    id: string,
+    productData: Partial<NormalizedProductDTO>,
+  ): Promise<NormalizedProductDTO> {
     const product = await this.getProductEntityById(id);
     if (!product) {
       throw new NotFoundException(`Product with ID ${id} not found`);
@@ -90,8 +97,10 @@ export class ProductService {
 
     // Update fields
     if (productData.name !== undefined) product.name = productData.name;
-    if (productData.barcode !== undefined) product.barcode = productData.barcode;
-    if (productData.imageUrl !== undefined) product.imageUrl = productData.imageUrl;
+    if (productData.barcode !== undefined)
+      product.barcode = productData.barcode;
+    if (productData.imageUrl !== undefined)
+      product.imageUrl = productData.imageUrl;
 
     // Handle category update
     if (productData.category !== undefined) {
@@ -121,7 +130,10 @@ export class ProductService {
   /**
    * Search products by name (fuzzy search)
    */
-  async searchProductsByName(name: string, limit: number = 50): Promise<NormalizedProductDTO[]> {
+  async searchProductsByName(
+    name: string,
+    limit: number = 50,
+  ): Promise<NormalizedProductDTO[]> {
     const products = await this.productRepository.find({
       where: { name: ILike(`%${name}%`) },
       relations: ['categoryEntity'],
@@ -129,26 +141,31 @@ export class ProductService {
       order: { name: 'ASC' },
     });
 
-    return products.map(product => this.mapProductToDTO(product));
+    return products.map((product) => this.mapProductToDTO(product));
   }
 
   /**
    * Search products by barcode (exact match)
    */
-  async searchProductsByBarcode(barcode: string): Promise<NormalizedProductDTO[]> {
+  async searchProductsByBarcode(
+    barcode: string,
+  ): Promise<NormalizedProductDTO[]> {
     const products = await this.productRepository.find({
       where: { barcode: ILike(`%${barcode}%`) },
       relations: ['categoryEntity'],
       order: { name: 'ASC' },
     });
 
-    return products.map(product => this.mapProductToDTO(product));
+    return products.map((product) => this.mapProductToDTO(product));
   }
 
   /**
    * Get products by category
    */
-  async getProductsByCategory(categoryName: string, limit: number = 50): Promise<NormalizedProductDTO[]> {
+  async getProductsByCategory(
+    categoryName: string,
+    limit: number = 50,
+  ): Promise<NormalizedProductDTO[]> {
     const category = await this.categoryRepository.findOne({
       where: { name: ILike(`%${categoryName}%`) },
     });
@@ -164,13 +181,15 @@ export class ProductService {
       order: { name: 'ASC' },
     });
 
-    return products.map(product => this.mapProductToDTO(product));
+    return products.map((product) => this.mapProductToDTO(product));
   }
 
   /**
    * Advanced product search with multiple criteria
    */
-  async searchProducts(params: ProductSearchParams): Promise<NormalizedProductDTO[]> {
+  async searchProducts(
+    params: ProductSearchParams,
+  ): Promise<NormalizedProductDTO[]> {
     const { name, barcode, category, minPrice, maxPrice, limit = 50 } = params;
 
     let query = this.productRepository
@@ -184,23 +203,31 @@ export class ProductService {
     }
 
     if (barcode) {
-      query = query.andWhere('product.barcode ILIKE :barcode', { barcode: `%${barcode}%` });
+      query = query.andWhere('product.barcode ILIKE :barcode', {
+        barcode: `%${barcode}%`,
+      });
     }
 
     if (category) {
-      query = query.andWhere('category.name ILIKE :category', { category: `%${category}%` });
+      query = query.andWhere('category.name ILIKE :category', {
+        category: `%${category}%`,
+      });
     }
 
     // Add price filters (using average price from receipt items)
     if (minPrice !== undefined || maxPrice !== undefined) {
       query = query.having('AVG(receiptItem.price) IS NOT NULL');
-      
+
       if (minPrice !== undefined) {
-        query = query.andHaving('AVG(receiptItem.price) >= :minPrice', { minPrice });
+        query = query.andHaving('AVG(receiptItem.price) >= :minPrice', {
+          minPrice,
+        });
       }
-      
+
       if (maxPrice !== undefined) {
-        query = query.andHaving('AVG(receiptItem.price) <= :maxPrice', { maxPrice });
+        query = query.andHaving('AVG(receiptItem.price) <= :maxPrice', {
+          maxPrice,
+        });
       }
     }
 
@@ -211,29 +238,36 @@ export class ProductService {
       .limit(limit)
       .getMany();
 
-    return products.map(product => this.mapProductToDTO(product));
+    return products.map((product) => this.mapProductToDTO(product));
   }
 
   /**
    * Get most popular products (most receipt items)
    */
-  async getPopularProducts(limit: number = 20): Promise<NormalizedProductDTO[]> {
+  async getPopularProducts(
+    limit: number = 20,
+  ): Promise<NormalizedProductDTO[]> {
     const products = await this.productRepository
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.categoryEntity', 'category')
       .leftJoin('product.receiptItems', 'receiptItem')
-      .loadRelationCountAndMap('product.receiptItemCount', 'product.receiptItems')
+      .loadRelationCountAndMap(
+        'product.receiptItemCount',
+        'product.receiptItems',
+      )
       .orderBy('product.receiptItemCount', 'DESC')
       .limit(limit)
       .getMany();
 
-    return products.map(product => this.mapProductToDTO(product));
+    return products.map((product) => this.mapProductToDTO(product));
   }
 
   /**
    * Get products with highest verification score
    */
-  async getVerifiedProducts(limit: number = 20): Promise<NormalizedProductDTO[]> {
+  async getVerifiedProducts(
+    limit: number = 20,
+  ): Promise<NormalizedProductDTO[]> {
     const products = await this.productRepository.find({
       where: { verifiedCount: 5 }, // minimum 5 verifications
       relations: ['categoryEntity'],
@@ -241,29 +275,36 @@ export class ProductService {
       order: { creditScore: 'DESC' },
     });
 
-    return products.map(product => this.mapProductToDTO(product));
+    return products.map((product) => this.mapProductToDTO(product));
   }
 
   /**
    * Get products needing verification (low credit score)
    */
-  async getProductsNeedingVerification(limit: number = 20): Promise<NormalizedProductDTO[]> {
+  async getProductsNeedingVerification(
+    limit: number = 20,
+  ): Promise<NormalizedProductDTO[]> {
     const products = await this.productRepository
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.categoryEntity', 'category')
       .where('product.creditScore < :threshold', { threshold: 3 })
-      .orWhere('product.verifiedCount < :minVerifications', { minVerifications: 2 })
+      .orWhere('product.verifiedCount < :minVerifications', {
+        minVerifications: 2,
+      })
       .orderBy('product.creditScore', 'ASC')
       .limit(limit)
       .getMany();
 
-    return products.map(product => this.mapProductToDTO(product));
+    return products.map((product) => this.mapProductToDTO(product));
   }
 
   /**
    * Update product verification metrics
    */
-  async updateProductVerification(productSk: string, action: 'verify' | 'flag'): Promise<NormalizedProductDTO> {
+  async updateProductVerification(
+    productSk: string,
+    action: 'verify' | 'flag',
+  ): Promise<NormalizedProductDTO> {
     const product = await this.productRepository.findOne({
       where: { productSk },
       relations: ['categoryEntity'],

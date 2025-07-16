@@ -16,7 +16,7 @@ export class UserService {
       relations: ['receipts'],
     });
 
-    return users.map(user => this.mapUserToDTO(user));
+    return users.map((user) => this.mapUserToDTO(user));
   }
 
   async getUserById(id: string): Promise<UserProfileDTO | null> {
@@ -70,8 +70,10 @@ export class UserService {
 
     // Update fields
     if (userData.email) user.email = userData.email;
-    if (userData.displayName !== undefined) user.displayName = userData.displayName;
-    if (userData.pointBalance !== undefined) user.points = userData.pointBalance;
+    if (userData.displayName !== undefined)
+      user.displayName = userData.displayName;
+    if (userData.pointBalance !== undefined)
+      user.points = userData.pointBalance;
     if (userData.level !== undefined) user.level = userData.level;
 
     const updatedUser = await this.userRepository.save(user);
@@ -87,7 +89,10 @@ export class UserService {
     await this.userRepository.remove(user);
   }
 
-  async updateUserPoints(userSk: string, pointsDelta: number): Promise<UserProfileDTO> {
+  async updateUserPoints(
+    userSk: string,
+    pointsDelta: number,
+  ): Promise<UserProfileDTO> {
     const user = await this.userRepository.findOne({
       where: { userSk },
     });

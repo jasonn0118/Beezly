@@ -29,6 +29,10 @@ export class ReceiptItem extends BaseEntity {
   @Column({ type: 'int', default: 1 })
   quantity: number;
 
-  @Column({ name: 'line_total', type: 'numeric', default: () => 'price * quantity' })
+  @Column({
+    name: 'line_total',
+    type: 'numeric',
+    default: () => 'price * quantity',
+  })
   lineTotal: number;
 }

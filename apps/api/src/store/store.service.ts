@@ -15,6 +15,27 @@ export interface StoreDistance extends StoreDTO {
   distance: number; // Distance in kilometers
 }
 
+// Interface for raw query results from TypeORM
+interface RawStoreQueryResult {
+  store_sk: string;
+  name: string;
+  address?: string;
+  city?: string;
+  province?: string;
+  postal_code?: string;
+  latitude?: number;
+  longitude?: number;
+  place_id?: string;
+  created_at: string;
+  updated_at: string;
+  distance?: string; // Distance comes as string from SQL
+}
+
+// Interface for store data with placeId
+interface StoreDataWithPlaceId extends Partial<StoreDTO> {
+  placeId?: string;
+}
+
 @Injectable()
 export class StoreService {
   constructor(
@@ -27,7 +48,7 @@ export class StoreService {
       relations: ['receipts'],
     });
 
-    return stores.map(store => this.mapStoreToDTO(store));
+    return stores.map((store) => this.mapStoreToDTO(store));
   }
 
   async getStoreById(id: string): Promise<StoreDTO | null> {
@@ -66,14 +87,17 @@ export class StoreService {
       postalCode: storeData.postalCode,
       latitude: storeData.latitude,
       longitude: storeData.longitude,
-      placeId: (storeData as any).placeId,
+      placeId: (storeData as StoreDataWithPlaceId).placeId,
     });
 
     const savedStore = await this.storeRepository.save(store);
     return this.mapStoreToDTO(savedStore);
   }
 
-  async updateStore(id: string, storeData: Partial<StoreDTO>): Promise<StoreDTO> {
+  async updateStore(
+    id: string,
+    storeData: Partial<StoreDTO>,
+  ): Promise<StoreDTO> {
     const store = await this.getStoreEntityById(id);
     if (!store) {
       throw new NotFoundException(`Store with ID ${id} not found`);
@@ -84,10 +108,13 @@ export class StoreService {
     if (storeData.address !== undefined) store.address = storeData.address;
     if (storeData.city !== undefined) store.city = storeData.city;
     if (storeData.province !== undefined) store.province = storeData.province;
-    if (storeData.postalCode !== undefined) store.postalCode = storeData.postalCode;
+    if (storeData.postalCode !== undefined)
+      store.postalCode = storeData.postalCode;
     if (storeData.latitude !== undefined) store.latitude = storeData.latitude;
-    if (storeData.longitude !== undefined) store.longitude = storeData.longitude;
-    if ((storeData as any).placeId !== undefined) store.placeId = (storeData as any).placeId;
+    if (storeData.longitude !== undefined)
+      store.longitude = storeData.longitude;
+    if ((storeData as StoreDataWithPlaceId).placeId !== undefined)
+      store.placeId = (storeData as StoreDataWithPlaceId).placeId;
 
     const updatedStore = await this.storeRepository.save(store);
     return this.mapStoreToDTO(updatedStore);
@@ -108,7 +135,9 @@ export class StoreService {
    * Find stores within a specified radius of a location
    * Uses the Haversine formula for distance calculation
    */
-  async findStoresNearLocation(location: LocationSearch): Promise<StoreDistance[]> {
+  async findStoresNearLocation(
+    location: LocationSearch,
+  ): Promise<StoreDistance[]> {
     const { latitude, longitude, radiusKm = 10, limit = 50 } = location;
 
     const stores = await this.storeRepository
@@ -123,7 +152,7 @@ export class StoreService {
             sin(radians(:latitude)) * 
             sin(radians(store.latitude))
           )
-        ) AS distance`
+        ) AS distance`,
       ])
       .where('store.latitude IS NOT NULL')
       .andWhere('store.longitude IS NOT NULL')
@@ -133,42 +162,51 @@ export class StoreService {
       .setParameters({ latitude, longitude, radiusKm })
       .getRawMany();
 
-    return stores.map(store => ({
+    return stores.map((store: RawStoreQueryResult) => ({
       ...this.mapRawStoreToDTO(store),
-      distance: parseFloat(store.distance),
+      distance: parseFloat(store.distance || '0'),
     }));
   }
 
   /**
    * Find stores within a city
    */
-  async findStoresByCity(city: string, limit: number = 50): Promise<StoreDTO[]> {
+  async findStoresByCity(
+    city: string,
+    limit: number = 50,
+  ): Promise<StoreDTO[]> {
     const stores = await this.storeRepository.find({
       where: { city },
       take: limit,
       order: { name: 'ASC' },
     });
 
-    return stores.map(store => this.mapStoreToDTO(store));
+    return stores.map((store) => this.mapStoreToDTO(store));
   }
 
   /**
    * Find stores within a province/state
    */
-  async findStoresByProvince(province: string, limit: number = 50): Promise<StoreDTO[]> {
+  async findStoresByProvince(
+    province: string,
+    limit: number = 50,
+  ): Promise<StoreDTO[]> {
     const stores = await this.storeRepository.find({
       where: { province },
       take: limit,
       order: { city: 'ASC', name: 'ASC' },
     });
 
-    return stores.map(store => this.mapStoreToDTO(store));
+    return stores.map((store) => this.mapStoreToDTO(store));
   }
 
   /**
    * Search stores by name (fuzzy search)
    */
-  async searchStoresByName(name: string, limit: number = 50): Promise<StoreDTO[]> {
+  async searchStoresByName(
+    name: string,
+    limit: number = 50,
+  ): Promise<StoreDTO[]> {
     const stores = await this.storeRepository
       .createQueryBuilder('store')
       .where('store.name ILIKE :name', { name: `%${name}%` })
@@ -176,7 +214,7 @@ export class StoreService {
       .limit(limit)
       .getMany();
 
-    return stores.map(store => this.mapStoreToDTO(store));
+    return stores.map((store) => this.mapStoreToDTO(store));
   }
 
   /**
@@ -191,7 +229,7 @@ export class StoreService {
       .limit(limit)
       .getMany();
 
-    return stores.map(store => this.mapStoreToDTO(store));
+    return stores.map((store) => this.mapStoreToDTO(store));
   }
 
   /**
@@ -206,15 +244,24 @@ export class StoreService {
     radiusKm?: number;
     limit?: number;
   }): Promise<StoreDistance[]> {
-    const { name, city, province, latitude, longitude, radiusKm = 10, limit = 50 } = params;
+    const {
+      name,
+      city,
+      province,
+      latitude,
+      longitude,
+      radiusKm = 10,
+      limit = 50,
+    } = params;
 
     let query = this.storeRepository.createQueryBuilder('store');
 
     // Add distance calculation if coordinates provided
     if (latitude !== undefined && longitude !== undefined) {
-      query = query.select([
-        'store.*',
-        `(
+      query = query
+        .select([
+          'store.*',
+          `(
           6371 * acos(
             cos(radians(:latitude)) * 
             cos(radians(store.latitude)) * 
@@ -222,9 +269,9 @@ export class StoreService {
             sin(radians(:latitude)) * 
             sin(radians(store.latitude))
           )
-        ) AS distance`
-      ])
-      .setParameters({ latitude, longitude });
+        ) AS distance`,
+        ])
+        .setParameters({ latitude, longitude });
     } else {
       query = query.select('store.*');
     }
@@ -237,7 +284,9 @@ export class StoreService {
       query = query.andWhere('store.city ILIKE :city', { city: `%${city}%` });
     }
     if (province) {
-      query = query.andWhere('store.province ILIKE :province', { province: `%${province}%` });
+      query = query.andWhere('store.province ILIKE :province', {
+        province: `%${province}%`,
+      });
     }
 
     // Add distance filter if coordinates provided
@@ -254,7 +303,7 @@ export class StoreService {
 
     const stores = await query.limit(limit).getRawMany();
 
-    return stores.map(store => ({
+    return stores.map((store: RawStoreQueryResult) => ({
       ...this.mapRawStoreToDTO(store),
       distance: store.distance ? parseFloat(store.distance) : 0,
     }));
@@ -288,12 +337,13 @@ export class StoreService {
       postalCode: store.postalCode,
       latitude: store.latitude,
       longitude: store.longitude,
+      placeId: store.placeId,
       createdAt: store.createdAt.toISOString(),
       updatedAt: store.updatedAt.toISOString(),
     };
   }
 
-  private mapRawStoreToDTO(rawStore: any): StoreDTO {
+  private mapRawStoreToDTO(rawStore: RawStoreQueryResult): StoreDTO {
     return {
       id: rawStore.store_sk,
       name: rawStore.name,
@@ -303,6 +353,7 @@ export class StoreService {
       postalCode: rawStore.postal_code,
       latitude: rawStore.latitude,
       longitude: rawStore.longitude,
+      placeId: rawStore.place_id,
       createdAt: rawStore.created_at,
       updatedAt: rawStore.updated_at,
     };

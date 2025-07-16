@@ -91,10 +91,28 @@ export class StoreController {
 
   @Get('search/nearby')
   @ApiOperation({ summary: 'Find stores near a location' })
-  @ApiQuery({ name: 'latitude', description: 'Latitude coordinate', example: 43.6532 })
-  @ApiQuery({ name: 'longitude', description: 'Longitude coordinate', example: -79.3832 })
-  @ApiQuery({ name: 'radius', description: 'Search radius in km', example: 10, required: false })
-  @ApiQuery({ name: 'limit', description: 'Maximum number of results', example: 50, required: false })
+  @ApiQuery({
+    name: 'latitude',
+    description: 'Latitude coordinate',
+    example: 43.6532,
+  })
+  @ApiQuery({
+    name: 'longitude',
+    description: 'Longitude coordinate',
+    example: -79.3832,
+  })
+  @ApiQuery({
+    name: 'radius',
+    description: 'Search radius in km',
+    example: 10,
+    required: false,
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of results',
+    example: 50,
+    required: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'List of nearby stores with distances',
@@ -117,7 +135,12 @@ export class StoreController {
 
   @Get('search/city/:city')
   @ApiOperation({ summary: 'Find stores in a city' })
-  @ApiQuery({ name: 'limit', description: 'Maximum number of results', example: 50, required: false })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of results',
+    example: 50,
+    required: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'List of stores in the specified city',
@@ -127,12 +150,20 @@ export class StoreController {
     @Param('city') city: string,
     @Query('limit') limit?: string,
   ): Promise<StoreDTO[]> {
-    return this.storeService.findStoresByCity(city, limit ? parseInt(limit) : 50);
+    return this.storeService.findStoresByCity(
+      city,
+      limit ? parseInt(limit) : 50,
+    );
   }
 
   @Get('search/province/:province')
   @ApiOperation({ summary: 'Find stores in a province' })
-  @ApiQuery({ name: 'limit', description: 'Maximum number of results', example: 50, required: false })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of results',
+    example: 50,
+    required: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'List of stores in the specified province',
@@ -142,13 +173,25 @@ export class StoreController {
     @Param('province') province: string,
     @Query('limit') limit?: string,
   ): Promise<StoreDTO[]> {
-    return this.storeService.findStoresByProvince(province, limit ? parseInt(limit) : 50);
+    return this.storeService.findStoresByProvince(
+      province,
+      limit ? parseInt(limit) : 50,
+    );
   }
 
   @Get('search/name')
   @ApiOperation({ summary: 'Search stores by name' })
-  @ApiQuery({ name: 'name', description: 'Store name to search for', example: 'Walmart' })
-  @ApiQuery({ name: 'limit', description: 'Maximum number of results', example: 50, required: false })
+  @ApiQuery({
+    name: 'name',
+    description: 'Store name to search for',
+    example: 'Walmart',
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of results',
+    example: 50,
+    required: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'List of stores matching the name search',
@@ -158,12 +201,20 @@ export class StoreController {
     @Query('name') name: string,
     @Query('limit') limit?: string,
   ): Promise<StoreDTO[]> {
-    return this.storeService.searchStoresByName(name, limit ? parseInt(limit) : 50);
+    return this.storeService.searchStoresByName(
+      name,
+      limit ? parseInt(limit) : 50,
+    );
   }
 
   @Get('popular')
   @ApiOperation({ summary: 'Get popular stores (most receipts)' })
-  @ApiQuery({ name: 'limit', description: 'Maximum number of results', example: 20, required: false })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of results',
+    example: 20,
+    required: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'List of popular stores',
@@ -175,13 +226,37 @@ export class StoreController {
 
   @Get('search/advanced')
   @ApiOperation({ summary: 'Advanced store search with multiple criteria' })
-  @ApiQuery({ name: 'name', description: 'Store name to search for', required: false })
+  @ApiQuery({
+    name: 'name',
+    description: 'Store name to search for',
+    required: false,
+  })
   @ApiQuery({ name: 'city', description: 'City to search in', required: false })
-  @ApiQuery({ name: 'province', description: 'Province to search in', required: false })
-  @ApiQuery({ name: 'latitude', description: 'Latitude coordinate', required: false })
-  @ApiQuery({ name: 'longitude', description: 'Longitude coordinate', required: false })
-  @ApiQuery({ name: 'radius', description: 'Search radius in km', required: false })
-  @ApiQuery({ name: 'limit', description: 'Maximum number of results', required: false })
+  @ApiQuery({
+    name: 'province',
+    description: 'Province to search in',
+    required: false,
+  })
+  @ApiQuery({
+    name: 'latitude',
+    description: 'Latitude coordinate',
+    required: false,
+  })
+  @ApiQuery({
+    name: 'longitude',
+    description: 'Longitude coordinate',
+    required: false,
+  })
+  @ApiQuery({
+    name: 'radius',
+    description: 'Search radius in km',
+    required: false,
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of results',
+    required: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'List of stores matching the search criteria',

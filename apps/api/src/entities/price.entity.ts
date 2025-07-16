@@ -26,7 +26,11 @@ export class Price extends BaseEntity {
   @Column({ type: 'numeric' })
   price: number;
 
-  @Column({ name: 'recorded_at', type: 'timestamp with time zone', default: () => 'now()' })
+  @Column({
+    name: 'recorded_at',
+    type: 'timestamp with time zone',
+    default: () => 'now()',
+  })
   recordedAt: Date;
 
   @Column({ nullable: true })

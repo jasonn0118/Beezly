@@ -11,19 +11,19 @@ export class VerificationLogs extends BaseEntity {
   @Column({ name: 'user_id', nullable: true })
   userId?: string;
 
-  @Column({ 
+  @Column({
     type: 'varchar',
-    name: 'target_type', 
-    nullable: true
+    name: 'target_type',
+    nullable: true,
   })
   targetType?: 'Price' | 'Product';
 
   @Column({ name: 'target_id', nullable: true })
   targetId?: string;
 
-  @Column({ 
+  @Column({
     type: 'varchar',
-    nullable: true
+    nullable: true,
   })
   action?: 'Verify' | 'Flag' | 'Correct';
 }

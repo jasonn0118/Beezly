@@ -43,7 +43,7 @@ describe('AppController (e2e)', () => {
   beforeEach(async () => {
     // Clear all mocks before each test
     jest.clearAllMocks();
-    
+
     // Create a minimal test module with mocked dependencies
     moduleFixture = await Test.createTestingModule({
       controllers: [AppController],

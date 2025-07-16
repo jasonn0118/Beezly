@@ -56,7 +56,9 @@ export class ReceiptService {
       order: { createdAt: 'DESC' },
     });
 
-    return Promise.all(receipts.map(receipt => this.mapReceiptToDTO(receipt)));
+    return Promise.all(
+      receipts.map((receipt) => this.mapReceiptToDTO(receipt)),
+    );
   }
 
   async getReceiptById(id: string): Promise<ReceiptDTO | null> {
@@ -77,7 +79,10 @@ export class ReceiptService {
     return receipt ? this.mapReceiptToDTO(receipt) : null;
   }
 
-  async getReceiptsByUserId(userId: string, limit: number = 50): Promise<ReceiptDTO[]> {
+  async getReceiptsByUserId(
+    userId: string,
+    limit: number = 50,
+  ): Promise<ReceiptDTO[]> {
     const receipts = await this.receiptRepository.find({
       where: { userSk: userId },
       relations: ['user', 'store', 'items', 'items.product'],
@@ -85,10 +90,15 @@ export class ReceiptService {
       order: { createdAt: 'DESC' },
     });
 
-    return Promise.all(receipts.map(receipt => this.mapReceiptToDTO(receipt)));
+    return Promise.all(
+      receipts.map((receipt) => this.mapReceiptToDTO(receipt)),
+    );
   }
 
-  async getReceiptsByStoreId(storeId: string, limit: number = 50): Promise<ReceiptDTO[]> {
+  async getReceiptsByStoreId(
+    storeId: string,
+    limit: number = 50,
+  ): Promise<ReceiptDTO[]> {
     const receipts = await this.receiptRepository.find({
       where: { storeSk: storeId },
       relations: ['user', 'store', 'items', 'items.product'],
@@ -96,12 +106,14 @@ export class ReceiptService {
       order: { createdAt: 'DESC' },
     });
 
-    return Promise.all(receipts.map(receipt => this.mapReceiptToDTO(receipt)));
+    return Promise.all(
+      receipts.map((receipt) => this.mapReceiptToDTO(receipt)),
+    );
   }
 
   async createReceipt(receiptData: CreateReceiptRequest): Promise<ReceiptDTO> {
     // Start a transaction for creating receipt with items
-    return this.receiptRepository.manager.transaction(async manager => {
+    return this.receiptRepository.manager.transaction(async (manager) => {
       // Handle user lookup
       let userSk: string | undefined;
       if (receiptData.userId) {
@@ -113,7 +125,7 @@ export class ReceiptService {
 
       // Handle store lookup or creation
       let storeSk: string | undefined;
-      
+
       if (receiptData.storeId) {
         const store = await this.storeService.getStoreById(receiptData.storeId);
         if (store) {
@@ -130,7 +142,7 @@ export class ReceiptService {
       }
 
       // Calculate total amount if not provided (for future use)
-      // const totalAmount = receiptData.totalAmount || 
+      // const totalAmount = receiptData.totalAmount ||
       //   receiptData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
       // Create receipt
@@ -147,10 +159,12 @@ export class ReceiptService {
 
       // Create receipt items
       await Promise.all(
-        receiptData.items.map(async itemData => {
+        receiptData.items.map(async (itemData) => {
           // Try to find or create product
-          let product = await this.productService.getProductByBarcode(itemData.barcode || '');
-          
+          let product = await this.productService.getProductByBarcode(
+            itemData.barcode || '',
+          );
+
           if (!product) {
             // Create new product if not found
             product = await this.productService.createProduct({
@@ -169,7 +183,7 @@ export class ReceiptService {
           });
 
           return manager.save(receiptItem);
-        })
+        }),
       );
 
       // Update receipt status to done after successful processing
@@ -186,7 +200,10 @@ export class ReceiptService {
     });
   }
 
-  async updateReceipt(id: string, receiptData: Partial<ReceiptDTO>): Promise<ReceiptDTO> {
+  async updateReceipt(
+    id: string,
+    receiptData: Partial<ReceiptDTO>,
+  ): Promise<ReceiptDTO> {
     const receipt = await this.getReceiptEntityById(id);
     if (!receipt) {
       throw new NotFoundException(`Receipt with ID ${id} not found`);
@@ -201,7 +218,7 @@ export class ReceiptService {
     }
 
     const updatedReceipt = await this.receiptRepository.save(receipt);
-    
+
     // Reload with relations
     const completeReceipt = await this.receiptRepository.findOne({
       where: { id: updatedReceipt.id },
@@ -226,7 +243,16 @@ export class ReceiptService {
    * Search receipts with multiple criteria
    */
   async searchReceipts(params: ReceiptSearchParams): Promise<ReceiptDTO[]> {
-    const { userId, storeId, status, startDate, endDate, minAmount, maxAmount, limit = 50 } = params;
+    const {
+      userId,
+      storeId,
+      status,
+      startDate,
+      endDate,
+      minAmount,
+      maxAmount,
+      limit = 50,
+    } = params;
 
     let query = this.receiptRepository
       .createQueryBuilder('receipt')
@@ -249,7 +275,9 @@ export class ReceiptService {
     }
 
     if (startDate) {
-      query = query.andWhere('receipt.purchaseDate >= :startDate', { startDate });
+      query = query.andWhere('receipt.purchaseDate >= :startDate', {
+        startDate,
+      });
     }
 
     if (endDate) {
@@ -259,13 +287,17 @@ export class ReceiptService {
     // Calculate total amount from items and apply filters
     if (minAmount !== undefined || maxAmount !== undefined) {
       query = query.having('SUM(items.lineTotal) IS NOT NULL');
-      
+
       if (minAmount !== undefined) {
-        query = query.andHaving('SUM(items.lineTotal) >= :minAmount', { minAmount });
+        query = query.andHaving('SUM(items.lineTotal) >= :minAmount', {
+          minAmount,
+        });
       }
-      
+
       if (maxAmount !== undefined) {
-        query = query.andHaving('SUM(items.lineTotal) <= :maxAmount', { maxAmount });
+        query = query.andHaving('SUM(items.lineTotal) <= :maxAmount', {
+          maxAmount,
+        });
       }
     }
 
@@ -277,7 +309,9 @@ export class ReceiptService {
       .limit(limit)
       .getMany();
 
-    return Promise.all(receipts.map(receipt => this.mapReceiptToDTO(receipt)));
+    return Promise.all(
+      receipts.map((receipt) => this.mapReceiptToDTO(receipt)),
+    );
   }
 
   /**
@@ -298,16 +332,26 @@ export class ReceiptService {
       .getMany();
 
     const totalReceipts = receipts.length;
-    const totalSpent = receipts.reduce((sum, receipt) => 
-      sum + receipt.items.reduce((itemSum, item) => itemSum + Number(item.lineTotal), 0), 0);
+    const totalSpent = receipts.reduce(
+      (sum, receipt) =>
+        sum +
+        receipt.items.reduce(
+          (itemSum, item) => itemSum + Number(item.lineTotal),
+          0,
+        ),
+      0,
+    );
     const averageSpent = totalReceipts > 0 ? totalSpent / totalReceipts : 0;
 
     // Calculate top stores
     const storeStats = new Map<string, { count: number; totalSpent: number }>();
-    receipts.forEach(receipt => {
+    receipts.forEach((receipt) => {
       const storeName = receipt.store?.name || 'Unknown Store';
-      const receiptTotal = receipt.items.reduce((sum, item) => sum + Number(item.lineTotal), 0);
-      
+      const receiptTotal = receipt.items.reduce(
+        (sum, item) => sum + Number(item.lineTotal),
+        0,
+      );
+
       if (storeStats.has(storeName)) {
         const stats = storeStats.get(storeName)!;
         stats.count += 1;
@@ -333,15 +377,20 @@ export class ReceiptService {
   /**
    * Get receipts by status
    */
-  async getReceiptsByStatus(status: string, limit: number = 50): Promise<ReceiptDTO[]> {
+  async getReceiptsByStatus(
+    status: string,
+    limit: number = 50,
+  ): Promise<ReceiptDTO[]> {
     const receipts = await this.receiptRepository.find({
-      where: { status: status as any },
+      where: { status: status },
       relations: ['user', 'store', 'items', 'items.product'],
       take: limit,
       order: { createdAt: 'DESC' },
     });
 
-    return Promise.all(receipts.map(receipt => this.mapReceiptToDTO(receipt)));
+    return Promise.all(
+      receipts.map((receipt) => this.mapReceiptToDTO(receipt)),
+    );
   }
 
   /**
@@ -353,7 +402,7 @@ export class ReceiptService {
       throw new NotFoundException(`Receipt with ID ${id} not found`);
     }
 
-    receipt.status = status as any;
+    receipt.status = status;
     await this.receiptRepository.save(receipt);
 
     const completeReceipt = await this.receiptRepository.findOne({
@@ -388,7 +437,9 @@ export class ReceiptService {
     // Convert receipt items to product DTOs
     const items: NormalizedProductDTO[] = await Promise.all(
       receipt.items.map(async (item) => {
-        const product = item.product ? await this.productService.getProductById(item.product.productSk) : null;
+        const product = item.product
+          ? await this.productService.getProductById(item.product.productSk)
+          : null;
         return {
           id: item.productSk || 'unknown',
           name: product?.name || 'Unknown Product',
@@ -400,16 +451,20 @@ export class ReceiptService {
           createdAt: item.createdAt.toISOString(),
           updatedAt: item.updatedAt.toISOString(),
         };
-      })
+      }),
     );
 
     return {
       id: receipt.receiptSk, // Use UUID as the public ID
       userId: receipt.userSk,
       storeName: receipt.store?.name || 'Unknown Store',
-      purchaseDate: receipt.purchaseDate?.toISOString() || new Date().toISOString(),
+      purchaseDate:
+        receipt.purchaseDate?.toISOString() || new Date().toISOString(),
       status: receipt.status,
-      totalAmount: receipt.items.reduce((sum, item) => sum + Number(item.lineTotal), 0),
+      totalAmount: receipt.items.reduce(
+        (sum, item) => sum + Number(item.lineTotal),
+        0,
+      ),
       items,
       createdAt: receipt.createdAt.toISOString(),
       updatedAt: receipt.updatedAt.toISOString(),

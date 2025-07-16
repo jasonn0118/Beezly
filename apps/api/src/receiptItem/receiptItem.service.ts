@@ -14,6 +14,22 @@ export interface ReceiptItemSearchParams {
   limit?: number;
 }
 
+interface MostPurchasedProductRaw {
+  productId: string;
+  productName: string | null;
+  totalQuantity: string;
+  totalSpent: string;
+  receiptCount: string;
+}
+
+interface ProductPriceStatsRaw {
+  averagePrice: string | null;
+  minPrice: string | null;
+  maxPrice: string | null;
+  totalSold: string | null;
+  receiptCount: string | null;
+}
+
 @Injectable()
 export class ReceiptItemService {
   constructor(
@@ -28,7 +44,7 @@ export class ReceiptItemService {
       order: { createdAt: 'DESC' },
     });
 
-    return items.map(item => this.mapReceiptItemToDTO(item));
+    return items.map((item) => this.mapReceiptItemToDTO(item));
   }
 
   async getReceiptItemById(id: string): Promise<ReceiptItemDTO | null> {
@@ -49,7 +65,10 @@ export class ReceiptItemService {
     return item ? this.mapReceiptItemToDTO(item) : null;
   }
 
-  async getReceiptItemsByReceiptId(receiptId: string, limit: number = 50): Promise<ReceiptItemDTO[]> {
+  async getReceiptItemsByReceiptId(
+    receiptId: string,
+    limit: number = 50,
+  ): Promise<ReceiptItemDTO[]> {
     const items = await this.receiptItemRepository.find({
       where: { receiptSk: receiptId },
       relations: ['receipt', 'product'],
@@ -57,10 +76,13 @@ export class ReceiptItemService {
       order: { createdAt: 'ASC' },
     });
 
-    return items.map(item => this.mapReceiptItemToDTO(item));
+    return items.map((item) => this.mapReceiptItemToDTO(item));
   }
 
-  async getReceiptItemsByProductId(productId: string, limit: number = 50): Promise<ReceiptItemDTO[]> {
+  async getReceiptItemsByProductId(
+    productId: string,
+    limit: number = 50,
+  ): Promise<ReceiptItemDTO[]> {
     const items = await this.receiptItemRepository.find({
       where: { productSk: productId },
       relations: ['receipt', 'product'],
@@ -68,20 +90,24 @@ export class ReceiptItemService {
       order: { createdAt: 'DESC' },
     });
 
-    return items.map(item => this.mapReceiptItemToDTO(item));
+    return items.map((item) => this.mapReceiptItemToDTO(item));
   }
 
-  async createReceiptItem(receiptItemData: Partial<ReceiptItemDTO>): Promise<ReceiptItemDTO> {
+  async createReceiptItem(
+    receiptItemData: Partial<ReceiptItemDTO>,
+  ): Promise<ReceiptItemDTO> {
     const item = this.receiptItemRepository.create({
       receiptSk: receiptItemData.receiptId,
       productSk: receiptItemData.productId,
       price: receiptItemData.price,
       quantity: receiptItemData.quantity || 1,
-      lineTotal: receiptItemData.lineTotal || (receiptItemData.price! * (receiptItemData.quantity || 1)),
+      lineTotal:
+        receiptItemData.lineTotal ||
+        receiptItemData.price! * (receiptItemData.quantity || 1),
     });
 
     const savedItem = await this.receiptItemRepository.save(item);
-    
+
     // Load with relations
     const completeItem = await this.receiptItemRepository.findOne({
       where: { id: savedItem.id },
@@ -91,7 +117,10 @@ export class ReceiptItemService {
     return this.mapReceiptItemToDTO(completeItem!);
   }
 
-  async updateReceiptItem(id: string, receiptItemData: Partial<ReceiptItemDTO>): Promise<ReceiptItemDTO> {
+  async updateReceiptItem(
+    id: string,
+    receiptItemData: Partial<ReceiptItemDTO>,
+  ): Promise<ReceiptItemDTO> {
     const item = await this.getReceiptItemEntityById(id);
     if (!item) {
       throw new NotFoundException(`ReceiptItem with ID ${id} not found`);
@@ -99,14 +128,16 @@ export class ReceiptItemService {
 
     // Update fields
     if (receiptItemData.price !== undefined) item.price = receiptItemData.price;
-    if (receiptItemData.quantity !== undefined) item.quantity = receiptItemData.quantity;
-    if (receiptItemData.productId !== undefined) item.productSk = receiptItemData.productId;
+    if (receiptItemData.quantity !== undefined)
+      item.quantity = receiptItemData.quantity;
+    if (receiptItemData.productId !== undefined)
+      item.productSk = receiptItemData.productId;
 
     // Recalculate line total
     item.lineTotal = item.price * item.quantity;
 
     const updatedItem = await this.receiptItemRepository.save(item);
-    
+
     // Reload with relations
     const completeItem = await this.receiptItemRepository.findOne({
       where: { id: updatedItem.id },
@@ -130,8 +161,18 @@ export class ReceiptItemService {
   /**
    * Search receipt items with multiple criteria
    */
-  async searchReceiptItems(params: ReceiptItemSearchParams): Promise<ReceiptItemDTO[]> {
-    const { receiptId, productId, minPrice, maxPrice, minQuantity, maxQuantity, limit = 50 } = params;
+  async searchReceiptItems(
+    params: ReceiptItemSearchParams,
+  ): Promise<ReceiptItemDTO[]> {
+    const {
+      receiptId,
+      productId,
+      minPrice,
+      maxPrice,
+      minQuantity,
+      maxQuantity,
+      limit = 50,
+    } = params;
 
     let query = this.receiptItemRepository
       .createQueryBuilder('item')
@@ -168,32 +209,34 @@ export class ReceiptItemService {
       .limit(limit)
       .getMany();
 
-    return items.map(item => this.mapReceiptItemToDTO(item));
+    return items.map((item) => this.mapReceiptItemToDTO(item));
   }
 
   /**
    * Get receipt items total for a receipt
    */
   async getReceiptItemsTotal(receiptId: string): Promise<number> {
-    const result = await this.receiptItemRepository
+    const result = (await this.receiptItemRepository
       .createQueryBuilder('item')
       .select('SUM(item.lineTotal)', 'total')
       .where('item.receiptSk = :receiptId', { receiptId })
-      .getRawOne();
+      .getRawOne()) as { total: string | null };
 
-    return Number(result.total) || 0;
+    return Number(result?.total) || 0;
   }
 
   /**
    * Get most purchased products (by quantity)
    */
-  async getMostPurchasedProducts(limit: number = 20): Promise<{
-    productId: string;
-    productName: string;
-    totalQuantity: number;
-    totalSpent: number;
-    receiptCount: number;
-  }[]> {
+  async getMostPurchasedProducts(limit: number = 20): Promise<
+    {
+      productId: string;
+      productName: string;
+      totalQuantity: number;
+      totalSpent: number;
+      receiptCount: number;
+    }[]
+  > {
     const results = await this.receiptItemRepository
       .createQueryBuilder('item')
       .leftJoinAndSelect('item.product', 'product')
@@ -210,7 +253,8 @@ export class ReceiptItemService {
       .limit(limit)
       .getRawMany();
 
-    return results.map(result => ({
+    const typedResults = results as MostPurchasedProductRaw[];
+    return typedResults.map((result) => ({
       productId: result.productId,
       productName: result.productName || 'Unknown Product',
       totalQuantity: Number(result.totalQuantity),
@@ -229,7 +273,7 @@ export class ReceiptItemService {
     totalSold: number;
     receiptCount: number;
   }> {
-    const result = await this.receiptItemRepository
+    const result = (await this.receiptItemRepository
       .createQueryBuilder('item')
       .select([
         'AVG(item.price) as averagePrice',
@@ -239,20 +283,22 @@ export class ReceiptItemService {
         'COUNT(DISTINCT item.receiptSk) as receiptCount',
       ])
       .where('item.productSk = :productId', { productId })
-      .getRawOne();
+      .getRawOne()) as ProductPriceStatsRaw | null;
 
     return {
-      averagePrice: Number(result.averagePrice) || 0,
-      minPrice: Number(result.minPrice) || 0,
-      maxPrice: Number(result.maxPrice) || 0,
-      totalSold: Number(result.totalSold) || 0,
-      receiptCount: Number(result.receiptCount) || 0,
+      averagePrice: Number(result?.averagePrice) || 0,
+      minPrice: Number(result?.minPrice) || 0,
+      maxPrice: Number(result?.maxPrice) || 0,
+      totalSold: Number(result?.totalSold) || 0,
+      receiptCount: Number(result?.receiptCount) || 0,
     };
   }
 
   // PRIVATE HELPER METHODS
 
-  private async getReceiptItemEntityById(id: string): Promise<ReceiptItem | null> {
+  private async getReceiptItemEntityById(
+    id: string,
+  ): Promise<ReceiptItem | null> {
     // Try to find by receiptitemSk (UUID) first, then by id (integer)
     let item = await this.receiptItemRepository.findOne({
       where: { receiptitemSk: id },

@@ -9,7 +9,10 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { ReceiptItemService, ReceiptItemSearchParams } from './receiptItem.service';
+import {
+  ReceiptItemService,
+  ReceiptItemSearchParams,
+} from './receiptItem.service';
 import { ReceiptItemDTO } from '../../../packages/types/dto/receiptItem';
 
 @ApiTags('ReceiptItems')
@@ -153,15 +156,15 @@ export class ReceiptItemController {
     status: 200,
     description: 'Most purchased products with statistics',
   })
-  async getMostPurchasedProducts(
-    @Query('limit') limit?: number,
-  ): Promise<{
-    productId: string;
-    productName: string;
-    totalQuantity: number;
-    totalSpent: number;
-    receiptCount: number;
-  }[]> {
+  async getMostPurchasedProducts(@Query('limit') limit?: number): Promise<
+    {
+      productId: string;
+      productName: string;
+      totalQuantity: number;
+      totalSpent: number;
+      receiptCount: number;
+    }[]
+  > {
     return this.receiptItemService.getMostPurchasedProducts(limit);
   }
 
@@ -171,9 +174,7 @@ export class ReceiptItemController {
     status: 200,
     description: 'Price statistics for the specified product',
   })
-  async getProductPriceStats(
-    @Param('productId') productId: string,
-  ): Promise<{
+  async getProductPriceStats(@Param('productId') productId: string): Promise<{
     averagePrice: number;
     minPrice: number;
     maxPrice: number;

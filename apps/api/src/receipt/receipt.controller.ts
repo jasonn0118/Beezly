@@ -50,18 +50,22 @@ export class ReceiptController {
     description: 'Receipt successfully created',
     type: ReceiptDTO,
   })
-  async createReceipt(@Body() receiptData: CreateReceiptRequestDto): Promise<ReceiptDTO> {
+  async createReceipt(
+    @Body() receiptData: CreateReceiptRequestDto,
+  ): Promise<ReceiptDTO> {
     // Convert DTO to service interface
     const createRequest: CreateReceiptRequest = {
       userId: receiptData.userId,
       storeName: receiptData.storeName,
       storeId: receiptData.storeId,
       imageUrl: receiptData.imageUrl,
-      purchaseDate: receiptData.purchaseDate ? new Date(receiptData.purchaseDate) : undefined,
+      purchaseDate: receiptData.purchaseDate
+        ? new Date(receiptData.purchaseDate)
+        : undefined,
       items: receiptData.items,
       totalAmount: receiptData.totalAmount,
     };
-    
+
     return this.receiptService.createReceipt(createRequest);
   }
 

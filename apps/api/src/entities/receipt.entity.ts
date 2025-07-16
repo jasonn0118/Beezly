@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, JoinColumn, OneToMany, Generated } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  OneToMany,
+  Generated,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
 import { Store } from './store.entity';
@@ -27,9 +34,9 @@ export class Receipt extends BaseEntity {
   @Column({ name: 'image_url', nullable: true })
   imageUrl?: string;
 
-  @Column({ 
+  @Column({
     type: 'varchar',
-    default: 'pending'
+    default: 'pending',
   })
   status: 'pending' | 'processing' | 'failed' | 'manual_review' | 'done';
 

@@ -1,13 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { ReceiptItemService } from './receiptItem.service';
 import { ReceiptItem } from '../entities/receipt-item.entity';
 
 describe('ReceiptItemService', () => {
   let service: ReceiptItemService;
-  let receiptItemRepository: Repository<ReceiptItem>;
 
   const mockReceiptItemRepository = {
     find: jest.fn(),
@@ -21,7 +19,7 @@ describe('ReceiptItemService', () => {
   beforeEach(async () => {
     // Reset all mocks
     jest.clearAllMocks();
-    
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReceiptItemService,
@@ -33,7 +31,6 @@ describe('ReceiptItemService', () => {
     }).compile();
 
     service = module.get<ReceiptItemService>(ReceiptItemService);
-    receiptItemRepository = module.get<Repository<ReceiptItem>>(getRepositoryToken(ReceiptItem));
   });
 
   it('should be defined', () => {
@@ -59,7 +56,7 @@ describe('ReceiptItemService', () => {
       mockReceiptItemRepository.find.mockResolvedValue(mockItems);
 
       const result = await service.getAllReceiptItems();
-      
+
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('item-uuid-1');
       expect(result[0].price).toBe(10.99);
@@ -90,7 +87,7 @@ describe('ReceiptItemService', () => {
       mockReceiptItemRepository.findOne.mockResolvedValue(mockItem);
 
       const result = await service.getReceiptItemById('item-uuid-1');
-      
+
       expect(result).toBeDefined();
       expect(result?.id).toBe('item-uuid-1');
       expect(result?.price).toBe(10.99);
@@ -118,7 +115,7 @@ describe('ReceiptItemService', () => {
         .mockResolvedValueOnce(mockItem); // Second call with integer ID
 
       const result = await service.getReceiptItemById('1');
-      
+
       expect(result).toBeDefined();
       expect(result?.id).toBe('item-uuid-1');
       expect(mockReceiptItemRepository.findOne).toHaveBeenCalledTimes(2);
@@ -128,7 +125,7 @@ describe('ReceiptItemService', () => {
       mockReceiptItemRepository.findOne.mockResolvedValue(null);
 
       const result = await service.getReceiptItemById('non-existent-uuid');
-      
+
       expect(result).toBeNull();
     });
   });
@@ -163,7 +160,7 @@ describe('ReceiptItemService', () => {
       mockReceiptItemRepository.find.mockResolvedValue(mockItems);
 
       const result = await service.getReceiptItemsByReceiptId('receipt-uuid-1');
-      
+
       expect(result).toHaveLength(2);
       expect(result[0].receiptId).toBe('receipt-uuid-1');
       expect(result[1].receiptId).toBe('receipt-uuid-1');
@@ -278,11 +275,15 @@ describe('ReceiptItemService', () => {
       };
 
       // Mock getReceiptItemEntityById
-      jest.spyOn(service as any, 'getReceiptItemEntityById').mockResolvedValue(mockItem);
+      jest
+        .spyOn(service as any, 'getReceiptItemEntityById')
+        .mockResolvedValue(mockItem);
       mockReceiptItemRepository.save.mockResolvedValue(updatedItem);
       mockReceiptItemRepository.findOne.mockResolvedValue(updatedItem);
 
-      const result = await service.updateReceiptItem('item-uuid-1', { quantity: 3 });
+      const result = await service.updateReceiptItem('item-uuid-1', {
+        quantity: 3,
+      });
 
       expect(result).toBeDefined();
       expect(result.quantity).toBe(3);
@@ -290,11 +291,13 @@ describe('ReceiptItemService', () => {
     });
 
     it('should throw NotFoundException if receipt item not found', async () => {
-      jest.spyOn(service as any, 'getReceiptItemEntityById').mockResolvedValue(null);
+      jest
+        .spyOn(service as any, 'getReceiptItemEntityById')
+        .mockResolvedValue(null);
 
-      await expect(service.updateReceiptItem('non-existent-uuid', { quantity: 3 }))
-        .rejects
-        .toThrow(NotFoundException);
+      await expect(
+        service.updateReceiptItem('non-existent-uuid', { quantity: 3 }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -306,13 +309,21 @@ describe('ReceiptItemService', () => {
         getRawOne: jest.fn().mockResolvedValue({ total: '45.97' }),
       };
 
-      mockReceiptItemRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+      mockReceiptItemRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder,
+      );
 
       const result = await service.getReceiptItemsTotal('receipt-uuid-1');
 
       expect(result).toBe(45.97);
-      expect(mockQueryBuilder.select).toHaveBeenCalledWith('SUM(item.lineTotal)', 'total');
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('item.receiptSk = :receiptId', { receiptId: 'receipt-uuid-1' });
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
+        'SUM(item.lineTotal)',
+        'total',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'item.receiptSk = :receiptId',
+        { receiptId: 'receipt-uuid-1' },
+      );
     });
 
     it('should return 0 if no items found', async () => {
@@ -322,7 +333,9 @@ describe('ReceiptItemService', () => {
         getRawOne: jest.fn().mockResolvedValue({ total: null }),
       };
 
-      mockReceiptItemRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+      mockReceiptItemRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder,
+      );
 
       const result = await service.getReceiptItemsTotal('receipt-uuid-1');
 
@@ -344,7 +357,9 @@ describe('ReceiptItemService', () => {
         updatedAt: new Date(),
       };
 
-      jest.spyOn(service as any, 'getReceiptItemEntityById').mockResolvedValue(mockItem);
+      jest
+        .spyOn(service as any, 'getReceiptItemEntityById')
+        .mockResolvedValue(mockItem);
       mockReceiptItemRepository.remove.mockResolvedValue(mockItem);
 
       await service.deleteReceiptItem('item-uuid-1');
@@ -353,11 +368,13 @@ describe('ReceiptItemService', () => {
     });
 
     it('should throw NotFoundException if receipt item not found', async () => {
-      jest.spyOn(service as any, 'getReceiptItemEntityById').mockResolvedValue(null);
+      jest
+        .spyOn(service as any, 'getReceiptItemEntityById')
+        .mockResolvedValue(null);
 
-      await expect(service.deleteReceiptItem('non-existent-uuid'))
-        .rejects
-        .toThrow(NotFoundException);
+      await expect(
+        service.deleteReceiptItem('non-existent-uuid'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
