@@ -49,6 +49,12 @@ export class StoreDTO {
   })
   longitude?: number;
 
+  @ApiPropertyOptional({
+    example: "ChIJA_PtVhBfK4gRD-7RgJ2CqQ4",
+    description: "Google Places ID for the store",
+  })
+  placeId?: string;
+
   @ApiProperty({
     example: "2025-07-07T16:00:00Z",
     description: "Timestamp when the store was created (ISO string)",
