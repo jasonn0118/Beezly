@@ -26,10 +26,17 @@ export interface CreateReceiptRequest {
   totalAmount?: number;
 }
 
+export type ReceiptStatus =
+  | 'pending'
+  | 'processing'
+  | 'failed'
+  | 'manual_review'
+  | 'done';
+
 export interface ReceiptSearchParams {
   userId?: string;
   storeId?: string;
-  status?: string;
+  status?: ReceiptStatus;
   startDate?: Date;
   endDate?: Date;
   minAmount?: number;
@@ -378,11 +385,11 @@ export class ReceiptService {
    * Get receipts by status
    */
   async getReceiptsByStatus(
-    status: string,
+    status: ReceiptStatus,
     limit: number = 50,
   ): Promise<ReceiptDTO[]> {
     const receipts = await this.receiptRepository.find({
-      where: { status: status },
+      where: { status },
       relations: ['user', 'store', 'items', 'items.product'],
       take: limit,
       order: { createdAt: 'DESC' },
@@ -396,7 +403,10 @@ export class ReceiptService {
   /**
    * Update receipt status (for processing pipeline)
    */
-  async updateReceiptStatus(id: string, status: string): Promise<ReceiptDTO> {
+  async updateReceiptStatus(
+    id: string,
+    status: ReceiptStatus,
+  ): Promise<ReceiptDTO> {
     const receipt = await this.getReceiptEntityById(id);
     if (!receipt) {
       throw new NotFoundException(`Receipt with ID ${id} not found`);
