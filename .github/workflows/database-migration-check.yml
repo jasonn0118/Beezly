@@ -96,6 +96,16 @@ jobs:
     - name: Build API
       run: pnpm run build --filter=api
 
+    - name: Debug environment variables
+      run: pnpm run debug:env --filter=api
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_USERNAME: postgres
+        DB_NAME: beezly_migration_test
+        DB_SSL: false
+        NODE_ENV: test
+
     - name: Check for pending migrations
       run: pnpm run migration:check --filter=api
       env:

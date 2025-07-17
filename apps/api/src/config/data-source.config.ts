@@ -15,8 +15,11 @@ import {
   VerificationLogs,
 } from '../entities';
 
-// Load environment variables
-config();
+// Load environment variables only if not in CI environment
+// CI environments should have environment variables already set
+if (process.env.CI !== 'true') {
+  config();
+}
 
 // Build migrations path based on environment
 const getMigrationsPath = (): string[] => {

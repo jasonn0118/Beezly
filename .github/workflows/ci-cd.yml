@@ -731,6 +731,18 @@ jobs:
             echo "ENVIRONMENT=staging" >> $GITHUB_ENV
           fi
 
+      - name: Debug environment variables
+        run: pnpm run debug:env --filter=api
+        env:
+          CI: true
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
+          DB_SSL: true
+          NODE_ENV: ${{ env.ENVIRONMENT }}
+
       - name: Run schema comparison
         run: pnpm run schema:compare --filter=api
         env:

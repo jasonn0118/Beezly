@@ -72,6 +72,11 @@
         "outputs": [],
         "cache": false,
         "inputs": ["src/**", "*.config.*", "package.json"]
+      },
+      "debug:env": {
+        "outputs": [],
+        "cache": false,
+        "inputs": ["src/**", "*.config.*", "package.json"]
       }
     }
   }

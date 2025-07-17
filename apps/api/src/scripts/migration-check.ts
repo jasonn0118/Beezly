@@ -2,7 +2,10 @@
 import { AppDataSource } from '../config/data-source.config';
 import { config } from 'dotenv';
 
-config();
+// Load environment variables only if not in CI environment
+if (process.env.CI !== 'true') {
+  config();
+}
 
 /**
  * Check if migrations need to be run

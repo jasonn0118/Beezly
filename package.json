@@ -17,7 +17,8 @@
     "migration:show": "turbo run migration:show",
     "migration:generate": "turbo run migration:generate",
     "migration:revert": "turbo run migration:revert",
-    "migration:mark-baseline": "turbo run migration:mark-baseline"
+    "migration:mark-baseline": "turbo run migration:mark-baseline",
+    "debug:env": "turbo run debug:env"
   },
   "keywords": [],
   "author": "",
