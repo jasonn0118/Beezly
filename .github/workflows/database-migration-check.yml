@@ -105,6 +105,7 @@ jobs:
         DB_NAME: beezly_migration_test
         DB_SSL: false
         NODE_ENV: test
+        CI: true
 
     - name: Check for pending migrations
       run: pnpm run migration:check --filter=api
@@ -115,6 +116,7 @@ jobs:
         DB_NAME: beezly_migration_test
         DB_SSL: false
         NODE_ENV: test
+        CI: true
       continue-on-error: true
       id: migration_check
 
