@@ -20,8 +20,9 @@ import {
   VerificationLogs,
 } from './entities';
 
-// Load environment variables (only if not in CI)
-if (process.env.NODE_ENV !== 'test' && !process.env.CI) {
+// Load environment variables only if not in CI environment
+// CI environments should have environment variables already set
+if (process.env.CI !== 'true') {
   config();
 }
 
@@ -245,20 +246,26 @@ async function verifyPostGISFunctionality(
   }
 }
 
-// Configuration check - only require DB_HOST and DB_PASSWORD for Supabase
+// Configuration check - only require DB_HOST and DB_PASSWORD for actual Supabase (production)
 function validateEnvironment(): boolean {
-  // For CI/production, we need at least DB_HOST and DB_PASSWORD
-  if (process.env.CI || process.env.NODE_ENV === 'production') {
+  // For actual production (not test), we need at least DB_HOST and DB_PASSWORD
+  if (process.env.NODE_ENV === 'production' && process.env.CI) {
     const required = ['DB_HOST', 'DB_PASSWORD'];
     const missing = required.filter((env) => !process.env[env]);
 
     if (missing.length > 0) {
       console.error(
-        `❌ Missing required environment variables for CI/production: ${missing.join(', ')}`,
+        `❌ Missing required environment variables for production: ${missing.join(', ')}`,
       );
       console.error('💡 Make sure GitHub secrets are configured properly');
       return false;
     }
+  }
+
+  // For test environments, we don't require DB_PASSWORD (local PostgreSQL with trust auth)
+  if (process.env.NODE_ENV === 'test' && process.env.CI) {
+    console.log('ℹ️  Running in test environment - DB_PASSWORD not required');
+    return true;
   }
 
   return true;
