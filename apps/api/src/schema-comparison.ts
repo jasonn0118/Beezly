@@ -1,4 +1,52 @@
-import { AppDataSource } from './data-source';
+import { DataSource } from 'typeorm';
+import { config } from 'dotenv';
+import {
+  User,
+  Store,
+  Receipt,
+  Product,
+  ReceiptItem,
+  Category,
+  Badges,
+  ScoreType,
+  UserBadges,
+  UserScore,
+  Price,
+  VerificationLogs,
+} from './entities';
+
+// Load environment variables
+config();
+
+// Create dynamic data source that respects current environment
+const createDataSource = () =>
+  new DataSource({
+    type: 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    username: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'beezly_db',
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    entities: [
+      User,
+      Store,
+      Receipt,
+      Product,
+      ReceiptItem,
+      Category,
+      Badges,
+      ScoreType,
+      UserBadges,
+      UserScore,
+      Price,
+      VerificationLogs,
+    ],
+    migrations: ['src/migrations/*.ts'],
+    synchronize: false,
+    logging: process.env.DB_LOGGING === 'true',
+    migrationsRun: false,
+  });
 
 interface TableInfo {
   table_name: string;
@@ -25,23 +73,25 @@ interface ForeignKeyInfo {
 async function compareSchemas() {
   console.log('🔍 Starting schema comparison...\n');
 
+  const dataSource = createDataSource();
+
   try {
-    await AppDataSource.initialize();
+    await dataSource.initialize();
     console.log('✅ Database connection established');
 
     // Get current database schema
-    const currentTables = await getCurrentDatabaseSchema();
-    const currentIndexes = await getCurrentDatabaseIndexes();
-    const currentForeignKeys = await getCurrentForeignKeys();
+    const currentTables = await getCurrentDatabaseSchema(dataSource);
+    const currentIndexes = await getCurrentDatabaseIndexes(dataSource);
+    const currentForeignKeys = await getCurrentForeignKeys(dataSource);
 
     // Generate expected schema from TypeORM entities
-    await generateExpectedSchema();
+    await generateExpectedSchema(dataSource);
 
     console.log('\n📊 Schema Comparison Results:');
     console.log('================================\n');
 
     // Compare tables and columns
-    compareTables(currentTables);
+    compareTables(currentTables, dataSource);
 
     // Show current indexes
     console.log('\n🔗 Current Database Indexes:');
@@ -60,7 +110,7 @@ async function compareSchemas() {
     });
 
     // Check for PostGIS extension
-    const postgisExists = await checkPostGISExtension();
+    const postgisExists = await checkPostGISExtension(dataSource);
     console.log(
       `\n🌍 PostGIS Extension: ${postgisExists ? '✅ Enabled' : '❌ Not Found'}`,
     );
@@ -70,13 +120,15 @@ async function compareSchemas() {
     console.error('❌ Error during schema comparison:', error);
     process.exit(1);
   } finally {
-    if (AppDataSource.isInitialized) {
-      await AppDataSource.destroy();
+    if (dataSource.isInitialized) {
+      await dataSource.destroy();
     }
   }
 }
 
-async function getCurrentDatabaseSchema(): Promise<TableInfo[]> {
+async function getCurrentDatabaseSchema(
+  dataSource: DataSource,
+): Promise<TableInfo[]> {
   const query = `
     SELECT 
       t.table_name,
@@ -93,10 +145,12 @@ async function getCurrentDatabaseSchema(): Promise<TableInfo[]> {
     ORDER BY t.table_name, c.ordinal_position;
   `;
 
-  return await AppDataSource.query(query);
+  return await dataSource.query(query);
 }
 
-async function getCurrentDatabaseIndexes(): Promise<IndexInfo[]> {
+async function getCurrentDatabaseIndexes(
+  dataSource: DataSource,
+): Promise<IndexInfo[]> {
   const query = `
     SELECT 
       indexname,
@@ -109,10 +163,12 @@ async function getCurrentDatabaseIndexes(): Promise<IndexInfo[]> {
     ORDER BY tablename, indexname;
   `;
 
-  return await AppDataSource.query(query);
+  return await dataSource.query(query);
 }
 
-async function getCurrentForeignKeys(): Promise<ForeignKeyInfo[]> {
+async function getCurrentForeignKeys(
+  dataSource: DataSource,
+): Promise<ForeignKeyInfo[]> {
   const query = `
     SELECT 
       tc.constraint_name,
@@ -132,12 +188,12 @@ async function getCurrentForeignKeys(): Promise<ForeignKeyInfo[]> {
     ORDER BY tc.table_name, tc.constraint_name;
   `;
 
-  return await AppDataSource.query(query);
+  return await dataSource.query(query);
 }
 
-async function generateExpectedSchema(): Promise<string> {
+async function generateExpectedSchema(dataSource: DataSource): Promise<string> {
   // Generate schema using TypeORM's schema builder
-  const schemaBuilder = AppDataSource.driver.createSchemaBuilder();
+  const schemaBuilder = dataSource.driver.createSchemaBuilder();
   const sqlInMemory = await schemaBuilder.log();
 
   // SqlInMemory is an object with upQueries and downQueries arrays
@@ -156,7 +212,7 @@ async function generateExpectedSchema(): Promise<string> {
   return 'Unable to generate expected schema';
 }
 
-function compareTables(currentTables: TableInfo[]) {
+function compareTables(currentTables: TableInfo[], dataSource: DataSource) {
   // Group current tables by table name
   const tableGroups = currentTables.reduce(
     (groups, table) => {
@@ -190,7 +246,7 @@ function compareTables(currentTables: TableInfo[]) {
   // List expected entities
   console.log('\n📋 Expected TypeORM Entities:');
   console.log('-----------------------------');
-  const entities = AppDataSource.entityMetadatas;
+  const entities = dataSource.entityMetadatas;
   entities.forEach((entity) => {
     console.log(`\n🔷 ${entity.tableName}:`);
     entity.columns.forEach((column) => {
@@ -201,10 +257,10 @@ function compareTables(currentTables: TableInfo[]) {
   });
 }
 
-async function checkPostGISExtension(): Promise<boolean> {
+async function checkPostGISExtension(dataSource: DataSource): Promise<boolean> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const result = await AppDataSource.query(
+    const result = await dataSource.query(
       "SELECT 1 FROM pg_extension WHERE extname = 'postgis';",
     );
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
