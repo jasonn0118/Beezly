@@ -219,10 +219,12 @@ Located at `.github/workflows/database-migration-check.yml`
 
 ### Required Secrets
 For production deployments, configure these GitHub secrets:
-- `SUPABASE_DB_HOST`
-- `SUPABASE_DB_PASSWORD`
-- `SUPABASE_DB_NAME`
-- `DISCORD_WEBHOOK` - Discord webhook URL for CI notifications
+- `DB_HOST` - Supabase database host
+- `DB_PORT` - Database port (usually 5432)
+- `DB_USERNAME` - Database username (usually postgres)
+- `DB_PASSWORD` - Supabase database password
+- `DB_NAME` - Database name (usually postgres)
+- `DISCORD_WEBHOOK_URL` - Discord webhook URL for CI notifications
 
 #### Setting up Discord Notifications
 1. **Create Discord Webhook**:
@@ -236,7 +238,7 @@ For production deployments, configure these GitHub secrets:
    - Go to your GitHub repository
    - Settings → Secrets and variables → Actions
    - Click "New repository secret"
-   - Name: `DISCORD_WEBHOOK`
+   - Name: `DISCORD_WEBHOOK_URL`
    - Value: Your Discord webhook URL
    - Click "Add secret"
 
