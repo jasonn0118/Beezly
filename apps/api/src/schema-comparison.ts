@@ -15,18 +15,27 @@ import {
   VerificationLogs,
 } from './entities';
 
-// Load environment variables
-config();
+// Load environment variables (only if not in CI)
+if (process.env.NODE_ENV !== 'test' && !process.env.CI) {
+  config();
+}
 
 // Create dynamic data source that respects current environment
-const createDataSource = () =>
-  new DataSource({
+const createDataSource = () => {
+  // Determine database name: use postgres for production/CI, beezly_db for local dev
+  const dbName =
+    process.env.DB_NAME ||
+    (process.env.NODE_ENV === 'production' || process.env.CI
+      ? 'postgres'
+      : 'beezly_db');
+
+  return new DataSource({
     type: 'postgres',
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
     username: process.env.DB_USERNAME || 'postgres',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'beezly_db',
+    database: dbName,
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     entities: [
       User,
@@ -47,6 +56,7 @@ const createDataSource = () =>
     logging: process.env.DB_LOGGING === 'true',
     migrationsRun: false,
   });
+};
 
 interface TableInfo {
   table_name: string;
@@ -73,7 +83,22 @@ interface ForeignKeyInfo {
 async function compareSchemas() {
   console.log('🔍 Starting schema comparison...\n');
 
+  // Debug environment variables
+  console.log('🔧 Environment variables:');
+  console.log(`DB_HOST: ${process.env.DB_HOST || 'undefined'}`);
+  console.log(`DB_PORT: ${process.env.DB_PORT || 'undefined'}`);
+  console.log(`DB_USERNAME: ${process.env.DB_USERNAME || 'undefined'}`);
+  console.log(`DB_NAME: ${process.env.DB_NAME || 'undefined'}`);
+  console.log(`DB_SSL: ${process.env.DB_SSL || 'undefined'}`);
+  console.log(`NODE_ENV: ${process.env.NODE_ENV || 'undefined'}\n`);
+
   const dataSource = createDataSource();
+
+  const host =
+    'host' in dataSource.options ? dataSource.options.host : 'unknown';
+  console.log(
+    `🔌 Connecting to database: ${String(dataSource.options.database || 'unknown')} at ${String(host)}`,
+  );
 
   try {
     await dataSource.initialize();

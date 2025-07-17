@@ -731,6 +731,7 @@ jobs:
       - name: Run schema comparison
         run: pnpm run schema:compare --filter=api
         env:
+          CI: true
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_PORT: ${{ secrets.DB_PORT || '5432' }}
           DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
@@ -742,6 +743,7 @@ jobs:
       - name: Run database migrations
         run: pnpm run supabase:sync --filter=api
         env:
+          CI: true
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_PORT: ${{ secrets.DB_PORT || '5432' }}
           DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
