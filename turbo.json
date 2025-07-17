@@ -40,6 +40,38 @@
         "outputs": [],
         "cache": false,
         "inputs": ["src/**", "*.config.*", "package.json"]
+      },
+      "migration:run": {
+        "outputs": [],
+        "cache": false,
+        "dependsOn": ["^build"],
+        "inputs": ["src/**", "*.config.*", "package.json"]
+      },
+      "migration:check": {
+        "outputs": [],
+        "cache": false,
+        "dependsOn": ["^build"],
+        "inputs": ["src/**", "*.config.*", "package.json"]
+      },
+      "migration:show": {
+        "outputs": [],
+        "cache": false,
+        "inputs": ["src/**", "*.config.*", "package.json"]
+      },
+      "migration:generate": {
+        "outputs": ["src/migrations/**"],
+        "cache": false,
+        "inputs": ["src/**", "*.config.*", "package.json"]
+      },
+      "migration:revert": {
+        "outputs": [],
+        "cache": false,
+        "inputs": ["src/**", "*.config.*", "package.json"]
+      },
+      "migration:mark-baseline": {
+        "outputs": [],
+        "cache": false,
+        "inputs": ["src/**", "*.config.*", "package.json"]
       }
     }
   }
