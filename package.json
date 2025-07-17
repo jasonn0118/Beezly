@@ -38,5 +38,10 @@
     "@nestjs/swagger": "^11.2.0",
     "@supabase/supabase-js": "^2.50.3",
     "uuid": "^11.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "multer": ">=2.0.2"
+    }
   }
 }
