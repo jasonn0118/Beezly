@@ -4,8 +4,8 @@ import { Badges } from './badges.entity';
 
 @Entity('User_badges')
 export class UserBadges {
-  @PrimaryColumn({ name: 'user_id' })
-  userId: string;
+  @PrimaryColumn({ name: 'user_sk', type: 'uuid' })
+  userSk: string;
 
   @PrimaryColumn({ name: 'badge_id', type: 'int' })
   badgeId: number;
@@ -19,7 +19,7 @@ export class UserBadges {
 
   // Relationships
   @ManyToOne(() => User)
-  @JoinColumn({ name: 'user_id', referencedColumnName: 'userSk' })
+  @JoinColumn({ name: 'user_sk', referencedColumnName: 'userSk' })
   user: User;
 
   @ManyToOne(() => Badges)
