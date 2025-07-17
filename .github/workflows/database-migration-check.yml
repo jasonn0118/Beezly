@@ -15,20 +15,27 @@ on:
       - 'apps/api/src/migrations/**'
       - 'apps/api/src/data-source.ts'
 
+env:
+  NODE_VERSION: '23'
+  PNPM_VERSION: '10'
+
 jobs:
   migration-check:
     runs-on: ubuntu-latest
     
     services:
       postgres:
-        image: postgis/postgis:14-3.3
+        image: postgis/postgis:17-3.5
         env:
-          POSTGRES_DB: test_db
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: beezly_migration_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
         ports:
           - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
     - name: Checkout code
@@ -37,16 +44,54 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '23'
-        cache: 'npm'
+        node-version: ${{ env.NODE_VERSION }}
 
     - name: Setup pnpm
-      uses: pnpm/action-setup@v4
+      uses: pnpm/action-setup@v3
       with:
-        version: 10
+        version: ${{ env.PNPM_VERSION }}
+        run_install: false
+
+    - name: Get pnpm store directory
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+    - name: Setup pnpm cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Cache node_modules
+      id: cache-node-modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+        key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
 
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      if: steps.cache-node-modules.outputs.cache-hit != 'true'
+      run: bash .github/workflows/install-deps.sh
+
+    - name: Setup migration test database
+      run: |
+        # Wait for PostgreSQL to be ready
+        until pg_isready -h localhost -p 5432; do
+          echo "Waiting for PostgreSQL to start..."
+          sleep 2
+        done
+        
+        # Create migration test database with PostGIS (using trust auth with postgres user)
+        psql -h localhost -U postgres -d beezly_migration_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+        psql -h localhost -U postgres -d beezly_migration_test -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+        
+        echo "✅ Migration test database created with PostGIS and UUID support"
 
     - name: Build API
       run: pnpm run build --filter=api
@@ -56,9 +101,8 @@ jobs:
       env:
         DB_HOST: localhost
         DB_PORT: 5432
-        DB_USERNAME: test_user
-        DB_PASSWORD: test_password
-        DB_NAME: test_db
+        DB_USERNAME: postgres
+        DB_NAME: beezly_migration_test
         DB_SSL: false
         NODE_ENV: test
 
@@ -67,9 +111,8 @@ jobs:
       env:
         DB_HOST: localhost
         DB_PORT: 5432
-        DB_USERNAME: test_user
-        DB_PASSWORD: test_password
-        DB_NAME: test_db
+        DB_USERNAME: postgres
+        DB_NAME: beezly_migration_test
         DB_SSL: false
         NODE_ENV: test
 
@@ -81,12 +124,49 @@ jobs:
       env:
         DB_HOST: localhost
         DB_PORT: 5432
-        DB_USERNAME: test_user
-        DB_PASSWORD: test_password
-        DB_NAME: test_db
+        DB_USERNAME: postgres
+        DB_NAME: beezly_migration_test
         DB_SSL: false
         NODE_ENV: production
         PORT: 3001
+
+    - name: Discord notification on success
+      if: success()
+      uses: Ilshidur/action-discord@0.3.2
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      with:
+        args: |
+          ✅ **Database Migration Check Passed** 
+          
+          📝 **Commit:** ${{ github.sha }}
+          🌿 **Branch:** ${{ github.ref_name }}
+          👤 **Author:** ${{ github.actor }}
+          
+          **Validation Results:**
+          🔍 Schema validation completed successfully
+          🚀 API startup verified
+          🗄️ Migration sync tested
+          
+          🔗 [View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+    - name: Discord notification on failure
+      if: failure()
+      uses: Ilshidur/action-discord@0.3.2
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      with:
+        args: |
+          ❌ **Database Migration Check Failed**
+          
+          📝 **Commit:** ${{ github.sha }}
+          🌿 **Branch:** ${{ github.ref_name }}
+          👤 **Author:** ${{ github.actor }}
+          
+          💥 One or more migration checks failed
+          
+          🔗 [View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          **Please review and fix the issues**
 
   supabase-migration-test:
     runs-on: ubuntu-latest
@@ -99,16 +179,40 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '23'
-        cache: 'npm'
+        node-version: ${{ env.NODE_VERSION }}
 
     - name: Setup pnpm
-      uses: pnpm/action-setup@v4
+      uses: pnpm/action-setup@v3
       with:
-        version: 10
+        version: ${{ env.PNPM_VERSION }}
+        run_install: false
+
+    - name: Get pnpm store directory
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+    - name: Setup pnpm cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Cache node_modules
+      id: cache-node-modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+        key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
 
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      if: steps.cache-node-modules.outputs.cache-hit != 'true'
+      run: bash .github/workflows/install-deps.sh
 
     - name: Build API
       run: pnpm run build --filter=api
@@ -136,3 +240,40 @@ jobs:
         echo "✅ Schema comparison completed" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Note:** When this PR is merged, run \`pnpm run supabase:sync --filter=api\` with production Supabase credentials to apply schema changes." >> $GITHUB_STEP_SUMMARY
+
+    - name: Discord notification on success
+      if: success()
+      uses: Ilshidur/action-discord@0.3.2
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      with:
+        args: |
+          📋 **Migration Scripts Validation Passed**
+          
+          🔀 **PR:** #${{ github.event.number }} - ${{ github.event.pull_request.title }}
+          🌿 **Branch:** ${{ github.head_ref }}
+          👤 **Author:** ${{ github.actor }}
+          
+          **Validation Results:**
+          ✅ Migration scripts syntax validated
+          📊 Migration report generated
+          
+          🔗 [View PR](${{ github.event.pull_request.html_url }})
+
+    - name: Discord notification on failure
+      if: failure()
+      uses: Ilshidur/action-discord@0.3.2
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      with:
+        args: |
+          ❌ **Migration Scripts Validation Failed**
+          
+          🔀 **PR:** #${{ github.event.number }} - ${{ github.event.pull_request.title }}
+          🌿 **Branch:** ${{ github.head_ref }}
+          👤 **Author:** ${{ github.actor }}
+          
+          💥 Migration script validation failed
+          
+          🔗 [View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          🔗 [View PR](${{ github.event.pull_request.html_url }})

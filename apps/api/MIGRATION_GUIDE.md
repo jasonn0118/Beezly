@@ -222,6 +222,28 @@ For production deployments, configure these GitHub secrets:
 - `SUPABASE_DB_HOST`
 - `SUPABASE_DB_PASSWORD`
 - `SUPABASE_DB_NAME`
+- `DISCORD_WEBHOOK` - Discord webhook URL for CI notifications
+
+#### Setting up Discord Notifications
+1. **Create Discord Webhook**:
+   - Open your Discord server
+   - Go to Server Settings → Integrations → Webhooks
+   - Click "New Webhook"
+   - Choose the channel for notifications
+   - Copy the webhook URL
+
+2. **Add GitHub Secret**:
+   - Go to your GitHub repository
+   - Settings → Secrets and variables → Actions
+   - Click "New repository secret"
+   - Name: `DISCORD_WEBHOOK`
+   - Value: Your Discord webhook URL
+   - Click "Add secret"
+
+3. **Notification Types**:
+   - ✅ **Success**: Schema validation passed, API started successfully
+   - ❌ **Failure**: Migration checks failed, review required
+   - 📋 **PR Validation**: Migration script syntax validation results
 
 ## 🔧 Advanced Usage
 
