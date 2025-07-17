@@ -24,6 +24,7 @@ import {
   Price,
   VerificationLogs,
 } from './entities';
+import { CategoryModule } from './category/category.module';
 
 @Module({
   imports: [
@@ -33,8 +34,8 @@ import {
     TypeOrmModule.forRootAsync({
       useFactory: () => ({
         type: 'postgres',
-        host: process.env.NEXT_PUBLIC_SUPABASE_URL || 'localhost',
-        port: parseInt(process.env.DB_PORT || '5000', 10),
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432', 10),
         username: process.env.DB_USERNAME || 'postgres',
         password: process.env.DB_PASSWORD || 'password',
         database:
@@ -59,11 +60,8 @@ import {
           process.env.NODE_ENV === 'development' ||
           process.env.DB_LOGGING === 'true',
         ssl:
-          process.env.NODE_ENV === 'production'
-            ? { rejectUnauthorized: false }
-            : false,
-        // Test environment specific settings
-        dropSchema: process.env.NODE_ENV === 'test', // Clean slate for each test run
+          process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+        dropSchema: process.env.NODE_ENV === 'test',
       }),
     }),
     AuthModule,
@@ -72,6 +70,7 @@ import {
     ReceiptItemModule,
     StoreModule,
     UserModule,
+    CategoryModule,
   ],
   controllers: [AppController],
   providers: [AppService, DatabaseHealthCheckService],
