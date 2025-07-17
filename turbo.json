@@ -13,6 +13,17 @@
         "dependsOn": ["^build"],
         "inputs": ["src/**", "*.config.*", "package.json"]
       },
+      "start": {
+        "cache": false,
+        "persistent": true,
+        "dependsOn": ["^build"]
+      },
+      "start:prod": {
+        "cache": false,
+        "persistent": true,
+        "dependsOn": ["^build"],
+        "env": ["DB_HOST", "DB_PORT", "DB_USERNAME", "DB_PASSWORD", "DB_NAME", "DB_SSL", "NODE_ENV", "CI", "PORT"]
+      },
       "lint": {
         "outputs": [],
         "inputs": ["src/**", "*.config.*", ".eslintrc.*", "package.json"]

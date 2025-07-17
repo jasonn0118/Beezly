@@ -165,8 +165,9 @@ jobs:
         DB_USERNAME: postgres
         DB_NAME: beezly_migration_test
         DB_SSL: false
-        NODE_ENV: production
+        NODE_ENV: test
         PORT: 3001
+        CI: true
 
     - name: Discord notification on success
       if: success()
