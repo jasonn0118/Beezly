@@ -732,10 +732,10 @@ jobs:
         run: pnpm run schema:compare --filter=api
         env:
           DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
           DB_SSL: true
           NODE_ENV: ${{ env.ENVIRONMENT }}
 
@@ -743,10 +743,10 @@ jobs:
         run: pnpm run supabase:sync --filter=api
         env:
           DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
           DB_SSL: true
           NODE_ENV: ${{ env.ENVIRONMENT }}
 
