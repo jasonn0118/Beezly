@@ -23,9 +23,12 @@
     "type-check": "tsc --noEmit",
     "typeorm": "typeorm-ts-node-commonjs -d src/data-source.ts",
     "migration:generate": "pnpm run typeorm migration:generate src/migrations/Migration",
-    "migration:run": "pnpm run typeorm migration:run",
+    "migration:run": "ts-node -r tsconfig-paths/register src/scripts/migration-run-safe.ts",
+    "migration:run:unsafe": "pnpm run typeorm migration:run",
     "migration:revert": "pnpm run typeorm migration:revert",
     "migration:show": "pnpm run typeorm migration:show",
+    "migration:check": "ts-node -r tsconfig-paths/register src/scripts/migration-check.ts",
+    "migration:mark-baseline": "ts-node -r tsconfig-paths/register src/scripts/mark-baseline-applied.ts",
     "schema:compare": "ts-node -r tsconfig-paths/register src/schema-comparison.ts",
     "schema:sync": "pnpm run typeorm schema:sync",
     "supabase:sync": "ts-node -r tsconfig-paths/register src/supabase-migration-sync.ts"

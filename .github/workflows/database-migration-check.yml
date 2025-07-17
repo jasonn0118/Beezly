@@ -96,6 +96,32 @@ jobs:
     - name: Build API
       run: pnpm run build --filter=api
 
+    - name: Check for pending migrations
+      run: pnpm run migration:check --filter=api
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_USERNAME: postgres
+        DB_NAME: beezly_migration_test
+        DB_SSL: false
+        NODE_ENV: test
+      continue-on-error: true
+      id: migration_check
+
+    - name: Run migrations if needed
+      if: steps.migration_check.outcome == 'failure'
+      run: |
+        echo "📝 Pending migrations detected, running migrations..."
+        pnpm run migration:run --filter=api
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_USERNAME: postgres
+        DB_NAME: beezly_migration_test
+        DB_SSL: false
+        NODE_ENV: test
+        CI: true
+
     - name: Run schema comparison
       run: pnpm run schema:compare --filter=api
       env:

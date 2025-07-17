@@ -402,7 +402,7 @@ jobs:
           
           echo "✅ Migration test database created"
 
-      - name: Run database migrations (when available)
+      - name: Run database migrations
         working-directory: apps/api
         env:
           NODE_ENV: test
@@ -410,31 +410,34 @@ jobs:
           DB_PORT: 5432
           DB_USERNAME: postgres
           DB_NAME: beezly_migration_test
+          DB_SSL: false
+          CI: true
         run: |
           echo "🔍 Checking for database migrations..."
           
-          # Check if TypeORM migrations exist
-          if [ -d "src/migrations" ] && [ "$(ls -A src/migrations)" ]; then
-            echo "📁 Found migrations directory with files"
-            
-            # Run migrations if they exist
-            if pnpm run migration:run 2>/dev/null; then
-              echo "✅ Migrations ran successfully"
-            else
-              echo "⚠️  Migration command not available or failed"
-              echo "ℹ️  This is expected if migrations haven't been implemented yet"
-            fi
-          else
-            echo "ℹ️  No migrations found - this is expected for new projects"
-            echo "🔮 Future migrations will be validated here automatically"
-          fi
+          # Build the API first to ensure compiled migration files exist
+          cd ../.. && pnpm run build --filter=api && cd apps/api
           
-          # Validate schema can be synchronized
-          echo "🔄 Testing TypeORM schema synchronization..."
-          node -e "
-            const { exec } = require('child_process');
-            console.log('Schema sync test completed - TypeORM will handle table creation');
-          "
+          # Check if TypeORM migrations exist
+          if [ -d "src/migrations" ] && [ "$(ls -A src/migrations/*.ts 2>/dev/null)" ]; then
+            echo "📁 Found migrations directory with TypeScript files"
+            
+            # Check for pending migrations
+            echo "🔍 Checking migration status..."
+            if pnpm run migration:check; then
+              echo "✅ No pending migrations"
+            else
+              echo "📝 Pending migrations detected, running migrations..."
+              pnpm run migration:run
+              echo "✅ Migrations completed successfully"
+            fi
+            
+            # Show current migration status
+            echo "📊 Current migration status:"
+            pnpm run migration:show || echo "Migration show command not available"
+          else
+            echo "ℹ️  No migrations found - skipping migration check"
+          fi
 
       - name: Validate PostGIS spatial features
         run: |
@@ -740,7 +743,36 @@ jobs:
           DB_SSL: true
           NODE_ENV: ${{ env.ENVIRONMENT }}
 
+      - name: Check for pending migrations
+        id: migration_check
+        run: pnpm run migration:check --filter=api
+        continue-on-error: true
+        env:
+          CI: true
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
+          DB_SSL: true
+          NODE_ENV: ${{ env.ENVIRONMENT }}
+
       - name: Run database migrations
+        if: steps.migration_check.outcome == 'failure'
+        run: |
+          echo "📝 Running database migrations for ${{ env.ENVIRONMENT }}..."
+          pnpm run migration:run --filter=api
+        env:
+          CI: true
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
+          DB_SSL: true
+          NODE_ENV: ${{ env.ENVIRONMENT }}
+
+      - name: Sync Supabase schema
         run: pnpm run supabase:sync --filter=api
         env:
           CI: true
