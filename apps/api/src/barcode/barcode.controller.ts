@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, HttpCode } from '@nestjs/common';
 import { BarcodeService } from './barcode.service';
 import { BarcodeLookupDto } from './dto/barcode-lookup.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
@@ -15,6 +15,7 @@ export class BarcodeController {
   constructor(private readonly barcodeService: BarcodeService) {}
 
   @Post('lookup')
+  @HttpCode(200)
   // TODO: Add @UseGuards(JwtAuthGuard) when JWT authentication is implemented
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Look up a product by barcode' })

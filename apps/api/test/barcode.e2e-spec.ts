@@ -63,7 +63,7 @@ describe('BarcodeController (e2e)', () => {
         barcode: '9999999999',
         isVerified: false,
       });
-      expect(response.body.id).toBeDefined();
+      expect(response.body).toHaveProperty('id');
     });
 
     it('should return 400 for invalid request', async () => {
