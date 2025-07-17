@@ -59,9 +59,8 @@ import { CategoryModule } from './category/category.module';
         logging:
           process.env.NODE_ENV === 'development' ||
           process.env.DB_LOGGING === 'true',
-        ssl: {
-          rejectUnauthorized: false,
-        },
+        ssl:
+          process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
         dropSchema: process.env.NODE_ENV === 'test',
       }),
     }),
