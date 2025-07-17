@@ -28,6 +28,7 @@ import { ReceiptModule } from './receipt/receipt.module';
 import { ReceiptItemModule } from './receiptItem/receiptItem.module';
 import { StoreModule } from './store/store.module';
 import { UserModule } from './user/user.module';
+import { BarcodeModule } from './barcode/barcode.module';
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { UserModule } from './user/user.module';
     UserModule,
     CategoryModule,
     OcrModule,
+    BarcodeModule,
   ],
   controllers: [AppController],
   providers: [AppService, DatabaseHealthCheckService],
