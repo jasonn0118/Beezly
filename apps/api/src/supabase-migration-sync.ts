@@ -3,11 +3,65 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 
-import { AppDataSource } from './data-source';
+import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
+import {
+  User,
+  Store,
+  Receipt,
+  Product,
+  ReceiptItem,
+  Category,
+  Badges,
+  ScoreType,
+  UserBadges,
+  UserScore,
+  Price,
+  VerificationLogs,
+} from './entities';
 
-// Load environment variables
-config();
+// Load environment variables (only if not in CI)
+if (process.env.NODE_ENV !== 'test' && !process.env.CI) {
+  config();
+}
+
+// Create dynamic data source that respects current environment
+const createDataSource = () => {
+  // Determine database name: use postgres for production/CI, beezly_db for local dev
+  const dbName =
+    process.env.DB_NAME ||
+    (process.env.NODE_ENV === 'production' || process.env.CI
+      ? 'postgres'
+      : 'beezly_db');
+
+  return new DataSource({
+    type: 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    username: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    database: dbName,
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    entities: [
+      User,
+      Store,
+      Receipt,
+      Product,
+      ReceiptItem,
+      Category,
+      Badges,
+      ScoreType,
+      UserBadges,
+      UserScore,
+      Price,
+      VerificationLogs,
+    ],
+    migrations: ['src/migrations/*.ts'],
+    synchronize: false,
+    logging: process.env.DB_LOGGING === 'true',
+    migrationsRun: false,
+  });
+};
 
 interface MigrationRecord {
   id: number;
@@ -18,20 +72,37 @@ interface MigrationRecord {
 async function syncMigrationsToSupabase() {
   console.log('🚀 Starting Supabase migration sync...\n');
 
+  // Debug environment variables
+  console.log('🔧 Environment variables:');
+  console.log(`DB_HOST: ${process.env.DB_HOST || 'undefined'}`);
+  console.log(`DB_PORT: ${process.env.DB_PORT || 'undefined'}`);
+  console.log(`DB_USERNAME: ${process.env.DB_USERNAME || 'undefined'}`);
+  console.log(`DB_NAME: ${process.env.DB_NAME || 'undefined'}`);
+  console.log(`DB_SSL: ${process.env.DB_SSL || 'undefined'}`);
+  console.log(`NODE_ENV: ${process.env.NODE_ENV || 'undefined'}\n`);
+
+  const dataSource = createDataSource();
+
+  const host =
+    'host' in dataSource.options ? dataSource.options.host : 'unknown';
+  console.log(
+    `🔌 Connecting to database: ${String(dataSource.options.database || 'unknown')} at ${String(host)}`,
+  );
+
   try {
-    await AppDataSource.initialize();
+    await dataSource.initialize();
     console.log('✅ Connected to database');
 
     // Check if migrations table exists
-    const migrationsTableExists = await checkMigrationsTableExists();
+    const migrationsTableExists = await checkMigrationsTableExists(dataSource);
 
     if (!migrationsTableExists) {
       console.log('📝 Creating migrations table...');
-      await createMigrationsTable();
+      await createMigrationsTable(dataSource);
     }
 
     // Get current migrations from database
-    const appliedMigrations = await getAppliedMigrations();
+    const appliedMigrations = await getAppliedMigrations(dataSource);
     console.log(`📊 Found ${appliedMigrations.length} applied migrations`);
 
     // Check for initial migration
@@ -44,13 +115,13 @@ async function syncMigrationsToSupabase() {
       console.log('🔄 Running schema synchronization...');
 
       // First, ensure PostGIS extension is enabled
-      await enablePostGISExtension();
+      await enablePostGISExtension(dataSource);
 
       // Run schema sync to create all tables and relationships
-      await AppDataSource.synchronize();
+      await dataSource.synchronize();
 
       // Record the initial migration as applied
-      await recordInitialMigration();
+      await recordInitialMigration(dataSource);
 
       console.log('✅ Schema synchronized successfully');
     } else {
@@ -58,22 +129,24 @@ async function syncMigrationsToSupabase() {
     }
 
     // Verify PostGIS functionality
-    await verifyPostGISFunctionality();
+    await verifyPostGISFunctionality(dataSource);
 
     console.log('\n🎉 Supabase migration sync completed successfully!');
   } catch (error) {
     console.error('❌ Error during migration sync:', error);
     process.exit(1);
   } finally {
-    if (AppDataSource.isInitialized) {
-      await AppDataSource.destroy();
+    if (dataSource.isInitialized) {
+      await dataSource.destroy();
     }
   }
 }
 
-async function checkMigrationsTableExists(): Promise<boolean> {
+async function checkMigrationsTableExists(
+  dataSource: DataSource,
+): Promise<boolean> {
   try {
-    const result = await AppDataSource.query(`
+    const result = await dataSource.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
@@ -87,8 +160,8 @@ async function checkMigrationsTableExists(): Promise<boolean> {
   }
 }
 
-async function createMigrationsTable(): Promise<void> {
-  await AppDataSource.query(`
+async function createMigrationsTable(dataSource: DataSource): Promise<void> {
+  await dataSource.query(`
     CREATE TABLE IF NOT EXISTS migrations (
       id SERIAL PRIMARY KEY,
       timestamp BIGINT NOT NULL,
@@ -97,9 +170,11 @@ async function createMigrationsTable(): Promise<void> {
   `);
 }
 
-async function getAppliedMigrations(): Promise<MigrationRecord[]> {
+async function getAppliedMigrations(
+  dataSource: DataSource,
+): Promise<MigrationRecord[]> {
   try {
-    return await AppDataSource.query(`
+    return await dataSource.query(`
       SELECT id, timestamp, name 
       FROM migrations 
       ORDER BY timestamp ASC;
@@ -109,15 +184,15 @@ async function getAppliedMigrations(): Promise<MigrationRecord[]> {
   }
 }
 
-async function enablePostGISExtension(): Promise<void> {
+async function enablePostGISExtension(dataSource: DataSource): Promise<void> {
   try {
     console.log('🌍 Enabling PostGIS extension...');
 
     // Enable UUID extension
-    await AppDataSource.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
+    await dataSource.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
 
     // Enable PostGIS extension
-    await AppDataSource.query('CREATE EXTENSION IF NOT EXISTS postgis;');
+    await dataSource.query('CREATE EXTENSION IF NOT EXISTS postgis;');
 
     console.log('✅ PostGIS extension enabled');
   } catch (error) {
@@ -126,11 +201,11 @@ async function enablePostGISExtension(): Promise<void> {
   }
 }
 
-async function recordInitialMigration(): Promise<void> {
+async function recordInitialMigration(dataSource: DataSource): Promise<void> {
   const timestamp = 1752710172007;
   const name = 'InitialMigration';
 
-  await AppDataSource.query(
+  await dataSource.query(
     `
     INSERT INTO migrations (timestamp, name) 
     VALUES ($1, $2) 
@@ -142,13 +217,15 @@ async function recordInitialMigration(): Promise<void> {
   console.log(`📝 Recorded initial migration: ${name}`);
 }
 
-async function verifyPostGISFunctionality(): Promise<void> {
+async function verifyPostGISFunctionality(
+  dataSource: DataSource,
+): Promise<void> {
   try {
     console.log('🧪 Verifying PostGIS functionality...');
 
     // Test basic PostGIS functions
 
-    const result = await AppDataSource.query(`
+    const result = await dataSource.query(`
       SELECT 
         ST_Distance(
           ST_Point(-79.4163, 43.6426), 
@@ -168,16 +245,20 @@ async function verifyPostGISFunctionality(): Promise<void> {
   }
 }
 
-// Configuration check
+// Configuration check - only require DB_HOST and DB_PASSWORD for Supabase
 function validateEnvironment(): boolean {
-  const required = ['DB_HOST', 'DB_USERNAME', 'DB_PASSWORD', 'DB_NAME'];
-  const missing = required.filter((env) => !process.env[env]);
+  // For CI/production, we need at least DB_HOST and DB_PASSWORD
+  if (process.env.CI || process.env.NODE_ENV === 'production') {
+    const required = ['DB_HOST', 'DB_PASSWORD'];
+    const missing = required.filter((env) => !process.env[env]);
 
-  if (missing.length > 0) {
-    console.error(
-      `❌ Missing required environment variables: ${missing.join(', ')}`,
-    );
-    return false;
+    if (missing.length > 0) {
+      console.error(
+        `❌ Missing required environment variables for CI/production: ${missing.join(', ')}`,
+      );
+      console.error('💡 Make sure GitHub secrets are configured properly');
+      return false;
+    }
   }
 
   return true;
