@@ -9,7 +9,9 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
-    "type-check": "turbo run type-check"
+    "type-check": "turbo run type-check",
+    "schema:compare": "turbo run schema:compare",
+    "supabase:sync": "turbo run supabase:sync"
   },
   "keywords": [],
   "author": "",

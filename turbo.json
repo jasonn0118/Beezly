@@ -30,6 +30,16 @@
       "type-check": {
         "outputs": [],
         "inputs": ["src/**", "*.config.*", "tsconfig*.json", "package.json"]
+      },
+      "schema:compare": {
+        "outputs": [],
+        "cache": false,
+        "inputs": ["src/**", "*.config.*", "package.json"]
+      },
+      "supabase:sync": {
+        "outputs": [],
+        "cache": false,
+        "inputs": ["src/**", "*.config.*", "package.json"]
       }
     }
   }
