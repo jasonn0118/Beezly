@@ -13,6 +13,18 @@ if (process.env.CI !== 'true') {
  */
 async function checkMigrations() {
   try {
+    // Debug: show what database we're trying to connect to
+    console.log(
+      '🔍 Attempting to connect to database:',
+      process.env.DB_NAME || 'beezly_db',
+    );
+    console.log('🔍 Full connection info:', {
+      host: process.env.DB_HOST || 'localhost',
+      port: process.env.DB_PORT || '5432',
+      username: process.env.DB_USERNAME || 'postgres',
+      database: process.env.DB_NAME || 'beezly_db',
+    });
+
     await AppDataSource.initialize();
     console.log('✅ Database connection established');
 

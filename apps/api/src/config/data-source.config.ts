@@ -35,35 +35,40 @@ const getMigrationsPath = (): string[] => {
   return ['src/migrations/*.ts'];
 };
 
-// Export configuration for use in different contexts
-export const dataSourceConfig: DataSourceOptions = {
-  type: 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  username: process.env.DB_USERNAME || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'beezly_db',
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  entities: [
-    User,
-    Store,
-    Receipt,
-    Product,
-    ReceiptItem,
-    Category,
-    Badges,
-    ScoreType,
-    UserBadges,
-    UserScore,
-    Price,
-    VerificationLogs,
-  ],
-  migrations: getMigrationsPath(),
-  synchronize: false, // Never use synchronize in production
-  logging: process.env.DB_LOGGING === 'true',
-  migrationsRun: false, // Don't auto-run migrations
-  migrationsTableName: 'migrations',
+// Function to get configuration dynamically
+export const getDataSourceConfig = (): DataSourceOptions => {
+  return {
+    type: 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    username: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'beezly_db',
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    entities: [
+      User,
+      Store,
+      Receipt,
+      Product,
+      ReceiptItem,
+      Category,
+      Badges,
+      ScoreType,
+      UserBadges,
+      UserScore,
+      Price,
+      VerificationLogs,
+    ],
+    migrations: getMigrationsPath(),
+    synchronize: false, // Never use synchronize in production
+    logging: process.env.DB_LOGGING === 'true',
+    migrationsRun: false, // Don't auto-run migrations
+    migrationsTableName: 'migrations',
+  };
 };
 
+// Export static configuration for backward compatibility
+export const dataSourceConfig: DataSourceOptions = getDataSourceConfig();
+
 // Create and export the DataSource instance
-export const AppDataSource = new DataSource(dataSourceConfig);
+export const AppDataSource = new DataSource(getDataSourceConfig());
