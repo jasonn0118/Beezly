@@ -1,0 +1,47 @@
+import { DataSource } from 'typeorm';
+import { config } from 'dotenv';
+import {
+  User,
+  Store,
+  Receipt,
+  Product,
+  ReceiptItem,
+  Category,
+  Badges,
+  ScoreType,
+  UserBadges,
+  UserScore,
+  Price,
+  VerificationLogs,
+} from './entities';
+
+// Load environment variables
+config();
+
+export const AppDataSource = new DataSource({
+  type: 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '5432', 10),
+  username: process.env.DB_USERNAME || 'postgres',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'beezly_db',
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  entities: [
+    User,
+    Store,
+    Receipt,
+    Product,
+    ReceiptItem,
+    Category,
+    Badges,
+    ScoreType,
+    UserBadges,
+    UserScore,
+    Price,
+    VerificationLogs,
+  ],
+  migrations: ['src/migrations/*.ts'],
+  synchronize: false, // Never use synchronize in production
+  logging: process.env.DB_LOGGING === 'true',
+  migrationsRun: false, // Don't auto-run migrations
+});

@@ -16,6 +16,10 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api-docs', app, document);
 
-  await app.listen(5000);
+  const port = process.env.PORT || 3001;
+  await app.listen(port);
+
+  console.log(`🚀 Beezly API is running on: http://localhost:${port}`);
+  console.log(`📚 API Documentation: http://localhost:${port}/api-docs`);
 }
 void bootstrap();
