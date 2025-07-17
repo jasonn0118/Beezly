@@ -1,98 +1,166 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Beezly API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The backend API for the Beezly application, built with NestJS and TypeScript.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Overview
 
-## Description
+Beezly is a receipt processing and price comparison application that helps users track their purchases and find better deals. This API provides the core services for user management, receipt processing, product tracking, and data storage.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Services
 
-## Project setup
+This API provides several core services:
 
+### 📄 **OCR Service** - Receipt Processing
+- **Azure Form Recognizer v4.0** integration for high-accuracy receipt parsing
+- **Multiple image formats** support (PNG, JPG, JPEG, BMP, TIFF, WebP, HEIC, HEIF)
+- **Automatic storage** upload to Supabase with secure authentication
+- **Financial data extraction** (total, subtotal, tax, line items)
+- **Confidence scoring** and fallback text parsing
+
+📖 **[Detailed OCR Documentation](./src/ocr/README.md)**
+
+**Quick Start:**
 ```bash
-$ pnpm install
+# Process a receipt
+curl -X POST http://localhost:3001/ocr/process-receipt \
+  -F "file=@receipt.jpg"
+
+# Check service health
+curl -X POST http://localhost:3001/ocr/health
 ```
 
-## Compile and run the project
+### 🔐 **Auth Service**
+- User authentication and authorization
+- JWT token management
+- Session handling
+
+### 👥 **User Service**
+- User profile management
+- User data operations
+
+### 🏪 **Store Service**
+- Store information management
+- Store-related operations
+
+### 📦 **Product Service**
+- Product catalog management
+- Product data operations
+
+### 🧾 **Receipt Service**
+- Receipt data management
+- Receipt processing workflows
+
+### 📊 **Category Service**
+- Product categorization
+- Category management
+
+## Project Setup
 
 ```bash
-# development
-$ pnpm run start
+# Install dependencies
+$ pnpm install
 
-# watch mode
+# Development
 $ pnpm run start:dev
 
-# production mode
+# Production
 $ pnpm run start:prod
 ```
 
-## Run tests
+## Environment Configuration
+
+Create a `.env` file in the `apps/api` directory with the following variables:
 
 ```bash
-# unit tests
+# Application Environment
+NODE_ENV=development
+PORT=3001
+
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=root
+DB_PASSWORD=
+DB_NAME=beezly_db
+DB_SSL=false
+DB_LOGGING=false
+
+# JWT Configuration
+JWT_SECRET=your_jwt_secret_here
+
+# Azure Form Recognizer Configuration
+AZURE_FORM_RECOGNIZER_ENDPOINT=https://your-resource.cognitiveservices.azure.com
+AZURE_FORM_RECOGNIZER_API_KEY=your-azure-api-key
+
+# Supabase Configuration
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_ANON_KEY=your-supabase-anon-key
+```
+
+## Testing
+
+```bash
+# Unit tests
 $ pnpm run test
 
-# e2e tests
+# E2E tests
 $ pnpm run test:e2e
 
-# test coverage
+# Test coverage
 $ pnpm run test:cov
 ```
 
-## Deployment
+## API Documentation
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Once the server is running, you can access the Swagger API documentation at:
+- **Development**: http://localhost:3001/api
+- **Production**: https://your-domain.com/api
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Development
+
+### Database Migrations
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+# Generate migration
+$ pnpm run migration:generate
+
+# Run migrations
+$ pnpm run migration:run
+
+# Revert migration
+$ pnpm run migration:revert
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Code Quality
 
-## Resources
+```bash
+# Lint code
+$ pnpm run lint
 
-Check out a few resources that may come in handy when working with NestJS:
+# Format code
+$ pnpm run format
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Architecture
 
-## Support
+The API follows a modular architecture with:
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+- **Controllers**: Handle HTTP requests and responses
+- **Services**: Contain business logic
+- **Entities**: Define database models
+- **DTOs**: Define data transfer objects
+- **Guards**: Handle authentication and authorization
+- **Interceptors**: Handle cross-cutting concerns
 
-## Stay in touch
+## Contributing
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+1. Create a feature branch
+2. Make your changes
+3. Add tests for new functionality
+4. Run the test suite
+5. Submit a pull request
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+This project is part of the Beezly application.
