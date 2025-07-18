@@ -48,12 +48,6 @@
         "inputs": ["src/**", "*.config.*", "package.json"],
         "env": ["DB_HOST", "DB_PORT", "DB_USERNAME", "DB_PASSWORD", "DB_NAME", "DB_SSL", "NODE_ENV", "CI"]
       },
-      "supabase:sync": {
-        "outputs": [],
-        "cache": false,
-        "inputs": ["src/**", "*.config.*", "package.json"],
-        "env": ["DB_HOST", "DB_PORT", "DB_USERNAME", "DB_PASSWORD", "DB_NAME", "DB_SSL", "NODE_ENV", "CI"]
-      },
       "migration:run": {
         "outputs": [],
         "cache": false,
