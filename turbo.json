@@ -11,7 +11,7 @@
       "build": {
         "outputs": ["dist/**", ".next/**", "build/**"],
         "dependsOn": ["^build"],
-        "inputs": ["src/**", "*.config.*", "package.json"]
+        "inputs": ["src/**", "dto/**", "*.config.*", "package.json"]
       },
       "start": {
         "cache": false,

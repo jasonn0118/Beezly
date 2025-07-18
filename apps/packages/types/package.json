@@ -1,8 +1,20 @@
 {
   "name": "@beezly/types",
   "version": "1.0.0",
-  "main": "dto/index.ts",
+  "main": "dist/dto/index.js",
+  "types": "dist/dto/index.d.ts",
+  "files": [
+    "dist",
+    "dto"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
   "peerDependencies": {
     "@nestjs/swagger": "^11.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
   }
 }
