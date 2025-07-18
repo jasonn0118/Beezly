@@ -1,7 +1,7 @@
 {
   "name": "@beezly/types",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "dto/index.ts",
   "peerDependencies": {
     "@nestjs/swagger": "^11.2.0"
   }

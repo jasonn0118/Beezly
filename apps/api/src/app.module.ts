@@ -6,6 +6,7 @@ import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { BarcodeModule } from './barcode/barcode.module';
 import { CategoryModule } from './category/category.module';
 import { DatabaseHealthCheckService } from './database-health-check.service';
 import {
@@ -28,7 +29,6 @@ import { ReceiptModule } from './receipt/receipt.module';
 import { ReceiptItemModule } from './receiptItem/receiptItem.module';
 import { StoreModule } from './store/store.module';
 import { UserModule } from './user/user.module';
-import { BarcodeModule } from './barcode/barcode.module';
 
 @Module({
   imports: [
@@ -92,14 +92,14 @@ import { BarcodeModule } from './barcode/barcode.module';
       }),
     }),
     AuthModule,
+    BarcodeModule,
+    CategoryModule,
+    OcrModule,
     ProductModule,
     ReceiptModule,
     ReceiptItemModule,
     StoreModule,
     UserModule,
-    CategoryModule,
-    OcrModule,
-    BarcodeModule,
   ],
   controllers: [AppController],
   providers: [AppService, DatabaseHealthCheckService],

@@ -1,5 +1,6 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { BarcodeType } from '@beezly/types';
 
 export class BarcodeLookupDto {
   @ApiProperty({
@@ -18,4 +19,14 @@ export class BarcodeLookupDto {
   @IsString()
   @IsOptional()
   userId?: string;
+
+  @ApiProperty({
+    description: 'The type of barcode being scanned',
+    enum: BarcodeType,
+    example: BarcodeType.EAN13,
+    required: false,
+  })
+  @IsEnum(BarcodeType)
+  @IsOptional()
+  barcodeType?: BarcodeType;
 }

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { BarcodeType } from "./barcode";
 
 export class NormalizedProductDTO {
   @ApiProperty({
@@ -18,6 +19,13 @@ export class NormalizedProductDTO {
     description: "Optional product barcode",
   })
   barcode?: string;
+
+  @ApiPropertyOptional({
+    example: BarcodeType.EAN13,
+    description: "Optional barcode type",
+    enum: BarcodeType,
+  })
+  barcodeType?: BarcodeType;
 
   @ApiPropertyOptional({
     example: "Electronics",

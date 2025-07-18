@@ -29,6 +29,42 @@ export class OcrController {
     private readonly configService: ConfigService,
   ) {}
 
+  @Post('health')
+  @ApiOperation({
+    summary: 'Health check for OCR service',
+    description:
+      'Check if the OCR service is running and Azure credentials are configured via environment variables',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Service is healthy',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+        azure_configured: { type: 'boolean' },
+      },
+    },
+  })
+  healthCheck() {
+    // Check if Azure is configured via environment variables
+    const azureEndpoint = this.configService.get<string>(
+      'AZURE_FORM_RECOGNIZER_ENDPOINT',
+    );
+    const azureApiKey = this.configService.get<string>(
+      'AZURE_FORM_RECOGNIZER_API_KEY',
+    );
+
+    const azureConfigured = !!(azureEndpoint && azureApiKey);
+
+    return {
+      success: true,
+      message: 'OCR service is running',
+      azure_configured: azureConfigured,
+    };
+  }
+
   @Post('process-receipt')
   @ApiOperation({
     summary: 'Process receipt image and extract data',
@@ -197,41 +233,5 @@ export class OcrController {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
-  }
-
-  @Post('health')
-  @ApiOperation({
-    summary: 'Health check for OCR service',
-    description:
-      'Check if the OCR service is running and Azure credentials are configured via environment variables',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Service is healthy',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message: { type: 'string' },
-        azure_configured: { type: 'boolean' },
-      },
-    },
-  })
-  healthCheck() {
-    // Check if Azure is configured via environment variables
-    const azureEndpoint = this.configService.get<string>(
-      'AZURE_FORM_RECOGNIZER_ENDPOINT',
-    );
-    const azureApiKey = this.configService.get<string>(
-      'AZURE_FORM_RECOGNIZER_API_KEY',
-    );
-
-    const azureConfigured = !!(azureEndpoint && azureApiKey);
-
-    return {
-      success: true,
-      message: 'OCR service is running',
-      azure_configured: azureConfigured,
-    };
   }
 }
