@@ -9,7 +9,7 @@ import { Store } from '../entities/store.entity';
 import { UserService } from '../user/user.service';
 import { StoreService } from '../store/store.service';
 import { ProductService } from '../product/product.service';
-import { Category } from 'src/entities';
+import { Category } from '../entities/category.entity';
 
 export interface CreateReceiptRequest {
   userId?: string;
