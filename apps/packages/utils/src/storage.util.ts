@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { v4 as uuidv4 } from "uuid";
+import { Transformer } from "@napi-rs/image";
+import * as heicConvert from "heic-convert";
 
 const RECEIPT_BUCKET = "receipt";
 const PRODUCT_BUCKET = "product";
@@ -56,22 +58,66 @@ export async function upload_receipt(
       return mimeToExt[mimeType] || "png";
     };
 
-    const extension = getFileExtension(mimeType);
-    const filename = `receipt_${Date.now()}_${uuidv4()}.${extension}`;
+    // Convert to WebP format for consistency and performance
+    let uploadBuffer: Buffer;
+    let uploadMimeType: string;
+    let fileExtension: string;
+    
+    try {
+      console.log(`Converting ${mimeType} image to WebP format...`);
+      console.log(`MIME type check: ${mimeType === "image/heic"} || ${mimeType === "image/heif"}`);
+      
+      if (mimeType === "image/heic" || mimeType === "image/heif") {
+        // For HEIC files, use heic-convert first, then @napi-rs/image for WebP
+        console.log("✅ HEIC detected! Converting HEIC to JPEG first, then to WebP");
+        
+        // Step 1: Convert HEIC to JPEG using heic-convert
+        const jpegBuffer = await heicConvert({
+          buffer: file,
+          format: 'JPEG',
+          quality: 0.9,
+        });
+        
+        // Step 2: Convert JPEG to WebP using @napi-rs/image
+        const transformer = new Transformer(Buffer.from(jpegBuffer));
+        uploadBuffer = Buffer.from(await transformer.webp(85)); // 85% quality
+        console.log(`HEIC converted to WebP successfully. Original size: ${file.length}, WebP size: ${uploadBuffer.length}`);
+      } else {
+        // Use @napi-rs/image directly for other formats
+        console.log("❌ HEIC NOT detected! Using @napi-rs/image for non-HEIC formats");
+        console.log(`Actual MIME type: "${mimeType}"`);
+        const transformer = new Transformer(file);
+        uploadBuffer = Buffer.from(await transformer.webp(85)); // 85% quality
+        console.log(`Image converted to WebP successfully. Original size: ${file.length}, WebP size: ${uploadBuffer.length}`);
+      }
+      
+      uploadMimeType = "image/webp";
+      fileExtension = "webp";
+      
+    } catch (conversionError) {
+      console.error("Failed to convert image to WebP:", conversionError);
+      console.log("Falling back to original format");
+      uploadBuffer = file;
+      uploadMimeType = mimeType;
+      fileExtension = getFileExtension(mimeType);
+    }
+
+    // Use appropriate extension based on whether conversion succeeded
+    const filename = `receipt_${Date.now()}_${uuidv4()}.${fileExtension}`;
     const path = `${user_sk}/${store_sk}/${filename}`;
 
     console.log("Upload details:", {
       bucket: RECEIPT_BUCKET,
       path,
-      fileSize: file.length,
-      mimeType,
+      fileSize: uploadBuffer.length,
+      contentType: uploadMimeType,
     });
 
     // Add timeout to prevent infinite waiting
     const uploadPromise = supabase.storage
       .from(RECEIPT_BUCKET)
-      .upload(path, file, {
-        contentType: mimeType,
+      .upload(path, uploadBuffer, {
+        contentType: uploadMimeType,
         upsert: true,
       });
 
