@@ -1,8 +1,9 @@
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image } from 'react-native';
-import { FontAwesome } from '@expo/vector-icons'; // Make sure to install @expo/vector-icons
+import { FontAwesome } from '@expo/vector-icons';
 
-export default function ScanResultScreen({ scannedData, onScanAgain }: { scannedData: { type: string; data: string } | null, onScanAgain: () => void }) {
+// The function name must be capitalized to be a valid React component.
+export default function BarcodeResultScreen({ scannedData, onScanAgain }: { scannedData: { type: string; data: string } | null, onScanAgain: () => void }) {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -48,13 +49,6 @@ export default function ScanResultScreen({ scannedData, onScanAgain }: { scanned
                         <Text style={styles.storeDistance}>0.5 miles away</Text>
                     </View>
                     <Text style={styles.priceText}>$3.98</Text>
-                </View>
-                <View style={styles.priceItem}>
-                    <View>
-                        <Text style={styles.storeName}>ABC Mart</Text>
-                        <Text style={styles.storeDistance}>0.8 miles away</Text>
-                    </View>
-                    <Text style={styles.priceText}>$4.10</Text>
                 </View>
             </ScrollView>
         </View>
