@@ -67,7 +67,7 @@ describe('ProductService', () => {
       const result = await service.getAllProducts();
 
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('product-uuid-1');
+      expect(result[0].product_sk).toBe('product-uuid-1');
       expect(result[0].name).toBe('Test Product');
       expect(result[0].category).toBe('Food');
       expect(mockProductRepository.find).toHaveBeenCalledWith({
@@ -95,7 +95,7 @@ describe('ProductService', () => {
       const result = await service.getProductById('product-uuid-1');
 
       expect(result).toBeDefined();
-      expect(result?.id).toBe('product-uuid-1');
+      expect(result?.product_sk).toBe('product-uuid-1');
       expect(result?.name).toBe('Test Product');
       expect(mockProductRepository.findOne).toHaveBeenCalledWith({
         where: { productSk: 'product-uuid-1' },
@@ -121,7 +121,7 @@ describe('ProductService', () => {
       const result = await service.getProductById('1');
 
       expect(result).toBeDefined();
-      expect(result?.id).toBe('product-uuid-1');
+      expect(result?.product_sk).toBe('product-uuid-1');
       expect(mockProductRepository.findOne).toHaveBeenCalledTimes(2);
     });
 
@@ -184,9 +184,16 @@ describe('ProductService', () => {
       };
 
       const productData = {
+        product_sk: 'product-uuid-1',
         name: 'Test Product',
         barcode: '1234567890',
-        category: 'Food',
+        category: 1,
+        image_url: 'https://example.com/product.jpg',
+        credit_score: 0,
+        verified_count: 0,
+        flagged_count: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
       // Mock findOrCreateCategory
@@ -199,7 +206,7 @@ describe('ProductService', () => {
       const result = await service.createProduct(productData);
 
       expect(result).toBeDefined();
-      expect(result.id).toBe('product-uuid-1');
+      expect(result.product_sk).toBe('product-uuid-1');
       expect(result.name).toBe('Test Product');
       expect(result.barcode).toBe('1234567890');
       expect(result.category).toBe('Food');
@@ -240,7 +247,7 @@ describe('ProductService', () => {
       const result = await service.createProduct(productData);
 
       expect(result).toBeDefined();
-      expect(result.id).toBe('product-uuid-1');
+      expect(result.product_sk).toBe('product-uuid-1');
       expect(result.category).toBeUndefined();
     });
   });
@@ -318,7 +325,7 @@ describe('ProductService', () => {
       );
 
       expect(result).toBeDefined();
-      expect(result.id).toBe('product-uuid-1');
+      expect(result.product_sk).toBe('product-uuid-1');
       expect(mockProductRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           verifiedCount: 1,
@@ -355,7 +362,7 @@ describe('ProductService', () => {
       );
 
       expect(result).toBeDefined();
-      expect(result.id).toBe('product-uuid-1');
+      expect(result.product_sk).toBe('product-uuid-1');
       expect(mockProductRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           flaggedCount: 1,

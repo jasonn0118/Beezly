@@ -9,6 +9,7 @@ import { Store } from '../entities/store.entity';
 import { UserService } from '../user/user.service';
 import { StoreService } from '../store/store.service';
 import { ProductService } from '../product/product.service';
+import { Category } from 'src/entities';
 
 export interface CreateReceiptRequest {
   userId?: string;
@@ -173,17 +174,40 @@ export class ReceiptService {
           );
 
           if (!product) {
+            let categoryId: number | undefined;
+            if (itemData.category) {
+              // Try to find category by name
+              let category = await this.storeRepository.manager.findOne(
+                Category,
+                {
+                  where: { name: itemData.category },
+                },
+              );
+
+              if (!category) {
+                // Optional: Create category if not found
+                category = this.storeRepository.manager.create(Category, {
+                  name: itemData.category,
+                  slug: itemData.category.toLowerCase().replace(/\s+/g, '-'),
+                  level: 1,
+                  useYn: true,
+                });
+                category = await this.storeRepository.manager.save(category);
+              }
+
+              categoryId = category.id;
+            }
             // Create new product if not found
             product = await this.productService.createProduct({
               name: itemData.productName,
               barcode: itemData.barcode,
-              category: itemData.category,
+              category: categoryId,
             });
           }
 
           const receiptItem = manager.create(ReceiptItem, {
             receiptSk: savedReceipt.receiptSk,
-            productSk: product.id,
+            productSk: product.product_sk,
             price: itemData.price,
             quantity: itemData.quantity,
             lineTotal: itemData.price * itemData.quantity,
@@ -451,15 +475,21 @@ export class ReceiptService {
           ? await this.productService.getProductById(item.product.productSk)
           : null;
         return {
-          id: item.productSk || 'unknown',
+          product_sk: item.productSk || 'unknown',
           name: product?.name || 'Unknown Product',
           barcode: product?.barcode,
-          category: product?.category,
+          category:
+            typeof product?.category === 'number'
+              ? product.category
+              : undefined,
           price: Number(item.price),
-          imageUrl: product?.imageUrl,
+          image_url: product?.image_url,
           quantity: item.quantity,
-          createdAt: item.createdAt.toISOString(),
-          updatedAt: item.updatedAt.toISOString(),
+          created_at: item.createdAt.toISOString(),
+          updated_at: item.updatedAt.toISOString(),
+          credit_score: product?.credit_score ?? 0,
+          verified_count: product?.verified_count ?? 0,
+          flagged_count: product?.flagged_count ?? 0,
         };
       }),
     );

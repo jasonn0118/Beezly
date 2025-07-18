@@ -5,53 +5,59 @@ export class NormalizedProductDTO {
     example: "d290f1ee-6c54-4b01-90e6-d701748f0851",
     description: "Product primary key (UUID)",
   })
-  id: string; // product_sk (UUID)
+  product_sk: string;
 
   @ApiProperty({
-    example: "Apple iPhone 15",
+    example: "Organic Apple",
     description: "Name of the product",
   })
   name: string;
 
   @ApiPropertyOptional({
-    example: "190199204200",
+    example: "1234567890123",
     description: "Optional product barcode",
   })
   barcode?: string;
 
   @ApiPropertyOptional({
-    example: "Electronics",
-    description: "Optional product category",
-  })
-  category?: string;
-
-  @ApiPropertyOptional({
-    example: 1299.99,
-    description: "Optional product price",
-  })
-  price?: number;
-
-  @ApiPropertyOptional({
     example: "https://example.com/images/product.jpg",
     description: "Optional product image URL",
   })
-  imageUrl?: string;
+  image_url?: string;
+
+  @ApiPropertyOptional({
+    example: 80.5,
+    description: "Initial credit score of the product (0~100)",
+  })
+  credit_score?: number;
+
+  @ApiPropertyOptional({
+    example: 0,
+    description: "Number of verified validations",
+  })
+  verified_count?: number;
+
+  @ApiPropertyOptional({
+    example: 0,
+    description: "Number of times this product was flagged",
+  })
+  flagged_count?: number;
 
   @ApiProperty({
-    example: 100,
-    description: "Available quantity in stock",
+    example: "2025-07-17T10:00:00Z",
+    description: "Product creation timestamp (ISO 8601)",
   })
-  quantity: number;
+  created_at: string;
 
   @ApiProperty({
-    example: "2025-07-07T10:00:00Z",
-    description: "Creation timestamp (ISO string)",
+    example: "2025-07-17T12:00:00Z",
+    description: "Product last update timestamp (ISO 8601)",
   })
-  createdAt: string;
+  updated_at: string;
 
-  @ApiProperty({
-    example: "2025-07-07T12:00:00Z",
-    description: "Last update timestamp (ISO string)",
+  @ApiPropertyOptional({
+    example: 1,
+    description: "Foreign key category ID (integer)",
   })
-  updatedAt: string;
+  category?: number;
 }
