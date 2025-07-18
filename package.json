@@ -26,7 +26,8 @@
   "author": "",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "apps/packages/*"
   ],
   "license": "ISC",
   "packageManager": "pnpm@10.11.0",

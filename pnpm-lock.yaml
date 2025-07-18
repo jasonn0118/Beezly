@@ -262,18 +262,6 @@ importers:
         specifier: ~5.8.3
         version: 5.8.3
 
-  apps/packages/utils:
-    dependencies:
-      '@napi-rs/image':
-        specifier: ^1.11.0
-        version: 1.11.0
-      heic-convert:
-        specifier: ^2.1.0
-        version: 2.1.0
-      sharp:
-        specifier: ^0.34.3
-        version: 0.34.3
-
   apps/web:
     dependencies:
       next:
