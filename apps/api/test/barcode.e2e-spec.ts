@@ -5,6 +5,7 @@ import { AppModule } from '../src/app.module';
 import { Repository } from 'typeorm';
 import { Product } from '../src/entities/product.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Server } from 'http';
 
 describe('BarcodeController (e2e)', () => {
   let app: INestApplication;
@@ -39,7 +40,8 @@ describe('BarcodeController (e2e)', () => {
         flaggedCount: 0,
       });
 
-      const response = await request(app.getHttpServer())
+      const server = app.getHttpServer() as Server;
+      const response = await request(server)
         .post('/barcode/lookup')
         .send({ barcode: '1234567890' })
         .expect(200);
@@ -53,7 +55,8 @@ describe('BarcodeController (e2e)', () => {
     });
 
     it('should create placeholder for unknown barcode', async () => {
-      const response = await request(app.getHttpServer())
+      const server = app.getHttpServer() as Server;
+      const response = await request(server)
         .post('/barcode/lookup')
         .send({ barcode: '9999999999' })
         .expect(200);
@@ -67,7 +70,8 @@ describe('BarcodeController (e2e)', () => {
     });
 
     it('should return 400 for invalid request', async () => {
-      await request(app.getHttpServer())
+      const server = app.getHttpServer() as Server;
+      await request(server)
         .post('/barcode/lookup')
         .send({ invalid: 'field' })
         .expect(400);
@@ -85,7 +89,8 @@ describe('BarcodeController (e2e)', () => {
         flaggedCount: 0,
       });
 
-      const response = await request(app.getHttpServer())
+      const server = app.getHttpServer() as Server;
+      const response = await request(server)
         .get('/barcode/1234567890')
         .expect(200);
 
@@ -98,9 +103,8 @@ describe('BarcodeController (e2e)', () => {
     });
 
     it('should return 404 for non-existent barcode', async () => {
-      await request(app.getHttpServer())
-        .get('/barcode/nonexistent')
-        .expect(404);
+      const server = app.getHttpServer() as Server;
+      await request(server).get('/barcode/nonexistent').expect(404);
     });
   });
 });

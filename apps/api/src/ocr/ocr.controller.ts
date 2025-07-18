@@ -18,7 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { OcrService, OcrResult } from './ocr.service';
-import { upload_receipt } from '../../../packages/utils/src/storage.util';
+import { upload_receipt } from '../utils/storage.util';
 import { ProcessReceiptDto } from './dto/process-receipt.dto';
 
 @ApiTags('OCR')
@@ -33,7 +33,7 @@ export class OcrController {
   @ApiOperation({
     summary: 'Process receipt image and extract data',
     description:
-      'Upload a receipt image and extract structured data using Azure Form Recognizer or fallback OCR',
+      'Upload a receipt image and extract structured data using Azure Form Recognizer or fallback OCR. The image is saved to storage asynchronously for better performance.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -90,7 +90,6 @@ export class OcrController {
             raw_text: { type: 'string' },
             azure_confidence: { type: 'number' },
             engine_used: { type: 'string' },
-            uploaded_file_path: { type: 'string' },
           },
         },
       },
@@ -161,28 +160,29 @@ export class OcrController {
         azureApiKey,
       );
 
-      // Always upload file to storage
+      // Upload file to storage asynchronously (fire-and-forget)
       const userId = body.user_id || 'default_user';
       const storeId = body.store_id || 'default_store';
 
-      console.log(`Uploading receipt for user ${userId}, store ${storeId}`);
-      const uploadedFilePath = await upload_receipt(
-        userId,
-        storeId,
-        file.buffer,
-        file.mimetype,
-      );
+      console.log(`Starting async upload for user ${userId}, store ${storeId}`);
 
-      if (uploadedFilePath) {
-        console.log(`Receipt uploaded successfully to: ${uploadedFilePath}`);
-      } else {
-        console.warn('Failed to upload receipt to storage');
-      }
+      // Fire-and-forget upload - don't await to avoid blocking response
+      upload_receipt(userId, storeId, file.buffer, file.mimetype)
+        .then((uploadedFilePath) => {
+          if (uploadedFilePath) {
+            console.log(
+              `Receipt uploaded successfully to: ${uploadedFilePath}`,
+            );
+          } else {
+            console.warn('Failed to upload receipt to storage');
+          }
+        })
+        .catch((error) => {
+          console.error('Error uploading receipt to storage:', error);
+        });
 
-      // Add upload path to result if available
-      if (uploadedFilePath) {
-        result.uploaded_file_path = uploadedFilePath;
-      }
+      // Note: uploaded_file_path is not included in immediate response
+      // since upload happens asynchronously
 
       return {
         success: true,

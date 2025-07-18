@@ -30,32 +30,39 @@ export interface OcrResult {
 export class OcrService {
   /**
    * Load and process image with format support
+   * Azure Document Intelligence supports: JPEG/JPG, PNG, BMP, TIFF, HEIF (but not HEIC)
    */
   async loadImageWithFormatSupport(buffer: Buffer): Promise<Buffer> {
     try {
       // Check if the buffer is HEIC/HEIF format
       const isHeic = this.isHeicBuffer(buffer);
 
-      let processedBuffer: Buffer;
-
       if (isHeic) {
-        // Convert HEIC to JPEG
+        // Convert HEIC to JPEG for Azure Document Intelligence compatibility
+        console.log(
+          'HEIC format detected, converting to JPEG for Azure compatibility',
+        );
+
+        // Convert HEIC to JPEG using heic-convert
         const jpegBuffer = await heicConvert({
           buffer: buffer,
           format: 'JPEG',
-          quality: 0.9,
+          quality: 0.9, // 90% quality for OCR
         });
-        processedBuffer = Buffer.from(jpegBuffer);
+
+        console.log(
+          `HEIC converted to JPEG. Original size: ${buffer.length}, JPEG size: ${jpegBuffer.length}`,
+        );
+        return Buffer.from(jpegBuffer);
       } else {
-        // For other formats, use Sharp directly
-        processedBuffer = await sharp(buffer)
+        // For other formats, apply standard preprocessing
+        const processedBuffer = await sharp(buffer)
           .removeAlpha()
           .toColorspace('srgb')
           .jpeg()
           .toBuffer();
+        return processedBuffer;
       }
-
-      return processedBuffer;
     } catch (error) {
       throw new Error(
         `Error loading image: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -167,8 +174,11 @@ export class OcrService {
     }
 
     try {
-      // First, compress the image to fit Azure's size limits
-      const compressedBuffer = await this.compressImageForAzure(buffer);
+      // Pre-process the image to ensure compatibility with Azure Document Intelligence
+      const processedBuffer = await this.loadImageWithFormatSupport(buffer);
+
+      // Compress the processed image to fit Azure's size limits
+      const finalBuffer = await this.compressImageForAzure(processedBuffer);
 
       // Azure Form Recognizer Receipt API v4.0 endpoint
       const analyzeUrl = `${endpoint}/formrecognizer/documentModels/prebuilt-receipt:analyze?api-version=2023-07-31`;
@@ -179,7 +189,7 @@ export class OcrService {
       };
 
       // Submit image for analysis
-      const response = await axios.post(analyzeUrl, compressedBuffer, {
+      const response = await axios.post(analyzeUrl, finalBuffer, {
         headers,
       });
 

@@ -13,7 +13,9 @@ This API provides several core services:
 ### 📄 **OCR Service** - Receipt Processing
 - **Azure Form Recognizer v4.0** integration for high-accuracy receipt parsing
 - **Multiple image formats** support (PNG, JPG, JPEG, BMP, TIFF, WebP, HEIC, HEIF)
-- **Automatic storage** upload to Supabase with secure authentication
+- **Asynchronous storage** upload to Supabase for improved performance
+- **WebP conversion** for all stored images to optimize loading times
+- **HEIC support** with intelligent two-step conversion (HEIC→JPEG→WebP)
 - **Financial data extraction** (total, subtotal, tax, line items)
 - **Confidence scoring** and fallback text parsing
 

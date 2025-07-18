@@ -11,8 +11,10 @@ This service provides OCR (Optical Character Recognition) functionality for proc
 - 🗜️ **Intelligent Image Processing** - Automatic image compression to meet Azure size limits
 - 🔧 **Fallback Support** - Text parsing as backup when structured data unavailable  
 - 🎯 **Confidence Scoring** - Azure provides confidence scores for reliability
-- 💾 **Automatic Storage** - All receipts are automatically uploaded to Supabase storage with secure authentication
+- 💾 **Asynchronous Storage** - Receipt images are uploaded to Supabase storage asynchronously for improved performance
 - 🔐 **Secure Storage** - Uses service role key for server-side uploads, bypassing RLS policies
+- 🎨 **WebP Conversion** - All images are automatically converted to WebP format for optimal web performance
+- 🍎 **HEIC Support** - Apple HEIC/HEIF images are automatically converted via two-step process (HEIC→JPEG→WebP)
 
 ## API Endpoints
 
@@ -54,11 +56,12 @@ Process a receipt image and extract structured data for Beezly's price tracking 
     ],
     "raw_text": "Raw OCR text...",
     "azure_confidence": 0.95,
-    "engine_used": "Azure Form Recognizer v4.0",
-    "uploaded_file_path": "default_user/default_store/receipt_1234567890_uuid.jpg"
+    "engine_used": "Azure Form Recognizer v4.0"
   }
 }
 ```
+
+**Note:** The `uploaded_file_path` field has been removed from the response as image upload now happens asynchronously in the background for improved performance. The OCR results are returned immediately without waiting for the upload to complete.
 
 ### POST /ocr/health
 
@@ -114,7 +117,8 @@ const response = await fetch('/ocr/process-receipt', {
 
 const result = await response.json();
 console.log(result.data);
-console.log(result.data.uploaded_file_path); // Will be something like "default_user/default_store/receipt_xxx.jpg"
+// Note: uploaded_file_path is no longer included in the response
+// Image upload happens asynchronously in the background
 
 // Process receipt with custom user and store organization
 const formDataWithCustom = new FormData();
@@ -128,7 +132,8 @@ const responseWithCustom = await fetch('/ocr/process-receipt', {
 });
 
 const resultWithCustom = await responseWithCustom.json();
-console.log(resultWithCustom.data.uploaded_file_path); // Will be "user_123/store_456/receipt_xxx.jpg"
+// Note: uploaded_file_path is no longer included in the response
+// Image upload happens asynchronously in the background
 
 // Check service health
 const healthResponse = await fetch('/ocr/health', {
@@ -217,9 +222,9 @@ The service requires Azure Form Recognizer credentials to be configured via envi
 - **JPG/JPEG** - Directly supported
 - **BMP** - Directly supported
 - **TIFF** - Directly supported
-- **WebP** - Automatically converted to JPEG
-- **HEIC** - Automatically converted to JPEG (Apple's High Efficiency Image Format)
-- **HEIF** - Automatically converted to JPEG (High Efficiency Image Format)
+- **WebP** - Directly supported by Azure (converted to JPEG for OCR processing)
+- **HEIC** - Automatically converted to JPEG for Azure compatibility (Apple's High Efficiency Image Format)
+- **HEIF** - Directly supported by Azure (High Efficiency Image Format)
 
 ### Size Limits
 
@@ -231,11 +236,17 @@ The service requires Azure Form Recognizer credentials to be configured via envi
 
 HEIC (High Efficiency Image Codec) and HEIF (High Efficiency Image Format) are modern image formats used by Apple devices:
 
-- **Automatic Conversion**: HEIC/HEIF files are automatically converted to JPEG format
+**OCR Processing:**
+- **HEIC Conversion**: HEIC files are automatically converted to JPEG for Azure Document Intelligence compatibility
+- **HEIF Support**: HEIF files are directly supported by Azure (no conversion needed)
 - **Quality Preservation**: Conversion maintains high quality suitable for OCR processing
+- **Seamless Processing**: No additional steps required - upload HEIC/HEIF files directly
+
+**Storage Optimization:**
+- **WebP Conversion**: All images (including HEIC) are converted to WebP format for storage
+- **Two-Step Process**: HEIC files undergo HEIC→JPEG→WebP conversion for optimal compatibility
+- **Performance**: WebP format provides smaller file sizes and faster loading times
 - **Device Compatibility**: Perfect for images taken with modern iPhones and iPads
-- **Smaller File Sizes**: HEIC files are typically smaller than equivalent JPEG files
-- **Seamless Processing**: No additional steps required - upload HEIC files directly
 
 ## Service Architecture
 
@@ -291,3 +302,5 @@ This OCR service is designed to work seamlessly with Beezly's price tracking sys
 - **Accuracy**: 95%+ accuracy with Azure Form Recognizer v4.0
 - **Concurrent Requests**: Supports multiple simultaneous uploads
 - **Error Handling**: Graceful fallback to text parsing if structured data fails
+- **Asynchronous Upload**: OCR results are returned immediately while image upload happens in the background
+- **Optimized Storage**: All images are converted to WebP format for faster loading and reduced storage costs
