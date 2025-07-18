@@ -159,6 +159,21 @@ $ pnpm run migration:revert
 
 > **Note**: Always generate migrations in development to track database schema changes properly. The test environment uses auto-synchronization for convenience.
 
+#### 🚨 CRITICAL SAFETY WARNING
+
+**NEVER run `synchronize: true` or `dataSource.synchronize()` on production databases** - this will **DROP ALL TABLES AND DATA**.
+
+**Safe Production Workflow:**
+1. **Always backup** your database before schema changes
+2. **Use migrations only** (`synchronize: false`)
+3. **Test migrations** on a copy of production data first
+4. **Use migrations only** - never use synchronize in production
+
+**If you accidentally ran synchronization and lost data:**
+1. **Restore from backup** immediately
+2. **Mark baseline migration** as applied: `pnpm run migration:mark-baseline --filter=api`
+3. **Apply any new migrations**: `pnpm run migration:run --filter=api`
+
 ### Code Quality
 
 ```bash

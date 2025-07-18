@@ -31,8 +31,7 @@
     "migration:mark-baseline": "ts-node -r tsconfig-paths/register src/scripts/mark-baseline-applied.ts",
     "debug:env": "ts-node -r tsconfig-paths/register src/scripts/debug-env.ts",
     "schema:compare": "ts-node -r tsconfig-paths/register src/schema-comparison.ts",
-    "schema:sync": "pnpm run typeorm schema:sync",
-    "supabase:sync": "ts-node -r tsconfig-paths/register src/supabase-migration-sync.ts"
+    "schema:sync": "pnpm run typeorm schema:sync"
   },
   "dependencies": {
     "@azure-rest/ai-document-intelligence": "^1.1.0",
