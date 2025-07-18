@@ -1,6 +1,7 @@
-import { Tabs } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
+import { ScanResetProvider, useScanReset } from '../../src/contexts/ScanResetContext';
 
 const colors = {
   yellow: '#FFC700',
@@ -58,10 +59,12 @@ const styles = StyleSheet.create({
   },
 });
 
-export default function TabsLayout() {
+function TabContent() {
+  const { resetScan } = useScanReset();
+
   return (
-    
     <Tabs
+      initialRouteName='scan/index'
       screenOptions={{
         headerShown: false, // Hide default header
         tabBarStyle: styles.bottomNav,
@@ -70,19 +73,19 @@ export default function TabsLayout() {
         tabBarShowLabel: false, // We'll render custom labels
       }}>
       <Tabs.Screen
-        name="rank"
+        name="search/index"
         options={{
-          title: 'Rank',
+          title: 'Search',
           tabBarIcon: ({ color, focused }) => (
             <View style={styles.tabButton}>
               <FontAwesome name="trophy" size={24} color={color} />
-              <Text style={[styles.tabLabel, { color: color }]}>Rank</Text>
+              <Text style={[styles.tabLabel, { color: color }]}>Search</Text>
             </View>
           ),
         }}
       />
       <Tabs.Screen
-        name="index"
+        name="scan/index"
         options={{
           title: 'Scan',
           tabBarIcon: ({ focused }) => (
@@ -91,12 +94,21 @@ export default function TabsLayout() {
                 <FontAwesome name="barcode" size={32} color={colors.dark} />
               </View>
             </View>
-          ),
-
+          )
+        }}
+        listeners={{
+          tabPress: (e) => {
+            // Prevent default action to handle navigation manually
+            e.preventDefault();
+            // Navigate to the scan tab
+            router.navigate('/scan');
+            // Trigger scan reset via context
+            resetScan();
+          },
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="profile/index"
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
@@ -109,5 +121,13 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+  );
+}
+
+export default function TabsLayout() {
+  return (
+    <ScanResetProvider>
+      <TabContent />
+    </ScanResetProvider>
   );
 }

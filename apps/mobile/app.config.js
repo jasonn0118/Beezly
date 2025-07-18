@@ -17,7 +17,15 @@ export default {
     userInterfaceStyle: "light",
     newArchEnabled: true,
     plugins: [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Beezly to access your camera",
+          "microphonePermission": "Allow Beezly to access your microphone",
+          "recordAudioAndroid": true
+        }
+      ]
     ],
     splash: {
       image: "./assets/splash-icon.png",
