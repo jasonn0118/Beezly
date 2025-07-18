@@ -35,6 +35,8 @@
     "supabase:sync": "ts-node -r tsconfig-paths/register src/supabase-migration-sync.ts"
   },
   "dependencies": {
+    "@azure-rest/ai-document-intelligence": "^1.1.0",
+    "@azure/core-auth": "^1.10.0",
     "@napi-rs/image": "^1.11.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",

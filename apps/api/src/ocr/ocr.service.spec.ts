@@ -1,12 +1,21 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OcrService } from './ocr.service';
+import { OcrAzureService } from './ocr-azure.service';
 
 describe('OcrService', () => {
   let service: OcrService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [OcrService],
+      providers: [
+        OcrService,
+        {
+          provide: OcrAzureService,
+          useValue: {
+            extractWithPrebuiltReceipt: jest.fn(),
+          },
+        },
+      ],
     }).compile();
 
     service = module.get<OcrService>(OcrService);
@@ -119,6 +128,16 @@ describe('OcrService', () => {
         .spyOn(service as any, 'compressImageForAzure')
         .mockResolvedValue(Buffer.from('compressed image data'));
 
+      // Mock the Azure service to throw an error
+      const mockOcrAzureService = {
+        extractWithPrebuiltReceipt: jest
+          .fn()
+          .mockRejectedValue(new Error('Invalid Azure credentials')),
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      (service as any).ocrAzureService = mockOcrAzureService;
+
       const testBuffer = Buffer.from('test image data');
 
       await expect(
@@ -127,48 +146,65 @@ describe('OcrService', () => {
     });
   });
 
-  describe('extractItemsFromTextFallback', () => {
-    it('should extract items from text lines', () => {
-      const testLines = [
-        'Store Name',
-        'Apple $2.99',
-        'Banana $1.50',
-        '2 Orange $3.00',
-        'Tax $0.50',
-        'Total $8.99',
-      ];
+  describe('extractTextAzure', () => {
+    it('should throw error when Azure credentials are not provided', async () => {
+      const testBuffer = Buffer.from('test image data');
 
-      const result = service['extractItemsFromTextFallback'](testLines);
+      await expect(
+        service.extractTextAzure(testBuffer, '', 'api-key'),
+      ).rejects.toThrow('Azure API credentials not provided');
 
-      expect(result).toHaveLength(3);
-      expect(result[0]).toEqual({
-        name: 'Apple',
-        price: '$2.99',
-        quantity: '1',
-      });
-      expect(result[1]).toEqual({
-        name: 'Banana',
-        price: '$1.50',
-        quantity: '1',
-      });
-      expect(result[2]).toEqual({
-        name: 'Orange',
-        price: '$3.00',
-        quantity: '1', // Fixed: The actual implementation returns '1' for this case
-      });
+      await expect(
+        service.extractTextAzure(testBuffer, 'endpoint', ''),
+      ).rejects.toThrow('Azure API credentials not provided');
     });
 
-    it('should skip non-item lines', () => {
-      const testLines = [
-        'Store Name',
-        'Thank you for shopping',
-        'Total $8.99',
-        'Tax $0.50',
-        'Phone: 555-1234',
-      ];
+    it('should process image and call Azure service', async () => {
+      // Mock the image processing methods
+      jest
+        .spyOn(service as any, 'loadImageWithFormatSupport')
+        .mockResolvedValue(Buffer.from('mocked image data'));
+      jest
+        .spyOn(service as any, 'compressImageForAzure')
+        .mockResolvedValue(Buffer.from('compressed image data'));
 
-      const result = service['extractItemsFromTextFallback'](testLines);
-      expect(result).toHaveLength(0);
+      // Mock the Azure service
+      const mockOcrAzureService = {
+        extractWithPrebuiltReceipt: jest.fn().mockResolvedValue({
+          merchant: 'Test Store',
+          date: '2024-01-01',
+          total: '$10.00',
+          items: [
+            {
+              name: 'Test Item',
+              price: '$5.00',
+              quantity: '2',
+              unit_price: '$2.50',
+              item_number: '12345',
+            },
+          ],
+          item_count: 1,
+          raw_text: 'Test receipt text',
+          engine_used: 'Azure Prebuilt Receipt AI',
+          azure_confidence: 0.95,
+        }),
+      };
+
+      // Replace the service dependency
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      (service as any).ocrAzureService = mockOcrAzureService;
+
+      const testBuffer = Buffer.from('test image data');
+      const result = await service.extractTextAzure(
+        testBuffer,
+        'https://test-endpoint.com',
+        'test-api-key',
+      );
+
+      expect(result).toBeDefined();
+      expect(result.merchant).toBe('Test Store');
+      expect(result.engine_used).toBe('Azure Prebuilt Receipt AI');
+      expect(mockOcrAzureService.extractWithPrebuiltReceipt).toHaveBeenCalled();
     });
   });
 });
