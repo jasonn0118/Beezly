@@ -13,6 +13,7 @@
     "start": "expo start --dev-client"
   },
   "dependencies": {
+    "@beezly/types": "workspace:*",
     "@expo/metro-runtime": "~5.0.4",
     "dotenv": "^16.0.3",
     "expo": "~53.0.19",

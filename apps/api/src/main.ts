@@ -19,11 +19,27 @@ async function bootstrap() {
     .setTitle('Beezly API')
     .setDescription('API documentation for Beezly backend')
     .setVersion('1.0')
-    .addTag('Beezly')
+    .addTag('App', 'General application endpoints')
+    .addTag('Auth', 'Authentication endpoints')
+    .addTag('Barcodes', 'Barcode scanning and lookup endpoints')
+    .addTag('Categories', 'Category management endpoints')
+    .addTag('OCR', 'OCR processing endpoints')
+    .addTag('Products', 'Product management endpoints')
+    .addTag('Receipts', 'Receipt management endpoints')
+    .addTag('ReceiptItems', 'Receipt item management endpoints')
+    .addTag('Stores', 'Store management endpoints')
+    .addTag('Users', 'User management endpoints')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api-docs', app, document);
+
+  // Configure Swagger UI with custom sorting
+  SwaggerModule.setup('api-docs', app, document, {
+    swaggerOptions: {
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+    },
+  });
 
   const port = process.env.PORT || 3002;
   await app.listen(port);

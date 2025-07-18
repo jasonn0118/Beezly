@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { BarcodeLookupDto } from './dto/barcode-lookup.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { Product } from '../entities/product.entity';
+import { BarcodeType } from '@beezly/types';
 
 @Injectable()
 export class BarcodeService {
@@ -17,11 +18,11 @@ export class BarcodeService {
   async lookupBarcode(
     barcodeLookupDto: BarcodeLookupDto,
   ): Promise<ProductResponseDto> {
-    const { barcode, userId } = barcodeLookupDto;
+    const { barcode, userId, barcodeType } = barcodeLookupDto;
 
     // Log the barcode lookup attempt
     this.logger.log(
-      `Looking up barcode: ${barcode}${userId ? ` by user: ${userId}` : ''}`,
+      `Looking up barcode: ${barcode}${userId ? ` by user: ${userId}` : ''}${barcodeType ? ` type: ${barcodeType}` : ''}`,
     );
 
     // First, try to find the product in our database
@@ -45,6 +46,7 @@ export class BarcodeService {
     const placeholderProduct = this.productRepository.create({
       name: `Unknown Product (${barcode})`,
       barcode: barcode,
+      barcodeType: barcodeType,
       creditScore: 0,
       verifiedCount: 0,
       flaggedCount: 0,
@@ -57,14 +59,23 @@ export class BarcodeService {
     return this.mapProductToResponse(savedProduct, false);
   }
 
-  async getProductByBarcode(barcode: string): Promise<ProductResponseDto> {
+  async getProductByBarcode(
+    barcode: string,
+    barcodeType?: BarcodeType,
+  ): Promise<ProductResponseDto> {
     // Validate barcode format
     if (!barcode || barcode.trim().length === 0) {
       throw new NotFoundException('Invalid barcode provided');
     }
 
+    // Build query conditions
+    const where: Partial<Product> = { barcode };
+    if (barcodeType) {
+      where.barcodeType = barcodeType;
+    }
+
     const product = await this.productRepository.findOne({
-      where: { barcode },
+      where,
       relations: ['categoryEntity'],
     });
 
@@ -86,6 +97,7 @@ export class BarcodeService {
       id: product.productSk,
       name: product.name,
       barcode: product.barcode || '',
+      barcodeType: product.barcodeType,
       brand: this.extractBrandFromName(product.name),
       category: product.categoryEntity?.name,
       isVerified: isVerified,

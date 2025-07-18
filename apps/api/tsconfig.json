@@ -1,4 +1,5 @@
 {
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "module": "commonjs",
     "declaration": true,
@@ -17,5 +18,10 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
+    "paths": {
+      "@beezly/types": ["../packages/types/dto"],
+      "@beezly/types/*": ["../packages/types/dto/*"],
+      "@beezly/utils/*": ["../packages/utils/src/*"]
+    }
   }
 }
