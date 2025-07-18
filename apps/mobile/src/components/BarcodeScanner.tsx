@@ -59,7 +59,7 @@ export default function ScanScreen({ onScanSuccess }: { onScanSuccess: (data: { 
             <CameraView
                 style={styles.camera}
                 onBarcodeScanned={handleBarCodeScanned}
-                barcodeScannerSettings={{ barcodeTypes: ["qr", "ean13", "code128"] }}
+                barcodeScannerSettings={{ barcodeTypes: ["code39", "ean8", "ean13", "codabar", "itf14", "code128", "upc_a", "upc_e"] }}
             >
                 <View style={styles.overlay}>
                     {/* Status Message at the top */}
