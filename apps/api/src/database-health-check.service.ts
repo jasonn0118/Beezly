@@ -14,17 +14,18 @@ export class DatabaseHealthCheckService implements OnModuleInit {
 
       // Test PostGIS availability
       try {
-        const postgisResult: Array<{ postgis_version: string }> =
-          await this.dataSource.query('SELECT PostGIS_Version()');
+        await this.dataSource.query('SELECT PostGIS_Version()');
         console.log('✅ PostGIS is available');
 
         // Test basic geometric functionality
         await this.dataSource.query("SELECT ST_GeomFromText('POINT(0 0)')");
         console.log('✅ PostGIS geometric functions are working');
       } catch {
-        console.log('⚠️  PostGIS not available (expected for local development)');
+        console.log(
+          '⚠️  PostGIS not available (expected for local development)',
+        );
       }
-    } catch (error) {
+    } catch {
       console.error('❌ Database connection failed');
 
       // In production, exit the process on database failure

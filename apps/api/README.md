@@ -123,16 +123,41 @@ Once the server is running, you can access the Swagger API documentation at:
 
 ### Database Migrations
 
-```bash
-# Generate migration
-$ pnpm run migration:generate
+#### Configuration
 
-# Run migrations
+The database synchronization is configured as follows:
+- **Development**: `synchronize: false` - Uses migrations only
+- **Test**: `synchronize: true` - Auto-creates schema for tests  
+- **Production**: `synchronize: false` - Uses migrations only
+
+#### Migration Commands
+
+```bash
+# Check current migration status
+$ pnpm run migration:show
+
+# Run pending migrations
 $ pnpm run migration:run
 
-# Revert migration
+# Generate new migration after entity changes
+$ pnpm run migration:generate -- src/migrations/DescriptiveName
+
+# Create empty migration file
+$ pnpm run migration:create -- src/migrations/DescriptiveName
+
+# Revert last migration
 $ pnpm run migration:revert
 ```
+
+#### Workflow for Entity Changes
+
+1. **Make changes** to your entity files (e.g., add new column)
+2. **Generate migration**: `pnpm run migration:generate -- src/migrations/AddNewColumn`
+3. **Review migration** file in `src/migrations/`
+4. **Run migration**: `pnpm run migration:run`
+5. **Test changes**: `pnpm test`
+
+> **Note**: Always generate migrations in development to track database schema changes properly. The test environment uses auto-synchronization for convenience.
 
 ### Code Quality
 

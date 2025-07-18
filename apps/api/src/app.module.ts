@@ -80,7 +80,7 @@ import { UserModule } from './user/user.module';
           Price,
           VerificationLogs,
         ],
-        synchronize: false,
+        synchronize: process.env.NODE_ENV === 'test', // Only synchronize for tests, use migrations for dev/prod
         logging: process.env.DB_LOGGING === 'true',
         ssl:
           process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
