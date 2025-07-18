@@ -50,6 +50,8 @@ cd apps/ai && uvicorn app.main:app --port 8000 #Add later
 - [PostgreSQL + PostGIS](https://postgis.net/)
 - [TypeORM](https://typeorm.io/) (Database ORM with geospatial support)
 - [OpenAI](https://openai.com/) (NLP summary)
+- [@napi-rs/image](https://github.com/Brooooooklyn/Image) (High-performance image processing with native HEIC support)
+- [Azure Form Recognizer](https://azure.microsoft.com/en-us/products/ai-services/ai-document-intelligence) (OCR and document processing)
 
 ## 📦 Scripts
 

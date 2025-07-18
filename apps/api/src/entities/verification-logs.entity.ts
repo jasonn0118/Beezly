@@ -5,11 +5,11 @@ import { User } from './user.entity';
 @Entity('Verification_logs')
 export class VerificationLogs extends BaseEntity {
   @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'user_id', referencedColumnName: 'userSk' })
+  @JoinColumn({ name: 'user_sk', referencedColumnName: 'userSk' })
   user?: User;
 
-  @Column({ name: 'user_id', nullable: true })
-  userId?: string;
+  @Column({ name: 'user_sk', type: 'uuid', nullable: true })
+  userSk?: string;
 
   @Column({
     type: 'varchar',
