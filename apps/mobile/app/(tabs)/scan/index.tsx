@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
 // Import your components
-import BarcordScanResult from '../../../src/components/BarcordScanResult';
+import BarcodeScanResult from '../../../src/components/BarcodeScanResult';
 
 const { width, height } = Dimensions.get('window');
 
@@ -12,30 +12,41 @@ export default function ScanPage() {
     // This state now controls everything: 'barcodeScan', 'receiptScan', 'barcodeResult'
     const [currentView, setCurrentView] = useState('barcodeScan');
     const [permission, requestPermission] = useCameraPermissions();
+    const [scanStatus, setScanStatus] = useState('Searching for barcode...');
     const [scannedData, setScannedData] = useState<{ type: string; data: string } | null>(null);
     const cameraRef = useRef<CameraView>(null);
     const scanAnimation = useRef(new Animated.Value(0)).current;
 
-    // This effect resets the view to the barcode scanner whenever the tab is focused
+    // This effect resets the scanner state and restarts the animation whenever the tab is focused
     useFocusEffect(
-      useCallback(() => {
-        setCurrentView('barcodeScan');
-        setScannedData(null);
-      }, [])
-    );
+        useCallback(() => {
+            // Reset state
+            setCurrentView('barcodeScan');
+            setScannedData(null);
+            setScanStatus('Searching for barcode...');
 
-    // Start the scan line animation
-    useEffect(() => {
-        const animation = Animated.loop(
-            Animated.timing(scanAnimation, { toValue: 1, duration: 2500, useNativeDriver: true })
-        );
-        animation.start();
-        return () => animation.stop(); // Clean up animation on unmount
-    }, [scanAnimation]);
+            // Reset and start animation
+            scanAnimation.setValue(0);
+            const animation = Animated.loop(
+                Animated.timing(scanAnimation, {
+                    toValue: 1,
+                    duration: 2500,
+                    useNativeDriver: true,
+                })
+            );
+            animation.start();
+
+            // Cleanup function to stop animation when the screen is unfocused
+            return () => {
+                animation.stop();
+            };
+        }, [scanAnimation])
+    );
 
     // Called on barcode scan success -> switches view to the result component
     const handleBarcodeScanned = (data: { type: string; data: string }) => {
         setScannedData(data);
+        setScanStatus('Scan Complete!');
         setCurrentView('barcodeResult');
     };
     
@@ -55,7 +66,7 @@ export default function ScanPage() {
 
     // Called from the result screen to go back to scanning
     const handleScanAgain = () => {
-        setCurrentView('barcodeScan');
+        //resetScanner();
     };
 
     if (!permission) {
@@ -72,12 +83,19 @@ export default function ScanPage() {
     }
 
     const scanLineStyle = {
-        transform: [{ translateY: scanAnimation.interpolate({ inputRange: [0, 1], outputRange: [0, height * 0.25] }) }],
+        transform: [
+            { 
+                translateY: scanAnimation.interpolate({ 
+                    inputRange: [0, 1], 
+                    outputRange: [0, height * 0.25] 
+                }) 
+            }
+        ],
     };
     
     // If the view is a result screen, we don't need the camera.
     if (currentView === 'barcodeResult') {
-        return <BarcordScanResult scannedData={scannedData} onScanAgain={handleScanAgain} />;
+        return <BarcodeScanResult scannedData={scannedData} onScanAgain={handleScanAgain} />;
     }
 
     // Otherwise, show the camera and the scanner UI
@@ -116,10 +134,17 @@ export default function ScanPage() {
 
                     {/* Conditional UI based on the scanner mode */}
                     {currentView === 'barcodeScan' ? (
-                        <View style={styles.scanFrame}>
-                            <Text style={styles.scanFrameText}>Align barcode within the frame</Text>
-                            <Animated.View style={[styles.scanLine, scanLineStyle]} />
-                        </View>
+                        <>
+                            <View style={styles.topMessageContainer}>
+                                <Text style={[styles.statusText, styles.statusTextSuccess]}>
+                                    {scanStatus}
+                                </Text>
+                            </View>
+                            <View style={styles.scanFrame}>
+                                <Text style={styles.scanFrameText}>Align barcode within the frame</Text>
+                                <Animated.View style={[styles.scanLine, scanLineStyle]} />
+                            </View>
+                        </>
                     ) : ( // This is for 'receiptScan' view
                         <>
                             <View style={styles.guidanceFrame}>
@@ -211,6 +236,7 @@ const styles = StyleSheet.create({
     },
     scanLine: {
         position: 'absolute',
+        top: 0,
         width: '100%',
         height: 4,
         backgroundColor: '#FFC107',
@@ -254,11 +280,9 @@ const styles = StyleSheet.create({
         borderColor: 'black',
     },
     topMessageContainer: {
-        position: 'absolute',
-        top: 0,
-        width: '100%',
+        justifyContent: 'center',
         alignItems: 'center',
-        paddingTop: 20,
+        marginBottom : 40,
     },
     statusText: {
         color: 'white',
