@@ -8,7 +8,7 @@ import { Category } from '../entities/category.entity';
 export interface ProductSearchParams {
   name?: string;
   barcode?: string;
-  category?: string;
+  category?: number;
   minPrice?: number;
   maxPrice?: number;
   limit?: number;
@@ -65,21 +65,29 @@ export class ProductService {
   async createProduct(
     productData: Partial<NormalizedProductDTO>,
   ): Promise<NormalizedProductDTO> {
-    // Handle category lookup if category name is provided
-    let categoryId: number | undefined;
-    if (productData.category) {
-      const category = await this.findOrCreateCategory(productData.category);
-      categoryId = category.id;
+    // Validate category ID if provided
+    const categoryId: number | undefined = productData.category;
+
+    if (categoryId !== undefined) {
+      const categoryExists = await this.categoryRepository.findOne({
+        where: { id: categoryId },
+      });
+
+      if (!categoryExists) {
+        throw new NotFoundException(
+          `Category with ID ${categoryId} not found.`,
+        );
+      }
     }
 
     const product = this.productRepository.create({
       name: productData.name,
       barcode: productData.barcode,
       category: categoryId,
-      imageUrl: productData.imageUrl,
-      creditScore: 0,
-      verifiedCount: 0,
-      flaggedCount: 0,
+      imageUrl: productData.image_url,
+      creditScore: productData.credit_score ?? 0,
+      verifiedCount: productData.verified_count ?? 0,
+      flaggedCount: productData.flagged_count ?? 0,
     });
 
     const savedProduct = await this.productRepository.save(product);
@@ -95,17 +103,26 @@ export class ProductService {
       throw new NotFoundException(`Product with ID ${id} not found`);
     }
 
-    // Update fields
+    // ✅ Update scalar fields
     if (productData.name !== undefined) product.name = productData.name;
     if (productData.barcode !== undefined)
       product.barcode = productData.barcode;
-    if (productData.imageUrl !== undefined)
-      product.imageUrl = productData.imageUrl;
+    if (productData.image_url !== undefined)
+      product.imageUrl = productData.image_url;
 
-    // Handle category update
+    // ✅ Update category by ID (FK)
     if (productData.category !== undefined) {
-      if (productData.category) {
-        const category = await this.findOrCreateCategory(productData.category);
+      if (productData.category !== null) {
+        const category = await this.categoryRepository.findOne({
+          where: { id: productData.category },
+        });
+
+        if (!category) {
+          throw new NotFoundException(
+            `Category with ID ${productData.category} not found`,
+          );
+        }
+
         product.category = category.id;
       } else {
         product.category = undefined;
@@ -371,15 +388,16 @@ export class ProductService {
 
   private mapProductToDTO(product: Product): NormalizedProductDTO {
     return {
-      id: product.productSk, // Use UUID as the public ID
+      product_sk: product.productSk,
       name: product.name,
       barcode: product.barcode,
-      category: product.categoryEntity?.name,
-      price: undefined, // Price comes from receipt items or price tracking
-      imageUrl: product.imageUrl,
-      quantity: 0, // This is now handled in inventory or receipt items
-      createdAt: product.createdAt.toISOString(),
-      updatedAt: product.updatedAt.toISOString(),
+      category: product.category,
+      image_url: product.imageUrl,
+      created_at: product.createdAt.toISOString(),
+      updated_at: product.updatedAt.toISOString(),
+      credit_score: product.creditScore ?? 0,
+      verified_count: product.verifiedCount ?? 0,
+      flagged_count: product.flaggedCount ?? 0,
     };
   }
 }
