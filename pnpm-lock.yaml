@@ -242,6 +242,9 @@ importers:
       '@expo/metro-runtime':
         specifier: ~5.0.4
         version: 5.0.4(react-native@0.79.5(@babel/core@7.28.0)(@types/react@19.0.14)(react@19.0.0))
+      axios:
+        specifier: ^1.7.9
+        version: 1.10.0
       dotenv:
         specifier: ^16.0.3
         version: 16.6.1
@@ -301,6 +304,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@beezly/types':
+        specifier: workspace:*
+        version: link:../packages/types
+      axios:
+        specifier: ^1.7.9
+        version: 1.10.0
       next:
         specifier: 15.3.4
         version: 15.3.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
