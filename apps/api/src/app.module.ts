@@ -80,11 +80,10 @@ import { UserModule } from './user/user.module';
           Price,
           VerificationLogs,
         ],
-        synchronize: process.env.NODE_ENV !== 'production',
+        synchronize: false,
         logging: process.env.DB_LOGGING === 'true',
-        ssl: process.env.DB_SSL === 'true' 
-          ? { rejectUnauthorized: false }
-          : false,
+        ssl:
+          process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
         dropSchema: process.env.NODE_ENV === 'test',
       }),
     }),
