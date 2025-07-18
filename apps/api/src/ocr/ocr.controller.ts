@@ -18,7 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { OcrService, OcrResult } from './ocr.service';
-import { upload_receipt } from '../../../packages/utils/src/storage.util';
+import { upload_receipt } from '../utils/storage.util';
 import { ProcessReceiptDto } from './dto/process-receipt.dto';
 
 @ApiTags('OCR')
