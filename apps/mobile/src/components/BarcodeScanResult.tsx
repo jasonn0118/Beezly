@@ -7,7 +7,6 @@ import { BARCODE_URL } from '@env';
 export default function BarcodeResultScreen({ scannedData, onScanAgain }: { scannedData: { type: string; data: string } | null, onScanAgain: () => void }) {
     const [productInfo, setProductInfo] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    
 
     useEffect(() => {
         if (!scannedData) return;

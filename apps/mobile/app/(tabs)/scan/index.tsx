@@ -8,6 +8,7 @@ import BarcodeScanResult from '../../../src/components/BarcodeScanResult';
 
 const { width, height } = Dimensions.get('window');
 
+
 export default function ScanPage() {
     // This state now controls everything: 'barcodeScan', 'receiptScan', 'barcodeResult'
     const [currentView, setCurrentView] = useState('barcodeScan');
