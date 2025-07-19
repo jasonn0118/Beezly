@@ -13,7 +13,9 @@
     "start": "expo start --dev-client"
   },
   "dependencies": {
+    "@beezly/types": "workspace:*",
     "@expo/metro-runtime": "~5.0.4",
+    "axios": "^1.7.9",
     "@expo/vector-icons": "^14.1.0",
     "dotenv": "^16.0.3",
     "expo": "53.0.19",

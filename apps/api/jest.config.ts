@@ -17,6 +17,10 @@ const config: Config = {
   collectCoverageFrom: ['**/*.(t|j)s'],
   coverageDirectory: './coverage',
   setupFiles: ['<rootDir>/test/setup-env.ts'],
+  moduleNameMapper: {
+    '^@beezly/types$': '<rootDir>/../packages/types/dto/index.ts',
+    '^@beezly/types/(.*)$': '<rootDir>/../packages/types/dto/$1',
+  },
 };
 
 export default config;

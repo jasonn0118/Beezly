@@ -8,3 +8,4 @@ export * from "./verificationLog";
 export * from "./store";
 export * from "./scoreType";
 export * from "./receiptItem";
+export * from "./barcode";

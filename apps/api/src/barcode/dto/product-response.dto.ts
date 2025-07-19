@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { BarcodeType } from '@beezly/types';
 
 export class ProductResponseDto {
   @ApiProperty({
@@ -18,6 +19,14 @@ export class ProductResponseDto {
     example: '0123456789012',
   })
   barcode: string;
+
+  @ApiProperty({
+    description: 'Type of barcode',
+    enum: BarcodeType,
+    example: BarcodeType.EAN13,
+    required: false,
+  })
+  barcodeType?: BarcodeType;
 
   @ApiProperty({
     description: 'Product brand',

@@ -123,16 +123,56 @@ Once the server is running, you can access the Swagger API documentation at:
 
 ### Database Migrations
 
-```bash
-# Generate migration
-$ pnpm run migration:generate
+#### Configuration
 
-# Run migrations
+The database synchronization is configured as follows:
+- **Development**: `synchronize: false` - Uses migrations only
+- **Test**: `synchronize: true` - Auto-creates schema for tests  
+- **Production**: `synchronize: false` - Uses migrations only
+
+#### Migration Commands
+
+```bash
+# Check current migration status
+$ pnpm run migration:show
+
+# Run pending migrations
 $ pnpm run migration:run
 
-# Revert migration
+# Generate new migration after entity changes
+$ pnpm run migration:generate -- src/migrations/DescriptiveName
+
+# Create empty migration file
+$ pnpm run migration:create -- src/migrations/DescriptiveName
+
+# Revert last migration
 $ pnpm run migration:revert
 ```
+
+#### Workflow for Entity Changes
+
+1. **Make changes** to your entity files (e.g., add new column)
+2. **Generate migration**: `pnpm run migration:generate -- src/migrations/AddNewColumn`
+3. **Review migration** file in `src/migrations/`
+4. **Run migration**: `pnpm run migration:run`
+5. **Test changes**: `pnpm test`
+
+> **Note**: Always generate migrations in development to track database schema changes properly. The test environment uses auto-synchronization for convenience.
+
+#### 🚨 CRITICAL SAFETY WARNING
+
+**NEVER run `synchronize: true` or `dataSource.synchronize()` on production databases** - this will **DROP ALL TABLES AND DATA**.
+
+**Safe Production Workflow:**
+1. **Always backup** your database before schema changes
+2. **Use migrations only** (`synchronize: false`)
+3. **Test migrations** on a copy of production data first
+4. **Use migrations only** - never use synchronize in production
+
+**If you accidentally ran synchronization and lost data:**
+1. **Restore from backup** immediately
+2. **Mark baseline migration** as applied: `pnpm run migration:mark-baseline --filter=api`
+3. **Apply any new migrations**: `pnpm run migration:run --filter=api`
 
 ### Code Quality
 

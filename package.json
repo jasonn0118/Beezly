@@ -13,7 +13,6 @@
     "test:e2e": "turbo run test:e2e",
     "type-check": "turbo run type-check",
     "schema:compare": "turbo run schema:compare",
-    "supabase:sync": "turbo run supabase:sync",
     "migration:run": "turbo run migration:run",
     "migration:check": "turbo run migration:check",
     "migration:show": "turbo run migration:show",

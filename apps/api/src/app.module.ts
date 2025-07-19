@@ -6,6 +6,7 @@ import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { BarcodeModule } from './barcode/barcode.module';
 import { CategoryModule } from './category/category.module';
 import { DatabaseHealthCheckService } from './database-health-check.service';
 import {
@@ -28,7 +29,6 @@ import { ReceiptModule } from './receipt/receipt.module';
 import { ReceiptItemModule } from './receiptItem/receiptItem.module';
 import { StoreModule } from './store/store.module';
 import { UserModule } from './user/user.module';
-import { BarcodeModule } from './barcode/barcode.module';
 
 @Module({
   imports: [
@@ -64,10 +64,8 @@ import { BarcodeModule } from './barcode/barcode.module';
         host: process.env.DB_HOST || 'localhost',
         port: parseInt(process.env.DB_PORT || '5432', 10),
         username: process.env.DB_USERNAME || 'postgres',
-        password: process.env.DB_PASSWORD || 'password',
-        database:
-          process.env.DB_NAME ||
-          (process.env.NODE_ENV === 'test' ? 'beezly_test' : 'beezly_db'),
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_NAME || 'postgres',
         entities: [
           User,
           Store,
@@ -82,24 +80,22 @@ import { BarcodeModule } from './barcode/barcode.module';
           Price,
           VerificationLogs,
         ],
-        synchronize: process.env.NODE_ENV !== 'production', // Auto-sync schema in dev/test, not in production
-        logging:
-          process.env.NODE_ENV === 'development' ||
-          process.env.DB_LOGGING === 'true',
+        synchronize: process.env.NODE_ENV === 'test', // Only synchronize for tests, use migrations for dev/prod
+        logging: process.env.DB_LOGGING === 'true',
         ssl:
           process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
         dropSchema: process.env.NODE_ENV === 'test',
       }),
     }),
     AuthModule,
+    BarcodeModule,
+    CategoryModule,
+    OcrModule,
     ProductModule,
     ReceiptModule,
     ReceiptItemModule,
     StoreModule,
     UserModule,
-    CategoryModule,
-    OcrModule,
-    BarcodeModule,
   ],
   controllers: [AppController],
   providers: [AppService, DatabaseHealthCheckService],

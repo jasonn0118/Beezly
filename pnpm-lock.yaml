@@ -39,6 +39,9 @@ importers:
       '@azure/core-auth':
         specifier: ^1.10.0
         version: 1.10.0
+      '@beezly/types':
+        specifier: workspace:*
+        version: link:../packages/types
       '@napi-rs/image':
         specifier: ^1.11.0
         version: 1.11.0
@@ -196,6 +199,9 @@ importers:
 
   apps/demo:
     dependencies:
+      '@beezly/types':
+        specifier: workspace:*
+        version: link:../packages/types
       next:
         specifier: 15.3.4
         version: 15.3.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -230,9 +236,15 @@ importers:
 
   apps/mobile:
     dependencies:
+      '@beezly/types':
+        specifier: workspace:*
+        version: link:../packages/types
       '@expo/metro-runtime':
         specifier: ~5.0.4
         version: 5.0.4(react-native@0.79.5(@babel/core@7.28.0)(@types/react@19.0.14)(react@19.0.0))
+      axios:
+        specifier: ^1.7.9
+        version: 1.10.0
       dotenv:
         specifier: ^16.0.3
         version: 16.6.1
@@ -268,8 +280,36 @@ importers:
         specifier: ~5.8.3
         version: 5.8.3
 
+  apps/packages/types:
+    dependencies:
+      '@nestjs/swagger':
+        specifier: ^11.2.0
+        version: 11.2.0(@nestjs/common@11.1.4(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.4)(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+
+  apps/packages/utils:
+    dependencies:
+      '@napi-rs/image':
+        specifier: ^1.11.0
+        version: 1.11.0
+      heic-convert:
+        specifier: ^2.1.0
+        version: 2.1.0
+      sharp:
+        specifier: ^0.34.3
+        version: 0.34.3
+
   apps/web:
     dependencies:
+      '@beezly/types':
+        specifier: workspace:*
+        version: link:../packages/types
+      axios:
+        specifier: ^1.7.9
+        version: 1.10.0
       next:
         specifier: 15.3.4
         version: 15.3.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)

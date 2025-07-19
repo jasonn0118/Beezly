@@ -9,6 +9,7 @@ import {
 import { BaseEntity } from './base.entity';
 import { ReceiptItem } from './receipt-item.entity';
 import { Category } from './category.entity';
+import { BarcodeType } from '@beezly/types';
 
 @Entity('Product')
 export class Product extends BaseEntity {
@@ -21,6 +22,14 @@ export class Product extends BaseEntity {
 
   @Column({ nullable: true })
   barcode?: string;
+
+  @Column({
+    name: 'barcode_type',
+    type: 'enum',
+    enum: BarcodeType,
+    nullable: true,
+  })
+  barcodeType?: BarcodeType;
 
   @ManyToOne(() => Category, { nullable: true })
   @JoinColumn({ name: 'category' })
