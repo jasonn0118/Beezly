@@ -100,6 +100,7 @@ export class BarcodeService {
       barcodeType: product.barcodeType,
       brand: this.extractBrandFromName(product.name),
       category: product.categoryEntity?.name,
+      image_url: product.imageUrl ?? undefined,
       isVerified: isVerified,
     };
   }
