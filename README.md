@@ -20,24 +20,53 @@ beezly/
 
 ## 🚀 Getting Started
 
-1. Clone the repo:
+### Quick Start (Recommended)
+
 ```bash
+# 1. Clone the repo
 git clone https://github.com/BeezlyAI/Beezly.git
 cd beezly
-```
 
-2. Install dependencies:
-```bash
+# 2. Install dependencies
 pnpm install
+
+# 3. Start development (includes automatic database setup!)
+pnpm dev
 ```
 
-3. Run dev servers:
+**That's it!** 🎉 The development environment will automatically:
+- Check if PostgreSQL is running
+- Create the local database if needed
+- Run all migrations
+- Seed sample data
+- Start all development servers
+
+### Manual Setup
+
+If you prefer to run services individually:
+
 ```bash
-pnpm dev --filter=web
+# API (with auto database setup)
 pnpm dev --filter=api
+
+# Web app
+pnpm dev --filter=web
+
+# Mobile app
 cd apps/mobile && npx expo start
-cd apps/ai && uvicorn app.main:app --port 8000 #Add later
+
+# AI service (Python)
+cd apps/ai && uvicorn app.main:app --port 8000
 ```
+
+> 📚 For detailed setup instructions, see [DEVELOPER_SETUP.md](DEVELOPER_SETUP.md)
+
+### Default Ports
+
+- **API**: http://localhost:3006
+- **Web**: http://localhost:3001  
+- **Mobile**: Expo DevTools (varies)
+- **AI**: http://localhost:8000
 
 ## 🧠 Core Technologies
 

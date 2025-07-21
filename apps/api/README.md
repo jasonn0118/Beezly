@@ -6,6 +6,21 @@ The backend API for the Beezly application, built with NestJS and TypeScript.
 
 Beezly is a receipt processing and price comparison application that helps users track their purchases and find better deals. This API provides the core services for user management, receipt processing, product tracking, and data storage.
 
+## 🚀 Quick Start
+
+```bash
+# Install dependencies
+pnpm install
+
+# Set up local database (PostgreSQL required)
+pnpm run dev:setup
+
+# Start development server
+pnpm run dev
+```
+
+For detailed database setup instructions, see [DATABASE_SETUP.md](./DATABASE_SETUP.md).
+
 ## Services
 
 This API provides several core services:

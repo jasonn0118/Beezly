@@ -6,7 +6,9 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "dev": "pnpm --filter=api start:dev",
+    "dev": "pnpm run dev:auto",
+    "dev:auto": "ts-node -r tsconfig-paths/register scripts/dev-auto.ts",
+    "dev:no-setup": "pnpm run start:dev",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -31,7 +33,14 @@
     "migration:mark-baseline": "ts-node -r tsconfig-paths/register src/scripts/mark-baseline-applied.ts",
     "debug:env": "ts-node -r tsconfig-paths/register src/scripts/debug-env.ts",
     "schema:compare": "ts-node -r tsconfig-paths/register src/schema-comparison.ts",
-    "schema:sync": "pnpm run typeorm schema:sync"
+    "schema:sync:DISABLED": "echo '🚨 DISABLED: schema:sync DESTROYS ALL DATA! Use migration:run instead' && exit 1",
+    "db:create": "createdb beezly_local || echo 'Database already exists'",
+    "db:drop": "dropdb beezly_local --if-exists",
+    "db:reset": "pnpm run db:drop && pnpm run db:create && pnpm run migration:run",
+    "db:seed": "ts-node -r tsconfig-paths/register src/seeds/seed.ts",
+    "db:clear": "ts-node -r tsconfig-paths/register src/seeds/clear.ts",
+    "dev:setup": "pnpm run db:reset && pnpm run db:seed",
+    "dev:check-setup": "ts-node -r tsconfig-paths/register scripts/dev-setup.ts"
   },
   "dependencies": {
     "@azure-rest/ai-document-intelligence": "^1.1.0",
