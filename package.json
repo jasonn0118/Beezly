@@ -21,7 +21,7 @@
   "packageManager": "pnpm@10.11.0",
   "devDependencies": {
     "@types/uuid": "^10.0.0",
-    "turbo": "^2.5.4"
+    "turbo": "^2.5.5"
   },
   "dependencies": {
     "@nestjs/swagger": "^11.2.0",
