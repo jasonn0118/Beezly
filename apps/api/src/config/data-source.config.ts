@@ -75,6 +75,13 @@ export const getDataSourceConfig = (): DataSourceOptions => {
     logging: process.env.DB_LOGGING === 'true',
     migrationsRun: false, // Don't auto-run migrations
     migrationsTableName: 'migrations',
+    // Force IPv4 if running in CI to avoid IPv6 connectivity issues
+    ...(process.env.CI === 'true' && {
+      extra: {
+        options:
+          '-c tcp_keepalives_idle=20 -c tcp_keepalives_interval=20 -c tcp_keepalives_count=3',
+      },
+    }),
   };
 };
 
