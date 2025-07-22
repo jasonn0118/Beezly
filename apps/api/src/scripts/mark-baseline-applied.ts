@@ -8,8 +8,9 @@ if (process.env.CI !== 'true') {
 }
 
 /**
- * Mark the baseline migration as applied without running it
+ * Mark the baseline migrations as applied without running them
  * This is used when setting up TypeORM with an existing Supabase database
+ * that already has tables created
  */
 async function markBaselineApplied() {
   try {
@@ -40,25 +41,30 @@ async function markBaselineApplied() {
       console.log('✅ Migrations table created');
     }
 
-    // Check if baseline migration is already marked
-    const baselineMigrationName = 'BaselineExistingTables1752772807627';
-    const baselineTimestamp = 1752772807627;
+    // List of migrations to mark as baseline
+    const baselineMigrations = [
+      { timestamp: 1700000000000, name: 'InitialSchema1700000000000' },
+      { timestamp: 1752772807627, name: 'BaselineExistingTables1752772807627' },
+    ];
 
-    const existingBaseline: Array<{ name: string; timestamp: number }> =
-      await AppDataSource.query(`SELECT * FROM migrations WHERE name = $1`, [
-        baselineMigrationName,
-      ]);
+    for (const migration of baselineMigrations) {
+      const existing: Array<{ name: string; timestamp: number }> =
+        await AppDataSource.query(
+          `SELECT * FROM migrations WHERE timestamp = $1`,
+          [migration.timestamp],
+        );
 
-    if (existingBaseline.length > 0) {
-      console.log('ℹ️  Baseline migration already marked as applied');
-    } else {
-      // Insert baseline migration record
-      await AppDataSource.query(
-        `INSERT INTO migrations (timestamp, name) VALUES ($1, $2)`,
-        [baselineTimestamp, baselineMigrationName],
-      );
+      if (existing.length > 0) {
+        console.log(`ℹ️  ${migration.name} already marked as applied`);
+      } else {
+        // Insert migration record
+        await AppDataSource.query(
+          `INSERT INTO migrations (timestamp, name) VALUES ($1, $2)`,
+          [migration.timestamp, migration.name],
+        );
 
-      console.log('✅ Baseline migration marked as applied');
+        console.log(`✅ ${migration.name} marked as applied`);
+      }
     }
 
     // Show current migration status

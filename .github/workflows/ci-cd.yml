@@ -786,6 +786,26 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
+      - name: Mark baseline migrations if needed
+        run: |
+          echo "📝 Ensuring baseline migrations are marked..."
+          pnpm run migration:mark-baseline --filter=api || {
+            echo "⚠️  Failed to mark baseline migrations - continuing anyway"
+            true
+          }
+        env:
+          CI: true
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
+          DB_SSL: true
+          NODE_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
       - name: Check for pending migrations
         id: migration_check
         run: pnpm run migration:check --filter=api
