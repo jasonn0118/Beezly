@@ -678,6 +678,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, build-all, test-api, validate-migrations]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -735,154 +736,83 @@ jobs:
             echo "🔍 Will use database: STAGING_DB_NAME"
           fi
 
-      - name: Debug GitHub secrets availability (Staging)
-        if: github.ref == 'refs/heads/staging'
+      - name: Debug environment secrets availability
         run: |
-          echo "🔍 Checking GitHub secrets availability (without exposing values):"
-          echo "STAGING_DB_HOST: ${{ secrets.STAGING_DB_HOST != '' && 'SET' || 'NOT_SET' }}"
-          echo "STAGING_DB_PORT: ${{ secrets.STAGING_DB_PORT != '' && 'SET' || 'NOT_SET' }}"
-          echo "STAGING_DB_USERNAME: ${{ secrets.STAGING_DB_USERNAME != '' && 'SET' || 'NOT_SET' }}"
-          echo "STAGING_DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD != '' && 'SET' || 'NOT_SET' }}"
-          echo "STAGING_DB_NAME: ${{ secrets.STAGING_DB_NAME != '' && 'SET' || 'NOT_SET' }}"
-          echo "STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL != '' && 'SET' || 'NOT_SET' }}"
-          echo "STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY != '' && 'SET' || 'NOT_SET' }}"
-          echo "STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY != '' && 'SET' || 'NOT_SET' }}"
+          echo "🔍 Checking environment secrets availability (without exposing values):"
+          echo "Environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}"
+          echo "DB_HOST: ${{ secrets.DB_HOST != '' && 'SET' || 'NOT_SET' }}"
+          echo "DB_PORT: ${{ secrets.DB_PORT != '' && 'SET' || 'NOT_SET' }}"
+          echo "DB_USERNAME: ${{ secrets.DB_USERNAME != '' && 'SET' || 'NOT_SET' }}"
+          echo "DB_PASSWORD: ${{ secrets.DB_PASSWORD != '' && 'SET' || 'NOT_SET' }}"
+          echo "DB_NAME: ${{ secrets.DB_NAME != '' && 'SET' || 'NOT_SET' }}"
+          echo "SUPABASE_URL: ${{ secrets.SUPABASE_URL != '' && 'SET' || 'NOT_SET' }}"
+          echo "SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY != '' && 'SET' || 'NOT_SET' }}"
+          echo "SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' && 'SET' || 'NOT_SET' }}"
 
-      - name: Debug environment variables (Staging)
-        if: github.ref == 'refs/heads/staging'
+      - name: Debug environment variables
         run: pnpm run debug:env --filter=api
         env:
           CI: true
-          DB_HOST: ${{ secrets.STAGING_DB_HOST }}
-          DB_PORT: ${{ secrets.STAGING_DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.STAGING_DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.STAGING_DB_NAME || 'postgres' }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
           DB_SSL: true
-          NODE_ENV: staging
-          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          NODE_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      - name: Debug environment variables (Production)
-        if: github.ref == 'refs/heads/main'
-        run: pnpm run debug:env --filter=api
-        env:
-          CI: true
-          DB_HOST: ${{ secrets.PRODUCTION_DB_HOST }}
-          DB_PORT: ${{ secrets.PRODUCTION_DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.PRODUCTION_DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.PRODUCTION_DB_NAME || 'postgres' }}
-          DB_SSL: true
-          NODE_ENV: production
-          SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
-
-      - name: Run schema comparison (Staging)
-        if: github.ref == 'refs/heads/staging'
+      - name: Run schema comparison
         run: pnpm run schema:compare --filter=api
         env:
           CI: true
-          DB_HOST: ${{ secrets.STAGING_DB_HOST }}
-          DB_PORT: ${{ secrets.STAGING_DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.STAGING_DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.STAGING_DB_NAME || 'postgres' }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
           DB_SSL: true
-          NODE_ENV: staging
-          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          NODE_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      - name: Run schema comparison (Production)
-        if: github.ref == 'refs/heads/main'
-        run: pnpm run schema:compare --filter=api
-        env:
-          CI: true
-          DB_HOST: ${{ secrets.PRODUCTION_DB_HOST }}
-          DB_PORT: ${{ secrets.PRODUCTION_DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.PRODUCTION_DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.PRODUCTION_DB_NAME || 'postgres' }}
-          DB_SSL: true
-          NODE_ENV: production
-          SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
-
-      - name: Check for pending migrations (Staging)
-        if: github.ref == 'refs/heads/staging'
-        id: migration_check_staging
+      - name: Check for pending migrations
+        id: migration_check
         run: pnpm run migration:check --filter=api
         continue-on-error: true
         env:
           CI: true
-          DB_HOST: ${{ secrets.STAGING_DB_HOST }}
-          DB_PORT: ${{ secrets.STAGING_DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.STAGING_DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.STAGING_DB_NAME || 'postgres' }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
           DB_SSL: true
-          NODE_ENV: staging
-          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          NODE_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      - name: Check for pending migrations (Production)
-        if: github.ref == 'refs/heads/main'
-        id: migration_check_production
-        run: pnpm run migration:check --filter=api
-        continue-on-error: true
-        env:
-          CI: true
-          DB_HOST: ${{ secrets.PRODUCTION_DB_HOST }}
-          DB_PORT: ${{ secrets.PRODUCTION_DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.PRODUCTION_DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.PRODUCTION_DB_NAME || 'postgres' }}
-          DB_SSL: true
-          NODE_ENV: production
-          SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
-
-      - name: Run database migrations (Staging)
-        if: github.ref == 'refs/heads/staging' && steps.migration_check_staging.outcome == 'failure'
+      - name: Run database migrations
+        if: steps.migration_check.outcome == 'failure'
         run: |
-          echo "📝 Running database migrations for staging..."
+          echo "📝 Running database migrations for ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}..."
           pnpm run migration:run --filter=api
         env:
           CI: true
-          DB_HOST: ${{ secrets.STAGING_DB_HOST }}
-          DB_PORT: ${{ secrets.STAGING_DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.STAGING_DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.STAGING_DB_NAME || 'postgres' }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
           DB_SSL: true
-          NODE_ENV: staging
-          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-
-      - name: Run database migrations (Production)
-        if: github.ref == 'refs/heads/main' && steps.migration_check_production.outcome == 'failure'
-        run: |
-          echo "📝 Running database migrations for production..."
-          pnpm run migration:run --filter=api
-        env:
-          CI: true
-          DB_HOST: ${{ secrets.PRODUCTION_DB_HOST }}
-          DB_PORT: ${{ secrets.PRODUCTION_DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.PRODUCTION_DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.PRODUCTION_DB_NAME || 'postgres' }}
-          DB_SSL: true
-          NODE_ENV: production
-          SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+          NODE_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Migration completed successfully
         run: |
