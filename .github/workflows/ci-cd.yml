@@ -730,30 +730,40 @@ jobs:
           else
             echo "ENVIRONMENT=staging" >> $GITHUB_ENV
           fi
+          
+          # Debug: Show which database will be used
+          echo "🔍 Environment: ${{ env.ENVIRONMENT }}"
+          echo "🔍 Will use database: ${{ env.ENVIRONMENT == 'production' && 'PRODUCTION' || 'STAGING' }}_DB_NAME"
 
       - name: Debug environment variables
         run: pnpm run debug:env --filter=api
         env:
           CI: true
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
+          DB_HOST: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_HOST || secrets.STAGING_DB_HOST }}
+          DB_PORT: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_PORT || secrets.STAGING_DB_PORT || '5432' }}
+          DB_USERNAME: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_USERNAME || secrets.STAGING_DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_PASSWORD || secrets.STAGING_DB_PASSWORD }}
+          DB_NAME: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_NAME || secrets.STAGING_DB_NAME || 'postgres' }}
           DB_SSL: true
           NODE_ENV: ${{ env.ENVIRONMENT }}
+          SUPABASE_URL: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_URL || secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_ANON_KEY || secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY || secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Run schema comparison
         run: pnpm run schema:compare --filter=api
         env:
           CI: true
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
+          DB_HOST: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_HOST || secrets.STAGING_DB_HOST }}
+          DB_PORT: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_PORT || secrets.STAGING_DB_PORT || '5432' }}
+          DB_USERNAME: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_USERNAME || secrets.STAGING_DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_PASSWORD || secrets.STAGING_DB_PASSWORD }}
+          DB_NAME: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_NAME || secrets.STAGING_DB_NAME || 'postgres' }}
           DB_SSL: true
           NODE_ENV: ${{ env.ENVIRONMENT }}
+          SUPABASE_URL: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_URL || secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_ANON_KEY || secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY || secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Check for pending migrations
         id: migration_check
@@ -761,13 +771,16 @@ jobs:
         continue-on-error: true
         env:
           CI: true
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
+          DB_HOST: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_HOST || secrets.STAGING_DB_HOST }}
+          DB_PORT: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_PORT || secrets.STAGING_DB_PORT || '5432' }}
+          DB_USERNAME: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_USERNAME || secrets.STAGING_DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_PASSWORD || secrets.STAGING_DB_PASSWORD }}
+          DB_NAME: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_NAME || secrets.STAGING_DB_NAME || 'postgres' }}
           DB_SSL: true
           NODE_ENV: ${{ env.ENVIRONMENT }}
+          SUPABASE_URL: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_URL || secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_ANON_KEY || secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY || secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Run database migrations
         if: steps.migration_check.outcome == 'failure'
@@ -776,13 +789,16 @@ jobs:
           pnpm run migration:run --filter=api
         env:
           CI: true
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
-          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
+          DB_HOST: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_HOST || secrets.STAGING_DB_HOST }}
+          DB_PORT: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_PORT || secrets.STAGING_DB_PORT || '5432' }}
+          DB_USERNAME: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_USERNAME || secrets.STAGING_DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_PASSWORD || secrets.STAGING_DB_PASSWORD }}
+          DB_NAME: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_DB_NAME || secrets.STAGING_DB_NAME || 'postgres' }}
           DB_SSL: true
           NODE_ENV: ${{ env.ENVIRONMENT }}
+          SUPABASE_URL: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_URL || secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_ANON_KEY || secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.ENVIRONMENT == 'production' && secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY || secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Migration completed successfully
         run: |

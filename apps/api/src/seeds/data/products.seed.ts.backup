@@ -1,0 +1,236 @@
+import { DataSource } from 'typeorm';
+import { Product } from '../../entities/product.entity';
+import { Category } from '../../entities/category.entity';
+import { BarcodeType } from '@beezly/types';
+
+export async function seedProducts(dataSource: DataSource) {
+  const productRepository = dataSource.getRepository(Product);
+  const categoryRepository = dataSource.getRepository(Category);
+
+  // Check if products already exist
+  const existingProducts = await productRepository.count();
+  if (existingProducts > 0) {
+    console.log('  ⏭️  Products already seeded, skipping...');
+    return;
+  }
+
+  // Get categories for association
+  const produce = await categoryRepository.findOne({
+    where: { name: 'Produce' },
+  });
+  const dairy = await categoryRepository.findOne({
+    where: { name: 'Dairy & Eggs' },
+  });
+  const snacks = await categoryRepository.findOne({
+    where: { name: 'Snacks & Candy' },
+  });
+  const beverages = await categoryRepository.findOne({
+    where: { name: 'Beverages' },
+  });
+  const pantry = await categoryRepository.findOne({
+    where: { name: 'Pantry & Dry Goods' },
+  });
+  const meat = await categoryRepository.findOne({
+    where: { name: 'Meat & Seafood' },
+  });
+  const bakery = await categoryRepository.findOne({
+    where: { name: 'Bakery & Bread' },
+  });
+  const frozen = await categoryRepository.findOne({
+    where: { name: 'Frozen Foods' },
+  });
+  const household = await categoryRepository.findOne({
+    where: { name: 'Household & Cleaning' },
+  });
+
+  const products = [
+    // Produce
+    {
+      name: 'Bananas',
+      barcode: '4011',
+      barcodeType: BarcodeType.EAN13,
+      category: produce?.id,
+    },
+    {
+      name: 'Gala Apples',
+      barcode: '4135',
+      barcodeType: BarcodeType.EAN13,
+      category: produce?.id,
+    },
+    {
+      name: 'Red Bell Peppers',
+      barcode: '4688',
+      barcodeType: BarcodeType.EAN13,
+      category: produce?.id,
+    },
+    {
+      name: 'Carrots',
+      barcode: '4562',
+      barcodeType: BarcodeType.EAN13,
+      category: produce?.id,
+    },
+    {
+      name: 'Broccoli Crowns',
+      barcode: '4060',
+      barcodeType: BarcodeType.EAN13,
+      category: produce?.id,
+    },
+
+    // Dairy & Eggs
+    {
+      name: 'Beatrice 2% Milk',
+      barcode: '055742500664',
+      barcodeType: BarcodeType.UPC_A,
+      category: dairy?.id,
+    },
+    {
+      name: 'Astro Greek Yogurt',
+      barcode: '059749951050',
+      barcodeType: BarcodeType.UPC_A,
+      category: dairy?.id,
+    },
+    {
+      name: 'Black Diamond Cheese',
+      barcode: '064200020027',
+      barcodeType: BarcodeType.UPC_A,
+      category: dairy?.id,
+    },
+    {
+      name: 'Burnbrae Farms Large Eggs',
+      barcode: '059439100012',
+      barcodeType: BarcodeType.UPC_A,
+      category: dairy?.id,
+    },
+
+    // Meat & Seafood
+    {
+      name: 'Ground Beef Medium',
+      barcode: '020000000001',
+      barcodeType: BarcodeType.CODE128,
+      category: meat?.id,
+    },
+    {
+      name: 'Chicken Breast',
+      barcode: '020000000002',
+      barcodeType: BarcodeType.CODE128,
+      category: meat?.id,
+    },
+    {
+      name: 'Atlantic Salmon Fillet',
+      barcode: '020000000003',
+      barcodeType: BarcodeType.CODE128,
+      category: meat?.id,
+    },
+
+    // Pantry & Dry Goods
+    {
+      name: 'Catelli Spaghetti',
+      barcode: '059789971099',
+      barcodeType: BarcodeType.UPC_A,
+      category: pantry?.id,
+    },
+    {
+      name: "Hunt's Tomato Sauce",
+      barcode: '027000005644',
+      barcodeType: BarcodeType.UPC_A,
+      category: pantry?.id,
+    },
+    {
+      name: "Uncle Ben's Rice",
+      barcode: '054800320127',
+      barcodeType: BarcodeType.UPC_A,
+      category: pantry?.id,
+    },
+    {
+      name: "Kellogg's Corn Flakes",
+      barcode: '038000005404',
+      barcodeType: BarcodeType.UPC_A,
+      category: pantry?.id,
+    },
+
+    // Beverages
+    {
+      name: 'Coca-Cola Classic',
+      barcode: '049000006346',
+      barcodeType: BarcodeType.UPC_A,
+      category: beverages?.id,
+    },
+    {
+      name: 'Tim Hortons Coffee',
+      barcode: '055742524001',
+      barcodeType: BarcodeType.UPC_A,
+      category: beverages?.id,
+    },
+    {
+      name: 'Tropicana Orange Juice',
+      barcode: '048500001004',
+      barcodeType: BarcodeType.UPC_A,
+      category: beverages?.id,
+    },
+
+    // Snacks & Candy
+    {
+      name: "Lay's Classic Potato Chips",
+      barcode: '060410004005',
+      barcodeType: BarcodeType.UPC_A,
+      category: snacks?.id,
+    },
+    {
+      name: 'Oreo Original Cookies',
+      barcode: '066721001012',
+      barcodeType: BarcodeType.UPC_A,
+      category: snacks?.id,
+    },
+    {
+      name: 'Smarties',
+      barcode: '055742524148',
+      barcodeType: BarcodeType.UPC_A,
+      category: snacks?.id,
+    },
+
+    // Bakery & Bread
+    {
+      name: 'Wonder Bread White',
+      barcode: '068100060935',
+      barcodeType: BarcodeType.UPC_A,
+      category: bakery?.id,
+    },
+    {
+      name: "Dempster's Whole Wheat",
+      barcode: '063211002057',
+      barcodeType: BarcodeType.UPC_A,
+      category: bakery?.id,
+    },
+
+    // Frozen Foods
+    {
+      name: 'McCain French Fries',
+      barcode: '055742524285',
+      barcodeType: BarcodeType.UPC_A,
+      category: frozen?.id,
+    },
+    {
+      name: "Stouffer's Lasagna",
+      barcode: '013800142597',
+      barcodeType: BarcodeType.UPC_A,
+      category: frozen?.id,
+    },
+
+    // Household & Cleaning
+    {
+      name: 'Tide Laundry Detergent',
+      barcode: '037000137054',
+      barcodeType: BarcodeType.UPC_A,
+      category: household?.id,
+    },
+    {
+      name: 'Charmin Ultra Soft',
+      barcode: '037000137146',
+      barcodeType: BarcodeType.UPC_A,
+      category: household?.id,
+    },
+  ];
+
+  const createdProducts = await productRepository.save(products);
+  console.log(`  ✅ Created ${createdProducts.length} products`);
+}
