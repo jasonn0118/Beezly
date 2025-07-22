@@ -735,6 +735,19 @@ jobs:
             echo "🔍 Will use database: STAGING_DB_NAME"
           fi
 
+      - name: Debug GitHub secrets availability (Staging)
+        if: github.ref == 'refs/heads/staging'
+        run: |
+          echo "🔍 Checking GitHub secrets availability (without exposing values):"
+          echo "STAGING_DB_HOST: ${{ secrets.STAGING_DB_HOST != '' && 'SET' || 'NOT_SET' }}"
+          echo "STAGING_DB_PORT: ${{ secrets.STAGING_DB_PORT != '' && 'SET' || 'NOT_SET' }}"
+          echo "STAGING_DB_USERNAME: ${{ secrets.STAGING_DB_USERNAME != '' && 'SET' || 'NOT_SET' }}"
+          echo "STAGING_DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD != '' && 'SET' || 'NOT_SET' }}"
+          echo "STAGING_DB_NAME: ${{ secrets.STAGING_DB_NAME != '' && 'SET' || 'NOT_SET' }}"
+          echo "STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL != '' && 'SET' || 'NOT_SET' }}"
+          echo "STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY != '' && 'SET' || 'NOT_SET' }}"
+          echo "STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY != '' && 'SET' || 'NOT_SET' }}"
+
       - name: Debug environment variables (Staging)
         if: github.ref == 'refs/heads/staging'
         run: pnpm run debug:env --filter=api
