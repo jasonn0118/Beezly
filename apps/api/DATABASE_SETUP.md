@@ -145,15 +145,10 @@ This means **`pnpm run dev` always works** regardless of your database state!
    - Get credentials from Supabase Dashboard → Settings → Database
    - Update `DB_HOST`, `DB_PASSWORD`, etc.
 
-3. **GitHub Secrets Required:**
-   - `STAGING_DB_HOST`
-   - `STAGING_DB_PORT`
-   - `STAGING_DB_USERNAME`
-   - `STAGING_DB_PASSWORD`
-   - `STAGING_DB_NAME`
-   - `STAGING_SUPABASE_URL`
-   - `STAGING_SUPABASE_ANON_KEY`
-   - `STAGING_SUPABASE_SERVICE_ROLE_KEY`
+3. **GitHub Environment Secrets:**
+   - Configure in **GitHub → Settings → Environments → staging**
+   - Add secrets: `DB_HOST`, `DB_PASSWORD`, `SUPABASE_URL`, etc.
+   - See [GitHub Environments & Secrets Configuration](#github-environments--secrets-configuration) section below
 
 ### 3. Production Environment Setup
 
@@ -166,15 +161,10 @@ This means **`pnpm run dev` always works** regardless of your database state!
    - Use a SEPARATE Supabase project from staging
    - Get credentials from Supabase Dashboard
 
-3. **GitHub Secrets Required:**
-   - `PRODUCTION_DB_HOST`
-   - `PRODUCTION_DB_PORT`
-   - `PRODUCTION_DB_USERNAME`
-   - `PRODUCTION_DB_PASSWORD`
-   - `PRODUCTION_DB_NAME`
-   - `PRODUCTION_SUPABASE_URL`
-   - `PRODUCTION_SUPABASE_ANON_KEY`
-   - `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY`
+3. **GitHub Environment Secrets:**
+   - Configure in **GitHub → Settings → Environments → production**
+   - Add secrets: `DB_HOST`, `DB_PASSWORD`, `SUPABASE_URL`, etc.
+   - See [GitHub Environments & Secrets Configuration](#github-environments--secrets-configuration) section below
 
 ## Database Management Commands
 
@@ -311,25 +301,57 @@ Option 2: **Separate Local Supabase Project** (recommended for production apps)
    - Set up monitoring and alerts
    - Regular backup verification
 
-### GitHub Secrets Configuration
+### GitHub Environments & Secrets Configuration
 
-Add these secrets to your GitHub repository:
+For CI/CD deployments, use **Environment Secrets** for better security and organization:
 
-**Settings → Secrets and variables → Actions → New repository secret**
+#### Step 1: Create GitHub Environments
 
-#### Staging Secrets
+**Settings → Environments → New environment**
+
+1. Create environment: `staging`
+2. Create environment: `production`
+
+#### Step 2: Configure Staging Environment Secrets
+
+**Environments → staging → Add secret**
+
 ```
-STAGING_SUPABASE_URL=https://your-staging-ref.supabase.co
-STAGING_SUPABASE_ANON_KEY=eyJ0eXAiOiJKV1QiLCJh...
-STAGING_SUPABASE_SERVICE_ROLE_KEY=eyJ0eXAiOiJKV1QiLCJh...
+DB_HOST=db.your-staging-ref.supabase.co
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=your-staging-database-password
+DB_NAME=postgres
+SUPABASE_URL=https://your-staging-ref.supabase.co
+SUPABASE_ANON_KEY=eyJ0eXAiOiJKV1QiLCJh...
+SUPABASE_SERVICE_ROLE_KEY=eyJ0eXAiOiJKV1QiLCJh...
 ```
 
-#### Production Secrets
+#### Step 3: Configure Production Environment Secrets
+
+**Environments → production → Add secret**
+
 ```
-PRODUCTION_SUPABASE_URL=https://your-production-ref.supabase.co
-PRODUCTION_SUPABASE_ANON_KEY=eyJ0eXAiOiJKV1QiLCJh...
-PRODUCTION_SUPABASE_SERVICE_ROLE_KEY=eyJ0eXAiOiJKV1QiLCJh...
+DB_HOST=db.your-production-ref.supabase.co
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=your-production-database-password
+DB_NAME=postgres
+SUPABASE_URL=https://your-production-ref.supabase.co
+SUPABASE_ANON_KEY=eyJ0eXAiOiJKV1QiLCJh...
+SUPABASE_SERVICE_ROLE_KEY=eyJ0eXAiOiJKV1QiLCJh...
 ```
+
+#### Benefits of Environment Secrets:
+- 🔒 **Better Security**: Environment-specific secrets are isolated
+- 🎯 **Cleaner Configuration**: No need for `STAGING_*` and `PRODUCTION_*` prefixes
+- 🚀 **Auto-Selection**: CI/CD automatically uses correct environment based on branch
+- ✅ **Approval Gates**: Optional deployment approvals for production
+
+#### How CI/CD Environment Selection Works:
+- **`staging` branch** → Uses `staging` environment secrets
+- **`main` branch** → Uses `production` environment secrets
+- **Same secret names** for both environments (no prefixes needed)
 
 ### Storage Configuration
 
@@ -456,10 +478,21 @@ NODE_ENV=production pnpm run start:prod
 ## CI/CD Configuration
 
 The GitHub Actions workflow automatically:
-1. Uses `STAGING_*` secrets for staging branch
-2. Uses `PRODUCTION_*` secrets for main branch
-3. Runs migrations if needed
-4. Never runs destructive operations
+1. **Environment Selection**: 
+   - `staging` branch → Uses `staging` environment secrets
+   - `main` branch → Uses `production` environment secrets
+2. **Database Operations**:
+   - Validates schema comparison against target database
+   - Runs pending migrations safely if needed
+   - Never runs destructive operations (schema sync disabled)
+3. **Security Features**:
+   - Environment-isolated secrets
+   - SSL-enforced connections
+   - Discord notifications for deployment status
+4. **Migration Safety**:
+   - Uses safe `migration:run` instead of `schema:sync`
+   - Validates migrations before applying
+   - Automatic rollback on failures
 
 ## Important Notes
 
