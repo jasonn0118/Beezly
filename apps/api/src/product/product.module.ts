@@ -4,6 +4,7 @@ import { ProductService } from './product.service';
 import { ProductController } from './product.controller';
 import { ProductNormalizationService } from './product-normalization.service';
 import { VectorEmbeddingService } from './vector-embedding.service';
+import { OpenAIService } from './openai.service';
 import { Product } from '../entities/product.entity';
 import { Category } from '../entities/category.entity';
 import { Store } from '../entities/store.entity';
@@ -25,11 +26,13 @@ import { NormalizedProduct } from '../entities/normalized-product.entity';
     ProductService,
     ProductNormalizationService,
     VectorEmbeddingService,
+    OpenAIService,
   ],
   exports: [
     ProductService,
     ProductNormalizationService,
     VectorEmbeddingService,
+    OpenAIService,
   ],
 })
 export class ProductModule {}

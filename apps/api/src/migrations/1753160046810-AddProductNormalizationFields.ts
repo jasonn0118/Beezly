@@ -33,7 +33,7 @@ export class AddProductNormalizationFields1753160046810
         "brand" text,
         "category" text,
         "confidence_score" decimal(3,2) NOT NULL,
-        "embedding" text,
+        "embedding" vector(1536),
         "is_discount" boolean NOT NULL DEFAULT false,
         "is_adjustment" boolean NOT NULL DEFAULT false,
         "match_count" integer NOT NULL DEFAULT 1,
@@ -64,6 +64,15 @@ export class AddProductNormalizationFields1753160046810
 
     await queryRunner.query(`
       CREATE INDEX "IDX_normalized_products_is_discount" ON "normalized_products" ("is_discount");
+    `);
+
+    // Create index for vector similarity search using IVFFlat
+    // Note: This index type is optimal for datasets with more than 1000 vectors
+    await queryRunner.query(`
+      CREATE INDEX "IDX_normalized_products_embedding" 
+      ON "normalized_products" 
+      USING ivfflat (embedding vector_cosine_ops)
+      WITH (lists = 100);
     `);
 
     console.log('normalized_products table created successfully.');

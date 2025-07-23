@@ -2,6 +2,28 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { NormalizedProduct } from '../entities/normalized-product.entity';
+import { OpenAIService } from './openai.service';
+
+export interface ParsedPrice {
+  amount: number;
+  isNegative: boolean;
+  originalString: string;
+}
+
+export interface SimilarProduct {
+  productId: string;
+  similarity: number;
+  normalizedName: string;
+  merchant: string;
+}
+
+export interface DiscountLink {
+  discountId: string; // Reference to the discount item
+  discountAmount: number;
+  discountType: 'percentage' | 'fixed' | 'unknown';
+  discountDescription: string;
+  confidence: number; // How confident we are in the link
+}
 
 export interface NormalizationResult {
   normalizedName: string;
@@ -11,6 +33,28 @@ export interface NormalizationResult {
   isDiscount: boolean;
   isAdjustment: boolean;
   itemCode?: string;
+  method?: string; // How the normalization was performed
+  similarProducts?: SimilarProduct[]; // Similar products found
+  linkedDiscounts?: DiscountLink[]; // Discounts that apply to this product
+  appliedToProductId?: string; // If this is a discount, which product it applies to
+}
+
+export interface ExtendedNormalizationResult extends NormalizationResult {
+  originalIndex: number;
+  originalPrice: number;
+  originalQuantity: number;
+  parsedPrice?: ParsedPrice;
+}
+
+// Type guard to check if a NormalizationResult has extended properties
+function isExtendedNormalizationResult(
+  result: NormalizationResult,
+): result is ExtendedNormalizationResult {
+  return (
+    'originalIndex' in result &&
+    'originalPrice' in result &&
+    'originalQuantity' in result
+  );
 }
 
 export interface ProductNormalizationOptions {
@@ -24,6 +68,57 @@ export interface ProductNormalizationOptions {
 @Injectable()
 export class ProductNormalizationService {
   private readonly logger = new Logger(ProductNormalizationService.name);
+
+  /**
+   * Parse price strings that may contain discount indicators
+   * Examples: "5.88", "5.88-O", "-5.88", "$5.88-", "5.88-", "-$5.88"
+   */
+  public parsePrice(priceString: string): ParsedPrice {
+    if (!priceString || typeof priceString !== 'string') {
+      return {
+        amount: 0,
+        isNegative: false,
+        originalString: priceString || '',
+      };
+    }
+
+    const originalString = priceString.trim();
+    let cleanPrice = originalString;
+
+    // Check for various negative/discount indicators
+    let isNegative = false;
+
+    // Pattern 1: Starts with minus sign: "-5.88", "-$5.88"
+    if (cleanPrice.startsWith('-')) {
+      isNegative = true;
+      cleanPrice = cleanPrice.substring(1);
+    }
+
+    // Pattern 2: Ends with dash and letter: "5.88-O", "5.88-D", "5.88-"
+    if (cleanPrice.match(/-[A-Za-z]*$/)) {
+      isNegative = true;
+      cleanPrice = cleanPrice.replace(/-[A-Za-z]*$/, '');
+    }
+
+    // Pattern 3: Contains dash in middle with letters: "5.88-DISC"
+    if (cleanPrice.match(/\d+-[A-Za-z]+/)) {
+      isNegative = true;
+      cleanPrice = cleanPrice.replace(/-[A-Za-z]+/, '');
+    }
+
+    // Remove currency symbols and extra spaces
+    cleanPrice = cleanPrice.replace(/[$£€¥]/g, '').trim();
+
+    // Parse the numeric value
+    const numericValue = parseFloat(cleanPrice);
+    const amount = isNaN(numericValue) ? 0 : Math.abs(numericValue);
+
+    return {
+      amount,
+      isNegative,
+      originalString,
+    };
+  }
 
   // Common discount/adjustment patterns
   private readonly discountPatterns = [
@@ -51,6 +146,7 @@ export class ProductNormalizationService {
   constructor(
     @InjectRepository(NormalizedProduct)
     private readonly normalizedProductRepository: Repository<NormalizedProduct>,
+    private readonly openAIService: OpenAIService,
   ) {}
 
   /**
@@ -59,13 +155,7 @@ export class ProductNormalizationService {
   async normalizeProduct(
     options: ProductNormalizationOptions,
   ): Promise<NormalizationResult> {
-    const {
-      merchant,
-      rawName,
-      itemCode,
-      useAI = true,
-      similarityThreshold = 0.8,
-    } = options;
+    const { merchant, rawName, itemCode, useAI = true } = options;
 
     this.logger.debug(`Normalizing product: ${rawName} from ${merchant}`);
 
@@ -83,40 +173,57 @@ export class ProductNormalizationService {
         isDiscount,
         isAdjustment,
         itemCode,
+        method: isDiscount ? 'discount_detected' : 'adjustment_detected',
       };
 
       // Store the discount/adjustment mapping
-      await this.storeNormalizationResult(merchant, rawName, result);
-      return result;
+      // TODO: Enable when entity is properly loaded
+      // await this.storeNormalizationResult(merchant, rawName, result);
+      return Promise.resolve(result);
     }
 
     // Step 3: Check for exact match
-    const exactMatch = await this.findExactMatch(rawName, merchant);
-    if (exactMatch) {
-      await this.updateMatchingStatistics(exactMatch);
-      return this.convertEntityToResult(exactMatch);
-    }
+    // TODO: Enable when entity is properly loaded
+    // const exactMatch = await this.findExactMatch(rawName, merchant);
+    // if (exactMatch) {
+    //   await this.updateMatchingStatistics(exactMatch);
+    //   const result = this.convertEntityToResult(exactMatch);
+    //   result.method = 'exact_match';
+    //   return result;
+    // }
 
     // Step 4: Check for similar products (semantic similarity)
-    const similarProducts = await this.findSimilarProducts(
-      cleanedName,
-      merchant,
-      similarityThreshold,
-    );
-    if (similarProducts.length > 0) {
-      const bestMatch = similarProducts[0];
-      await this.updateMatchingStatistics(bestMatch);
-      return this.convertEntityToResult(bestMatch);
-    }
+    // TODO: Enable when entity is properly loaded
+    // const similarProducts = await this.findSimilarProducts(
+    //   cleanedName,
+    //   merchant,
+    //   similarityThreshold,
+    // );
+    // if (similarProducts.length > 0) {
+    //   const bestMatch = similarProducts[0];
+    //   await this.updateMatchingStatistics(bestMatch);
+    //   const result = this.convertEntityToResult(bestMatch);
+    //   result.method = 'similarity_match';
+    //   // Add similar products info for test endpoint
+    //   result.similarProducts = similarProducts.slice(0, 5).map((product) => ({
+    //     productId: product.normalizedProductSk,
+    //     similarity: 0.8, // Placeholder, would be calculated in real implementation
+    //     normalizedName: product.normalizedName,
+    //     merchant: product.merchant,
+    //   }));
+    //   return result;
+    // }
 
     // Step 5: Use AI normalization if enabled
     if (useAI) {
-      const aiResult = this.callLLMNormalization(
+      const aiResult = await this.callLLMNormalization(
         cleanedName,
         merchant,
         itemCode,
       );
-      await this.storeNormalizationResult(merchant, rawName, aiResult);
+      aiResult.method = 'ai_generated';
+      // TODO: Enable when entity is properly loaded
+      // await this.storeNormalizationResult(merchant, rawName, aiResult);
       return aiResult;
     }
 
@@ -127,10 +234,12 @@ export class ProductNormalizationService {
       isDiscount: false,
       isAdjustment: false,
       itemCode,
+      method: 'fallback',
     };
 
-    await this.storeNormalizationResult(merchant, rawName, fallbackResult);
-    return fallbackResult;
+    // TODO: Enable when entity is properly loaded
+    // await this.storeNormalizationResult(merchant, rawName, fallbackResult);
+    return Promise.resolve(fallbackResult);
   }
 
   /**
@@ -220,21 +329,59 @@ export class ProductNormalizationService {
   }
 
   /**
-   * Call LLM for product normalization
-   * This is a placeholder - in production would integrate with OpenAI/Claude/etc.
+   * Call LLM for product normalization using OpenAI
    */
-  callLLMNormalization(
+  async callLLMNormalization(
     cleanedName: string,
     merchant: string,
     itemCode?: string,
-  ): NormalizationResult {
+  ): Promise<NormalizationResult> {
     this.logger.debug(`AI normalization for: ${cleanedName}`);
 
-    // Placeholder implementation
-    // In production, this would make an API call to an LLM service
+    try {
+      // Check if OpenAI is configured
+      if (!this.openAIService.isConfigured()) {
+        this.logger.debug(
+          'OpenAI not configured, using fallback normalization',
+        );
+        return this.getFallbackNormalization(cleanedName, itemCode);
+      }
 
-    // Basic pattern-based normalization as fallback
-    const normalizedName = cleanedName;
+      // Call OpenAI for normalization
+      const llmResponse = await this.openAIService.normalizeProductWithLLM({
+        rawName: cleanedName,
+        merchant,
+        itemCode,
+        context: `This is a receipt item from ${merchant}`,
+      });
+
+      // Convert LLM response to our interface
+      return {
+        normalizedName: llmResponse.normalizedName,
+        brand: llmResponse.brand || undefined,
+        category: llmResponse.category || undefined,
+        confidenceScore: llmResponse.confidenceScore,
+        isDiscount: false,
+        isAdjustment: false,
+        itemCode,
+      };
+    } catch (error) {
+      this.logger.error(
+        `LLM normalization failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+
+      // Fall back to pattern-based normalization on error
+      return this.getFallbackNormalization(cleanedName, itemCode);
+    }
+  }
+
+  /**
+   * Fallback normalization using pattern matching (used when LLM is unavailable)
+   */
+  private getFallbackNormalization(
+    cleanedName: string,
+    itemCode?: string,
+  ): NormalizationResult {
     let brand: string | undefined;
     let category: string | undefined;
 
@@ -244,6 +391,7 @@ export class ProductNormalizationService {
       /^(APPLE|SAMSUNG|GOOGLE|MICROSOFT)/i,
       /^(TIDE|DOWNY|GAIN|PERSIL)/i,
       /^(KRAFT|HEINZ|CAMPBELL)/i,
+      /^(ORG|ORGANIC)/i,
     ];
 
     for (const pattern of brandPatterns) {
@@ -282,10 +430,10 @@ export class ProductNormalizationService {
     }
 
     return {
-      normalizedName,
+      normalizedName: cleanedName,
       brand,
       category,
-      confidenceScore: 0.7, // Medium confidence for AI-generated results
+      confidenceScore: 0.5, // Lower confidence for fallback results
       isDiscount: false,
       isAdjustment: false,
       itemCode,
@@ -308,7 +456,7 @@ export class ProductNormalizationService {
       brand: result.brand,
       category: result.category,
       confidenceScore: result.confidenceScore,
-      embedding: undefined, // Will be set by VectorEmbeddingService
+      embedding: undefined as number[] | undefined, // Will be set by VectorEmbeddingService
       isDiscount: result.isDiscount,
       isAdjustment: result.isAdjustment,
       matchCount: 1,
@@ -404,5 +552,293 @@ export class ProductNormalizationService {
     }
 
     return await queryBuilder.getMany();
+  }
+
+  /**
+   * Process a list of receipt items and link discounts to products
+   */
+  async normalizeReceiptWithDiscountLinking(
+    items: Array<{
+      name: string;
+      price: string;
+      quantity: string;
+      itemCode?: string;
+      index: number; // Position in the receipt
+    }>,
+    merchant: string,
+  ): Promise<NormalizationResult[]> {
+    // Step 1: Normalize all items first
+    const normalizedItems: NormalizationResult[] = [];
+
+    for (const item of items) {
+      // Parse the price to detect negative/discount amounts
+      const parsedPrice = this.parsePrice(item.price);
+
+      // Check if price format indicates this is a discount
+      const isPriceBasedDiscount = parsedPrice.isNegative;
+
+      const result = await this.normalizeProduct({
+        rawName: item.name,
+        merchant,
+        itemCode: item.itemCode,
+        useAI: true,
+      });
+
+      // Override discount detection if price format indicates discount
+      if (isPriceBasedDiscount && !result.isDiscount) {
+        result.isDiscount = true;
+        result.isAdjustment = false;
+        result.method = 'price_format_discount';
+        this.logger.debug(
+          `Price-based discount detected: ${item.name} with price ${item.price}`,
+        );
+      }
+
+      // Add item index for discount linking by creating an extended result
+      const extendedResult: ExtendedNormalizationResult = {
+        ...result,
+        originalIndex: item.index,
+        originalPrice: parsedPrice.amount, // Use parsed amount (always positive)
+        originalQuantity: parseInt(item.quantity) || 1,
+        // Add the price info for reference
+        parsedPrice,
+      };
+
+      normalizedItems.push(extendedResult);
+    }
+
+    // Step 2: Link discounts to products
+    return this.linkDiscountsToProducts(normalizedItems);
+  }
+
+  /**
+   * Link discount items to their corresponding products
+   */
+  private linkDiscountsToProducts(
+    items: NormalizationResult[],
+  ): NormalizationResult[] {
+    const products = items.filter(
+      (item) => !item.isDiscount && !item.isAdjustment,
+    );
+    const discounts = items.filter((item) => item.isDiscount);
+
+    // For each discount, try to find the product it applies to
+    for (const discount of discounts) {
+      const linkedProduct = this.findProductForDiscount(discount, products);
+
+      if (linkedProduct) {
+        // Add discount to product
+        if (!linkedProduct.linkedDiscounts) {
+          linkedProduct.linkedDiscounts = [];
+        }
+
+        const discountAmount = isExtendedNormalizationResult(discount)
+          ? Math.abs(discount.originalPrice)
+          : 0;
+        const discountLink: DiscountLink = {
+          discountId: isExtendedNormalizationResult(discount)
+            ? discount.originalIndex.toString()
+            : 'unknown',
+          discountAmount,
+          discountType: this.determineDiscountType(
+            discount.normalizedName,
+            discountAmount,
+          ),
+          discountDescription: discount.normalizedName,
+          confidence: this.calculateDiscountLinkConfidence(
+            discount,
+            linkedProduct,
+          ),
+        };
+
+        linkedProduct.linkedDiscounts.push(discountLink);
+
+        // Mark discount as applied to this product
+        discount.appliedToProductId = isExtendedNormalizationResult(
+          linkedProduct,
+        )
+          ? linkedProduct.originalIndex.toString()
+          : 'unknown';
+      }
+    }
+
+    return items;
+  }
+
+  /**
+   * Find the most likely product that a discount applies to
+   */
+  private findProductForDiscount(
+    discount: NormalizationResult,
+    products: NormalizationResult[],
+  ): NormalizationResult | null {
+    const discountIndex = isExtendedNormalizationResult(discount)
+      ? discount.originalIndex
+      : 0;
+    const discountAmount = isExtendedNormalizationResult(discount)
+      ? Math.abs(discount.originalPrice)
+      : 0;
+
+    // Strategy 1: Look for adjacent products (most common)
+    // Check items immediately before the discount
+    for (let i = 1; i <= 3; i++) {
+      const adjacentIndex = discountIndex - i;
+      const adjacentProduct = products.find(
+        (p) =>
+          isExtendedNormalizationResult(p) && p.originalIndex === adjacentIndex,
+      );
+
+      if (adjacentProduct) {
+        const productPrice = isExtendedNormalizationResult(adjacentProduct)
+          ? adjacentProduct.originalPrice
+          : 0;
+
+        // If discount amount makes sense relative to product price
+        if (this.isDiscountAmountReasonable(discountAmount, productPrice)) {
+          return adjacentProduct;
+        }
+      }
+    }
+
+    // Strategy 2: Look for products with matching price patterns
+    const matchingProducts = products.filter((product) => {
+      const productPrice = isExtendedNormalizationResult(product)
+        ? product.originalPrice
+        : 0;
+      return this.isDiscountAmountReasonable(discountAmount, productPrice);
+    });
+
+    if (matchingProducts.length === 1) {
+      return matchingProducts[0];
+    }
+
+    // Strategy 3: Look for specific discount patterns that mention products
+    const productKeywords = this.extractProductKeywordsFromDiscount(
+      discount.normalizedName,
+    );
+    if (productKeywords.length > 0) {
+      for (const product of products) {
+        const productName = product.normalizedName.toLowerCase();
+        if (productKeywords.some((keyword) => productName.includes(keyword))) {
+          return product;
+        }
+      }
+    }
+
+    // Strategy 4: Default to the most recent product if no clear match
+    const recentProducts = products
+      .filter(
+        (p) =>
+          isExtendedNormalizationResult(p) && p.originalIndex < discountIndex,
+      )
+      .sort((a, b) => {
+        const aIndex = isExtendedNormalizationResult(a) ? a.originalIndex : 0;
+        const bIndex = isExtendedNormalizationResult(b) ? b.originalIndex : 0;
+        return bIndex - aIndex;
+      });
+
+    return recentProducts[0] || null;
+  }
+
+  /**
+   * Determine if a discount amount is reasonable for a product price
+   */
+  private isDiscountAmountReasonable(
+    discountAmount: number,
+    productPrice: number,
+  ): boolean {
+    if (productPrice <= 0) return false;
+
+    const discountPercentage = (discountAmount / productPrice) * 100;
+
+    // Reasonable discount range: 5% to 100% (free item)
+    return discountPercentage >= 5 && discountPercentage <= 100;
+  }
+
+  /**
+   * Extract product keywords from discount description
+   */
+  private extractProductKeywordsFromDiscount(discountName: string): string[] {
+    const keywords: string[] = [];
+    const lowercaseName = discountName.toLowerCase();
+
+    // Common patterns: "APPLE DISC", "MILK COUPON", etc.
+    const productTerms = lowercaseName
+      .replace(/\b(disc|discount|coupon|off|member|savings|tpd)\b/g, '')
+      .replace(/[^\w\s]/g, '')
+      .split(/\s+/)
+      .filter((term) => term.length > 2);
+
+    keywords.push(...productTerms);
+
+    return keywords;
+  }
+
+  /**
+   * Determine the type of discount
+   */
+  private determineDiscountType(
+    discountName: string,
+    discountAmount: number,
+  ): 'percentage' | 'fixed' | 'unknown' {
+    const name = discountName.toLowerCase();
+
+    if (name.includes('%') || name.includes('percent')) {
+      return 'percentage';
+    }
+
+    if (name.includes('$') || /\d+\.\d{2}/.test(name) || discountAmount > 0) {
+      return 'fixed';
+    }
+
+    return 'unknown';
+  }
+
+  /**
+   * Calculate confidence score for discount-product linking
+   */
+  private calculateDiscountLinkConfidence(
+    discount: NormalizationResult,
+    product: NormalizationResult,
+  ): number {
+    let confidence = 0.5; // Base confidence
+
+    const discountIndex = isExtendedNormalizationResult(discount)
+      ? discount.originalIndex
+      : 0;
+    const productIndex = isExtendedNormalizationResult(product)
+      ? product.originalIndex
+      : 0;
+    const discountAmount = isExtendedNormalizationResult(discount)
+      ? Math.abs(discount.originalPrice)
+      : 0;
+    const productPrice = isExtendedNormalizationResult(product)
+      ? product.originalPrice
+      : 0;
+
+    // Higher confidence if discount is adjacent to product
+    const distance = Math.abs(discountIndex - productIndex);
+    if (distance === 1) confidence += 0.3;
+    else if (distance === 2) confidence += 0.2;
+    else if (distance === 3) confidence += 0.1;
+
+    // Higher confidence if discount amount is reasonable
+    if (this.isDiscountAmountReasonable(discountAmount, productPrice)) {
+      confidence += 0.2;
+    }
+
+    // Higher confidence if discount mentions product keywords
+    const keywords = this.extractProductKeywordsFromDiscount(
+      discount.normalizedName,
+    );
+    if (
+      keywords.some((keyword) =>
+        product.normalizedName.toLowerCase().includes(keyword),
+      )
+    ) {
+      confidence += 0.2;
+    }
+
+    return Math.min(1.0, confidence);
   }
 }

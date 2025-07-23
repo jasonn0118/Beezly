@@ -1,0 +1,85 @@
+{
+  "info": {
+    "name": "Product Normalization API",
+    "description": "Test collection for the product normalization system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Test Product Normalization",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"storeName\": \"Whole Foods Market\",\n  \"items\": [\n    {\n      \"productName\": \"ORGANIC APPLES FUJI\",\n      \"barcode\": \"4131\",\n      \"category\": \"Produce\",\n      \"price\": 3.99,\n      \"quantity\": 2\n    },\n    {\n      \"productName\": \"TPD/1858985\",\n      \"price\": -5.00,\n      \"quantity\": 1\n    },\n    {\n      \"productName\": \"365 EVERYDAY VALUE MILK 2%\",\n      \"barcode\": \"365123456\",\n      \"category\": \"Dairy\",\n      \"price\": 4.29,\n      \"quantity\": 1\n    },\n    {\n      \"productName\": \"ORG BANANAS\",\n      \"barcode\": \"4011\",\n      \"category\": \"Produce\",\n      \"price\": 1.99,\n      \"quantity\": 3\n    },\n    {\n      \"productName\": \"DISCOUNT MEMBER SAVINGS\",\n      \"price\": -2.50,\n      \"quantity\": 1\n    },\n    {\n      \"productName\": \"365 WHOLE WHT BREAD\",\n      \"barcode\": \"365789012\",\n      \"category\": \"Bakery\",\n      \"price\": 2.99,\n      \"quantity\": 1\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/receipts/test-normalization",
+          "host": ["{{baseUrl}}"],
+          "path": ["receipts", "test-normalization"]
+        },
+        "description": "Test the product normalization system with a sample receipt containing various product types and discount lines."
+      },
+      "response": []
+    },
+    {
+      "name": "Test Discount Detection",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"storeName\": \"Target\",\n  \"items\": [\n    {\n      \"productName\": \"TPD/1858985\",\n      \"price\": -5.00,\n      \"quantity\": 1\n    },\n    {\n      \"productName\": \"MEMBER DISCOUNT\",\n      \"price\": -2.50,\n      \"quantity\": 1\n    },\n    {\n      \"productName\": \"$3 OFF COUPON\",\n      \"price\": -3.00,\n      \"quantity\": 1\n    },\n    {\n      \"productName\": \"PRICE ADJUSTMENT\",\n      \"price\": -1.00,\n      \"quantity\": 1\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/receipts/test-normalization",
+          "host": ["{{baseUrl}}"],
+          "path": ["receipts", "test-normalization"]
+        },
+        "description": "Test discount and adjustment detection patterns."
+      },
+      "response": []
+    },
+    {
+      "name": "Test Product Variations",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"storeName\": \"Walmart\",\n  \"items\": [\n    {\n      \"productName\": \"GV 2% MILK GAL\",\n      \"barcode\": \"123456\",\n      \"price\": 3.49,\n      \"quantity\": 1\n    },\n    {\n      \"productName\": \"BAN ORGANIC\",\n      \"barcode\": \"789012\",\n      \"price\": 2.99,\n      \"quantity\": 3\n    },\n    {\n      \"productName\": \"TIDE PODS 42CT\",\n      \"barcode\": \"345678\",\n      \"price\": 12.99,\n      \"quantity\": 1\n    },\n    {\n      \"productName\": \"COCA COLA 12PK\",\n      \"barcode\": \"901234\",\n      \"price\": 5.99,\n      \"quantity\": 2\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/receipts/test-normalization",
+          "host": ["{{baseUrl}}"],
+          "path": ["receipts", "test-normalization"]
+        },
+        "description": "Test various abbreviated product names and brand variations."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    }
+  ]
+}

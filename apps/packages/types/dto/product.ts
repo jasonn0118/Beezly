@@ -34,7 +34,7 @@ export interface NormalizedProductData {
   brand?: string;
   category?: string;
   confidenceScore: number;
-  embedding?: string;
+  embedding?: number[];
   isDiscount: boolean;
   isAdjustment: boolean;
   matchCount: number;

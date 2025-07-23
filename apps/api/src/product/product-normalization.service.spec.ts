@@ -3,10 +3,12 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProductNormalizationService } from './product-normalization.service';
 import { NormalizedProduct } from '../entities/normalized-product.entity';
+import { OpenAIService } from './openai.service';
 
 describe('ProductNormalizationService', () => {
   let service: ProductNormalizationService;
   let repository: jest.Mocked<Repository<NormalizedProduct>>;
+  let openAIService: jest.Mocked<OpenAIService>;
 
   const mockNormalizedProduct: NormalizedProduct = {
     normalizedProductSk: 'test-uuid',
@@ -17,7 +19,7 @@ describe('ProductNormalizationService', () => {
     brand: 'Organic Valley',
     category: 'Produce',
     confidenceScore: 0.95,
-    embedding: undefined,
+    embedding: undefined as number[] | undefined,
     isDiscount: false,
     isAdjustment: false,
     matchCount: 5,
@@ -35,12 +37,22 @@ describe('ProductNormalizationService', () => {
       createQueryBuilder: jest.fn(),
     };
 
+    const mockOpenAIService = {
+      isConfigured: jest.fn().mockReturnValue(false), // Default to not configured
+      normalizeProductWithLLM: jest.fn(),
+      testConnection: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProductNormalizationService,
         {
           provide: getRepositoryToken(NormalizedProduct),
           useValue: mockRepository,
+        },
+        {
+          provide: OpenAIService,
+          useValue: mockOpenAIService,
         },
       ],
     }).compile();
@@ -51,6 +63,7 @@ describe('ProductNormalizationService', () => {
     repository = module.get<jest.Mocked<Repository<NormalizedProduct>>>(
       getRepositoryToken(NormalizedProduct),
     );
+    openAIService = module.get<jest.Mocked<OpenAIService>>(OpenAIService);
   });
 
   it('should be defined', () => {
@@ -185,8 +198,10 @@ describe('ProductNormalizationService', () => {
   });
 
   describe('callLLMNormalization', () => {
-    it('should perform basic normalization with pattern matching', () => {
-      const result = service.callLLMNormalization(
+    it('should perform basic normalization with pattern matching when OpenAI not configured', async () => {
+      openAIService.isConfigured.mockReturnValue(false);
+
+      const result = await service.callLLMNormalization(
         'PEPSI COLA 12OZ',
         'Target',
         '12345',
@@ -194,14 +209,16 @@ describe('ProductNormalizationService', () => {
 
       expect(result.normalizedName).toBe('PEPSI COLA 12OZ');
       expect(result.brand).toBe('PEPSI');
-      expect(result.confidenceScore).toBe(0.7);
+      expect(result.confidenceScore).toBe(0.5); // Fallback confidence
       expect(result.isDiscount).toBe(false);
       expect(result.isAdjustment).toBe(false);
       expect(result.itemCode).toBe('12345');
     });
 
-    it('should categorize dairy products', () => {
-      const result = service.callLLMNormalization(
+    it('should categorize dairy products in fallback mode', async () => {
+      openAIService.isConfigured.mockReturnValue(false);
+
+      const result = await service.callLLMNormalization(
         'WHOLE MILK GALLON',
         'Kroger',
       );
@@ -209,10 +226,45 @@ describe('ProductNormalizationService', () => {
       expect(result.category).toBe('Dairy');
     });
 
-    it('should categorize produce items', () => {
-      const result = service.callLLMNormalization('FRESH BANANAS', 'Walmart');
+    it('should categorize produce items in fallback mode', async () => {
+      openAIService.isConfigured.mockReturnValue(false);
+
+      const result = await service.callLLMNormalization(
+        'FRESH BANANAS',
+        'Walmart',
+      );
 
       expect(result.category).toBe('Produce');
+    });
+
+    it('should use OpenAI when configured', async () => {
+      openAIService.isConfigured.mockReturnValue(true);
+      openAIService.normalizeProductWithLLM.mockResolvedValue({
+        normalizedName: 'Organic Fuji Apples',
+        brand: 'Organic',
+        category: 'Produce',
+        confidenceScore: 0.9,
+        reasoning: 'OpenAI normalization',
+      });
+
+      const result = await service.callLLMNormalization(
+        'ORG APPLES FUJI',
+        'Whole Foods',
+        '4131',
+      );
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(openAIService.normalizeProductWithLLM).toHaveBeenCalledWith({
+        rawName: 'ORG APPLES FUJI',
+        merchant: 'Whole Foods',
+        itemCode: '4131',
+        context: 'This is a receipt item from Whole Foods',
+      });
+
+      expect(result.normalizedName).toBe('Organic Fuji Apples');
+      expect(result.brand).toBe('Organic');
+      expect(result.category).toBe('Produce');
+      expect(result.confidenceScore).toBe(0.9);
     });
   });
 

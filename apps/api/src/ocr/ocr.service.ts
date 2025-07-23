@@ -3,6 +3,10 @@ import { Injectable } from '@nestjs/common';
 import * as sharp from 'sharp';
 import * as heicConvert from 'heic-convert';
 import { OcrAzureService } from './ocr-azure.service';
+import {
+  ProductNormalizationService,
+  NormalizationResult,
+} from '../product/product-normalization.service';
 
 export interface OcrItem {
   name: string;
@@ -10,6 +14,32 @@ export interface OcrItem {
   quantity: string;
   unit_price?: string;
   item_number?: string;
+}
+
+export interface DiscountInfo {
+  discount_id: string;
+  discount_amount: number;
+  discount_type: 'percentage' | 'fixed' | 'unknown';
+  discount_description: string;
+  link_confidence: number;
+}
+
+export interface EnhancedOcrItem extends OcrItem {
+  normalized_name: string;
+  brand?: string;
+  category?: string;
+  confidence_score: number;
+  is_discount: boolean;
+  is_adjustment: boolean;
+  normalization_method: string;
+  linked_discounts?: DiscountInfo[]; // Discounts that apply to this product
+  applied_to_product_id?: string; // If this is a discount, which product it applies to
+  original_price_numeric?: number; // For calculation purposes
+  final_price?: number; // Price after discounts
+  price_format_info?: {
+    was_negative: boolean;
+    original_format: string;
+  }; // Information about the original price format
 }
 
 export interface OcrResult {
@@ -28,9 +58,26 @@ export interface OcrResult {
   uploaded_file_path?: string;
 }
 
+export interface EnhancedOcrResult extends Omit<OcrResult, 'items'> {
+  items: EnhancedOcrItem[];
+  normalization_summary: {
+    total_items: number;
+    product_items: number;
+    discount_items: number;
+    adjustment_items: number;
+    average_confidence: number;
+    linked_discounts: number;
+    total_discount_amount: number;
+    products_with_discounts: number;
+  };
+}
+
 @Injectable()
 export class OcrService {
-  constructor(private readonly ocrAzureService: OcrAzureService) {}
+  constructor(
+    private readonly ocrAzureService: OcrAzureService,
+    private readonly productNormalizationService: ProductNormalizationService,
+  ) {}
 
   /**
    * Load and process image with format support
@@ -223,5 +270,260 @@ export class OcrService {
         `Error processing receipt: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
+  }
+
+  /**
+   * Process receipt with product normalization
+   */
+  async processReceiptWithNormalization(
+    buffer: Buffer,
+    endpoint?: string,
+    apiKey?: string,
+  ): Promise<EnhancedOcrResult> {
+    try {
+      // Step 1: Get OCR results
+      const ocrResult = await this.processReceipt(buffer, endpoint, apiKey);
+
+      // Step 2: Prepare items for discount linking
+      const itemsWithIndex = ocrResult.items.map((item, index) => ({
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        itemCode: item.item_number,
+        index: index,
+      }));
+
+      // Step 3: Normalize items with discount linking
+      const normalizedResults =
+        await this.productNormalizationService.normalizeReceiptWithDiscountLinking(
+          itemsWithIndex,
+          ocrResult.merchant,
+        );
+
+      // Step 4: Convert to EnhancedOcrItem format and filter out linked discounts
+      const enhancedItems: EnhancedOcrItem[] = ocrResult.items
+        .map((originalItem, index): EnhancedOcrItem | null => {
+          const normalization = normalizedResults[index];
+          // Use improved price parsing that handles discount formats
+          const parsedPrice = this.productNormalizationService.parsePrice(
+            originalItem.price,
+          );
+          const originalPrice = parsedPrice.amount;
+
+          // For discount items that have been linked to products,
+          // we'll filter them out unless they couldn't be linked
+          if (normalization.isDiscount && normalization.appliedToProductId) {
+            // This discount was successfully linked to a product,
+            // so we don't show it as a separate item
+            return null;
+          }
+
+          // Calculate final price after discounts
+          let finalPrice = originalPrice;
+          if (
+            normalization.linkedDiscounts &&
+            normalization.linkedDiscounts.length > 0
+          ) {
+            const totalDiscount = normalization.linkedDiscounts.reduce(
+              (sum, discount) => sum + discount.discountAmount,
+              0,
+            );
+            finalPrice = Math.max(0, originalPrice - totalDiscount);
+          }
+
+          return {
+            ...originalItem,
+            normalized_name: normalization.normalizedName,
+            brand: normalization.brand,
+            category: normalization.category,
+            confidence_score: normalization.confidenceScore,
+            is_discount: normalization.isDiscount,
+            is_adjustment: normalization.isAdjustment,
+            normalization_method: normalization.method || 'fallback',
+            linked_discounts: normalization.linkedDiscounts?.map(
+              (discount) => ({
+                discount_id: discount.discountId,
+                discount_amount: discount.discountAmount,
+                discount_type: discount.discountType,
+                discount_description: discount.discountDescription,
+                link_confidence: discount.confidence,
+              }),
+            ),
+            applied_to_product_id: normalization.appliedToProductId,
+            original_price_numeric: originalPrice,
+            final_price: finalPrice,
+            price_format_info: {
+              was_negative: parsedPrice.isNegative,
+              original_format: parsedPrice.originalString,
+            },
+          };
+        })
+        .filter((item): item is EnhancedOcrItem => item !== null); // Remove null items (linked discounts)
+
+      // Step 5: Calculate enhanced normalization summary using original results
+      // (before filtering out linked discounts)
+      const normalizationSummary =
+        this.calculateEnhancedNormalizationSummaryFromResults(
+          normalizedResults,
+          enhancedItems,
+        );
+
+      // Step 6: Return enhanced result
+      return {
+        ...ocrResult,
+        items: enhancedItems,
+        normalization_summary: normalizationSummary,
+      };
+    } catch (error) {
+      throw new Error(
+        `Error processing receipt with normalization: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Calculate normalization summary statistics
+   */
+  private calculateNormalizationSummary(items: EnhancedOcrItem[]) {
+    const totalItems = items.length;
+    const productItems = items.filter(
+      (item) => !item.is_discount && !item.is_adjustment,
+    ).length;
+    const discountItems = items.filter((item) => item.is_discount).length;
+    const adjustmentItems = items.filter((item) => item.is_adjustment).length;
+
+    const averageConfidence =
+      totalItems > 0
+        ? items.reduce((sum, item) => sum + item.confidence_score, 0) /
+          totalItems
+        : 0;
+
+    return {
+      total_items: totalItems,
+      product_items: productItems,
+      discount_items: discountItems,
+      adjustment_items: adjustmentItems,
+      average_confidence: Math.round(averageConfidence * 1000) / 1000, // Round to 3 decimal places
+    };
+  }
+
+  /**
+   * Calculate enhanced normalization summary using original normalization results
+   * and final enhanced items (accounts for filtered discount items)
+   */
+  private calculateEnhancedNormalizationSummaryFromResults(
+    originalResults: NormalizationResult[],
+    finalItems: EnhancedOcrItem[],
+  ) {
+    const totalItems = originalResults.length;
+    const productItems = originalResults.filter(
+      (result) => !result.isDiscount && !result.isAdjustment,
+    ).length;
+    const discountItems = originalResults.filter(
+      (result) => result.isDiscount,
+    ).length;
+    const adjustmentItems = originalResults.filter(
+      (result) => result.isAdjustment,
+    ).length;
+
+    const averageConfidence =
+      totalItems > 0
+        ? originalResults.reduce(
+            (sum, result) => sum + result.confidenceScore,
+            0,
+          ) / totalItems
+        : 0;
+
+    // Calculate discount linking statistics from final items
+    const productsWithDiscounts = finalItems.filter(
+      (item) =>
+        !item.is_discount &&
+        item.linked_discounts &&
+        item.linked_discounts.length > 0,
+    ).length;
+
+    const totalLinkedDiscounts = finalItems.reduce(
+      (sum, item) => sum + (item.linked_discounts?.length || 0),
+      0,
+    );
+
+    const totalDiscountAmount = finalItems.reduce((sum, item) => {
+      if (item.linked_discounts) {
+        return (
+          sum +
+          item.linked_discounts.reduce(
+            (discountSum, discount) => discountSum + discount.discount_amount,
+            0,
+          )
+        );
+      }
+      return sum;
+    }, 0);
+
+    return {
+      total_items: totalItems,
+      product_items: productItems,
+      discount_items: discountItems,
+      adjustment_items: adjustmentItems,
+      average_confidence: Math.round(averageConfidence * 1000) / 1000,
+      linked_discounts: totalLinkedDiscounts,
+      total_discount_amount: Math.round(totalDiscountAmount * 100) / 100,
+      products_with_discounts: productsWithDiscounts,
+    };
+  }
+
+  /**
+   * Calculate enhanced normalization summary with discount linking statistics
+   */
+  private calculateEnhancedNormalizationSummary(items: EnhancedOcrItem[]) {
+    const totalItems = items.length;
+    const productItems = items.filter(
+      (item) => !item.is_discount && !item.is_adjustment,
+    ).length;
+    const discountItems = items.filter((item) => item.is_discount).length;
+    const adjustmentItems = items.filter((item) => item.is_adjustment).length;
+
+    const averageConfidence =
+      totalItems > 0
+        ? items.reduce((sum, item) => sum + item.confidence_score, 0) /
+          totalItems
+        : 0;
+
+    // Calculate discount linking statistics
+    const productsWithDiscounts = items.filter(
+      (item) =>
+        !item.is_discount &&
+        item.linked_discounts &&
+        item.linked_discounts.length > 0,
+    ).length;
+
+    const totalLinkedDiscounts = items.reduce(
+      (sum, item) => sum + (item.linked_discounts?.length || 0),
+      0,
+    );
+
+    const totalDiscountAmount = items.reduce((sum, item) => {
+      if (item.linked_discounts) {
+        return (
+          sum +
+          item.linked_discounts.reduce(
+            (discountSum, discount) => discountSum + discount.discount_amount,
+            0,
+          )
+        );
+      }
+      return sum;
+    }, 0);
+
+    return {
+      total_items: totalItems,
+      product_items: productItems,
+      discount_items: discountItems,
+      adjustment_items: adjustmentItems,
+      average_confidence: Math.round(averageConfidence * 1000) / 1000,
+      linked_discounts: totalLinkedDiscounts,
+      total_discount_amount: Math.round(totalDiscountAmount * 100) / 100, // Round to 2 decimal places
+      products_with_discounts: productsWithDiscounts,
+    };
   }
 }

@@ -80,7 +80,7 @@ export class VectorEmbeddingService {
   }
 
   /**
-   * Find similar products using vector similarity
+   * Find similar products using pgvector similarity search
    */
   async findSimilarProducts(
     queryText: string,
@@ -93,47 +93,43 @@ export class VectorEmbeddingService {
     // Generate embedding for query text
     const queryEmbedding = this.generateEmbedding(queryText);
 
-    // Get all products for the merchant that have embeddings
-    const products = await this.normalizedProductRepository.find({
-      where: {
-        merchant,
-        embedding: Not(IsNull()),
-      },
-      order: { confidenceScore: 'DESC', matchCount: 'DESC' },
-      take: 500, // Limit for performance
-    });
+    // Using pgvector's cosine similarity operator <=>
+    // Note: 1 - (embedding <=> query) gives us cosine similarity (0 to 1)
+    // where 1 is most similar and 0 is least similar
+    const results = await this.normalizedProductRepository
+      .createQueryBuilder('np')
+      .select([
+        'np.normalizedProductSk',
+        'np.rawName',
+        'np.merchant',
+        'np.itemCode',
+        'np.normalizedName',
+        'np.brand',
+        'np.category',
+        'np.confidenceScore',
+        'np.embedding',
+        'np.isDiscount',
+        'np.isAdjustment',
+        'np.matchCount',
+        'np.lastMatchedAt',
+        'np.createdAt',
+        'np.updatedAt',
+      ])
+      .addSelect(`1 - (np.embedding <=> :queryEmbedding::vector)`, 'similarity')
+      .where('np.merchant = :merchant', { merchant })
+      .andWhere('np.embedding IS NOT NULL')
+      .andWhere(`1 - (np.embedding <=> :queryEmbedding::vector) >= :threshold`)
+      .setParameter('queryEmbedding', `[${queryEmbedding.join(',')}]`)
+      .setParameter('threshold', threshold)
+      .orderBy('similarity', 'DESC')
+      .limit(limit)
+      .getRawAndEntities();
 
-    const similarities: EmbeddingResult[] = [];
-
-    for (const product of products) {
-      if (!product.embedding) continue;
-
-      try {
-        // Parse stored embedding (stored as JSON string)
-        const productEmbedding = JSON.parse(product.embedding) as number[];
-        const similarity = this.calculateCosineSimilarity(
-          queryEmbedding,
-          productEmbedding,
-        );
-
-        if (similarity >= threshold) {
-          similarities.push({
-            productId: product.normalizedProductSk,
-            similarity,
-            normalizedProduct: product,
-          });
-        }
-      } catch (error) {
-        this.logger.warn(
-          `Failed to parse embedding for product ${product.normalizedProductSk}: ${(error as Error).message}`,
-        );
-      }
-    }
-
-    // Sort by similarity score (descending) and return top results
-    return similarities
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, limit);
+    return results.entities.map((entity, index) => ({
+      productId: entity.normalizedProductSk,
+      similarity: (results.raw[index] as { similarity: number }).similarity,
+      normalizedProduct: entity,
+    }));
   }
 
   /**
@@ -146,7 +142,7 @@ export class VectorEmbeddingService {
       const embedding = this.generateEmbedding(
         normalizedProduct.normalizedName,
       );
-      normalizedProduct.embedding = JSON.stringify(embedding);
+      normalizedProduct.embedding = embedding; // Now stores as number[] instead of JSON string
       await this.normalizedProductRepository.save(normalizedProduct);
 
       this.logger.debug(
@@ -344,12 +340,9 @@ export class VectorEmbeddingService {
     let validEmbeddings = 0;
 
     for (const product of sampleProducts) {
-      try {
-        const embedding = JSON.parse(product.embedding!) as number[];
-        totalLength += embedding.length;
+      if (product.embedding && Array.isArray(product.embedding)) {
+        totalLength += product.embedding.length;
         validEmbeddings++;
-      } catch {
-        // Ignore invalid embeddings
       }
     }
 
