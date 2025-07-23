@@ -59,54 +59,8 @@ export class ProductController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new product' })
-  @ApiResponse({
-    status: 201,
-    description: 'Product successfully created',
-    type: NormalizedProductDTO,
-  })
-  async createProduct(
-    @Body() productData: NormalizedProductDTO,
-  ): Promise<NormalizedProductDTO> {
-    return this.productService.createProduct(productData);
-  }
-
-  @Put(':id')
-  @ApiOperation({ summary: 'Update a product by ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Product successfully updated',
-    type: NormalizedProductDTO,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Product not found',
-  })
-  async updateProduct(
-    @Param('id') id: string,
-    @Body() productData: Partial<NormalizedProductDTO>,
-  ): Promise<NormalizedProductDTO> {
-    return this.productService.updateProduct(id, productData);
-  }
-
-  @Delete(':id')
-  @ApiOperation({ summary: 'Delete a product by ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Product successfully deleted',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Product not found',
-  })
-  async deleteProduct(@Param('id') id: string): Promise<{ message: string }> {
-    await this.productService.deleteProduct(id);
-    return { message: 'Product deleted successfully' };
-  }
-
-  @Post('mobile')
   @ApiOperation({
-    summary: 'Create product from mobile app with image, store, and price',
+    summary: 'Create a new product with image, store, and price',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -157,7 +111,7 @@ export class ProductController {
     description: 'Invalid input data or missing image file',
   })
   @UseInterceptors(FileInterceptor('image'))
-  async createMobileProduct(
+  async createProduct(
     @Body() productData: MobileProductCreateDto,
     @UploadedFile() imageFile: Express.Multer.File,
   ): Promise<MobileProductResponseDto> {
@@ -173,4 +127,38 @@ export class ProductController {
       imageBuffer,
     );
   }
+
+  @Put(':id')
+  @ApiOperation({ summary: 'Update a product by ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Product successfully updated',
+    type: NormalizedProductDTO,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+  })
+  async updateProduct(
+    @Param('id') id: string,
+    @Body() productData: Partial<NormalizedProductDTO>,
+  ): Promise<NormalizedProductDTO> {
+    return this.productService.updateProduct(id, productData);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a product by ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Product successfully deleted',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+  })
+  async deleteProduct(@Param('id') id: string): Promise<{ message: string }> {
+    await this.productService.deleteProduct(id);
+    return { message: 'Product deleted successfully' };
+  }
+
 }
