@@ -9,6 +9,7 @@ import { Store } from '../entities/store.entity';
 import { UserService } from '../user/user.service';
 import { StoreService } from '../store/store.service';
 import { ProductService } from '../product/product.service';
+import { ProductNormalizationService } from '../product/product-normalization.service';
 import { Category } from '../entities/category.entity';
 
 export interface CreateReceiptRequest {
@@ -55,6 +56,7 @@ export class ReceiptService {
     private readonly userService: UserService,
     private readonly storeService: StoreService,
     private readonly productService: ProductService,
+    private readonly productNormalizationService: ProductNormalizationService,
   ) {}
 
   async getAllReceipts(limit: number = 50): Promise<ReceiptDTO[]> {
@@ -165,30 +167,45 @@ export class ReceiptService {
 
       const savedReceipt = await manager.save(receipt);
 
-      // Create receipt items
+      // Create receipt items with normalization
       await Promise.all(
         receiptData.items.map(async (itemData) => {
-          // Try to find or create product
+          // Step 1: Normalize the product name
+          const storeName = receiptData.storeName || 'Unknown Store';
+          const normalizationResult =
+            await this.productNormalizationService.normalizeProduct({
+              merchant: storeName,
+              rawName: itemData.productName,
+              itemCode: itemData.barcode,
+              useAI: true,
+            });
+
+          // Step 2: Try to find or create product using normalized data
           let product = await this.productService.getProductByBarcode(
             itemData.barcode || '',
           );
 
           if (!product) {
             let categoryId: number | undefined;
-            if (itemData.category) {
+
+            // Use normalized category if available, otherwise fall back to original
+            const categoryName =
+              normalizationResult.category || itemData.category;
+
+            if (categoryName) {
               // Try to find category by name
               let category = await this.storeRepository.manager.findOne(
                 Category,
                 {
-                  where: { name: itemData.category },
+                  where: { name: categoryName },
                 },
               );
 
               if (!category) {
-                // Optional: Create category if not found
+                // Create category if not found
                 category = this.storeRepository.manager.create(Category, {
-                  name: itemData.category,
-                  slug: itemData.category.toLowerCase().replace(/\s+/g, '-'),
+                  name: categoryName,
+                  slug: categoryName.toLowerCase().replace(/\s+/g, '-'),
                   level: 1,
                   useYn: true,
                 });
@@ -197,9 +214,15 @@ export class ReceiptService {
 
               categoryId = category.id;
             }
-            // Create new product if not found
+
+            // Create new product using normalized name
+            const productName =
+              normalizationResult.isDiscount || normalizationResult.isAdjustment
+                ? itemData.productName // Keep original name for discounts/adjustments
+                : normalizationResult.normalizedName; // Use normalized name for products
+
             product = await this.productService.createProduct({
-              name: itemData.productName,
+              name: productName,
               barcode: itemData.barcode,
               category: categoryId,
             });

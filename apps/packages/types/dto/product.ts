@@ -1,5 +1,63 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
+export enum DiscountType {
+  PERCENTAGE = 'percentage',
+  FIXED_AMOUNT = 'fixed_amount',
+  COUPON = 'coupon',
+  ADJUSTMENT = 'adjustment',
+}
+
+export interface NormalizationResult {
+  normalizedName: string;
+  brand?: string;
+  category?: string;
+  confidenceScore: number;
+  isDiscount: boolean;
+  isAdjustment: boolean;
+  itemCode?: string;
+}
+
+export interface ProductNormalizationOptions {
+  merchant: string;
+  rawName: string;
+  itemCode?: string;
+  useAI?: boolean;
+  similarityThreshold?: number;
+}
+
+export interface NormalizedProductData {
+  normalizedProductSk: string;
+  rawName: string;
+  merchant: string;
+  itemCode?: string;
+  normalizedName: string;
+  brand?: string;
+  category?: string;
+  confidenceScore: number;
+  embedding?: string;
+  isDiscount: boolean;
+  isAdjustment: boolean;
+  matchCount: number;
+  lastMatchedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface NormalizationStats {
+  totalNormalizedProducts: number;
+  discountLines: number;
+  adjustmentLines: number;
+  averageConfidence: number;
+  lowConfidenceProducts: number;
+  merchant?: string;
+}
+
+export interface EmbeddingResult {
+  productId: string;
+  similarity: number;
+  normalizedProduct: NormalizedProductData;
+}
+
 export class NormalizedProductDTO {
   @ApiProperty({
     example: "d290f1ee-6c54-4b01-90e6-d701748f0851",
