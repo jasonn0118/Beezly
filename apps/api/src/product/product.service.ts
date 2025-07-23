@@ -4,6 +4,13 @@ import { Repository, ILike } from 'typeorm';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
 import { Product } from '../entities/product.entity';
 import { Category } from '../entities/category.entity';
+import { Store } from '../entities/store.entity';
+import { Price } from '../entities/price.entity';
+import { upload_product } from '../utils/storage.util';
+import {
+  MobileProductCreateDto,
+  MobileProductResponseDto,
+} from './dto/mobile-product-create.dto';
 
 export interface ProductSearchParams {
   name?: string;
@@ -21,6 +28,10 @@ export class ProductService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
+    @InjectRepository(Store)
+    private readonly storeRepository: Repository<Store>,
+    @InjectRepository(Price)
+    private readonly priceRepository: Repository<Price>,
   ) {}
 
   async getAllProducts(limit: number = 100): Promise<NormalizedProductDTO[]> {
@@ -399,5 +410,155 @@ export class ProductService {
       verified_count: product.verifiedCount ?? 0,
       flagged_count: product.flaggedCount ?? 0,
     };
+  }
+
+  // Mobile-specific method for creating product with store and price
+  async createProductWithPriceAndStore(
+    productData: MobileProductCreateDto,
+    imageFile: Buffer,
+    userSk: string = 'mobile_user',
+  ): Promise<MobileProductResponseDto> {
+    // 1. Find or create store
+    const store = await this.findOrCreateStore(
+      productData.storeName,
+      productData.storeAddress,
+      productData.storeCity,
+      productData.storeProvince,
+      productData.storePostalCode,
+    );
+
+    // 2. Check if product already exists by barcode
+    let product = await this.productRepository.findOne({
+      where: { barcode: productData.barcode },
+      relations: ['categoryEntity'],
+    });
+
+    // 3. Upload image to Supabase storage
+    const imagePath = await upload_product(userSk, store.storeSk, imageFile);
+    let imageUrl: string | undefined;
+
+    if (imagePath) {
+      // Construct the public URL for the uploaded image
+      const supabaseUrl =
+        process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+      imageUrl = `${supabaseUrl}/storage/v1/object/public/product/${imagePath}`;
+    }
+
+    // 4. Create or update product
+    if (!product) {
+      // Validate category exists
+      const categoryExists = await this.categoryRepository.findOne({
+        where: { id: productData.category },
+      });
+
+      if (!categoryExists) {
+        throw new NotFoundException(
+          `Category with ID ${productData.category} not found`,
+        );
+      }
+
+      product = this.productRepository.create({
+        name: productData.name,
+        barcode: productData.barcode,
+        category: productData.category,
+        imageUrl: imageUrl,
+        creditScore: 0,
+        verifiedCount: 0,
+        flaggedCount: 0,
+      });
+
+      product = await this.productRepository.save(product);
+    } else {
+      // Update existing product if needed
+      if (imageUrl && !product.imageUrl) {
+        product.imageUrl = imageUrl;
+        product = await this.productRepository.save(product);
+      }
+    }
+
+    // 5. Create or update price entry
+    let price = await this.priceRepository.findOne({
+      where: {
+        productSk: product.productSk,
+        storeSk: store.storeSk,
+      },
+      order: { recordedAt: 'DESC' },
+    });
+
+    // Only create new price if doesn't exist or price changed
+    if (!price || price.price !== productData.price) {
+      price = this.priceRepository.create({
+        productSk: product.productSk,
+        storeSk: store.storeSk,
+        price: productData.price,
+        currency: 'KRW',
+        creditScore: 0,
+        verifiedCount: 0,
+        flaggedCount: 0,
+      });
+
+      price = await this.priceRepository.save(price);
+    }
+
+    // 6. Return enriched response
+    return {
+      product_sk: product.productSk,
+      name: product.name,
+      barcode: product.barcode || '',
+      category: product.category || 0,
+      image_url: product.imageUrl || '',
+      store: {
+        store_sk: store.storeSk,
+        name: store.name,
+        address: store.address || '',
+        city: store.city,
+        province: store.province,
+      },
+      price: {
+        price_sk: price.priceSk,
+        price: Number(price.price),
+        currency: price.currency || 'KRW',
+        recorded_at: price.recordedAt.toISOString(),
+      },
+    };
+  }
+
+  private async findOrCreateStore(
+    name: string,
+    address: string,
+    city?: string,
+    province?: string,
+    postalCode?: string,
+  ): Promise<Store> {
+    // Try to find existing store by name and address (exact match first)
+    let store = await this.storeRepository.findOne({
+      where: { name, address },
+    });
+
+    // If not found with exact match, try case-insensitive search
+    if (!store) {
+      store = await this.storeRepository
+        .createQueryBuilder('store')
+        .where('LOWER(store.name) = LOWER(:name)', { name })
+        .andWhere('LOWER(store.address) = LOWER(:address)', { address })
+        .getOne();
+    }
+
+    // Create new store only if no existing store found
+    if (!store) {
+      store = this.storeRepository.create({
+        name: name.trim(), // Trim whitespace
+        address: address.trim(),
+        city,
+        province,
+        postalCode,
+      });
+      store = await this.storeRepository.save(store);
+      console.log(`Created new store: ${store.name} at ${store.address}`);
+    } else {
+      console.log(`Found existing store: ${store.name} (ID: ${store.storeSk})`);
+    }
+
+    return store;
   }
 }

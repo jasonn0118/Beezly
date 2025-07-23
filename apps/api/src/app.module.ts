@@ -24,6 +24,7 @@ import {
   VerificationLogs,
 } from './entities';
 import { OcrModule } from './ocr/ocr.module';
+import { PriceModule } from './price/price.module';
 import { ProductModule } from './product/product.module';
 import { ReceiptModule } from './receipt/receipt.module';
 import { ReceiptItemModule } from './receiptItem/receiptItem.module';
@@ -91,6 +92,7 @@ import { UserModule } from './user/user.module';
     BarcodeModule,
     CategoryModule,
     OcrModule,
+    PriceModule,
     ProductModule,
     ReceiptModule,
     ReceiptItemModule,

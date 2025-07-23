@@ -6,10 +6,24 @@ import {
   Delete,
   Body,
   Param,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
+import {
+  MobileProductCreateDto,
+  MobileProductResponseDto,
+} from './dto/mobile-product-create.dto';
 
 @ApiTags('Products')
 @Controller('products')
@@ -45,16 +59,73 @@ export class ProductController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new product' })
+  @ApiOperation({
+    summary: 'Create a new product with image, store, and price',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Product data with image file',
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', example: 'Organic Apple' },
+        barcode: { type: 'string', example: '1234567890123' },
+        category: { type: 'number', example: 101001 },
+        storeName: { type: 'string', example: 'Homeplus' },
+        storeAddress: { type: 'string', example: '123 Main St, Seoul' },
+        price: { type: 'number', example: 5000 },
+        brandName: { type: 'string', example: 'Cheil Jedang' },
+        storeCity: { type: 'string', example: 'Seoul' },
+        storeProvince: {
+          type: 'string',
+          example: 'Seoul',
+        },
+        storePostalCode: {
+          type: 'string',
+          example: '12345',
+        },
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: 'Product image file',
+        },
+      },
+      required: [
+        'name',
+        'barcode',
+        'category',
+        'storeName',
+        'storeAddress',
+        'price',
+        'image',
+      ],
+    },
+  })
   @ApiResponse({
     status: 201,
-    description: 'Product successfully created',
-    type: NormalizedProductDTO,
+    description: 'Product successfully created with store and price info',
+    type: MobileProductResponseDto,
   })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid input data or missing image file',
+  })
+  @UseInterceptors(FileInterceptor('image'))
   async createProduct(
-    @Body() productData: NormalizedProductDTO,
-  ): Promise<NormalizedProductDTO> {
-    return this.productService.createProduct(productData);
+    @Body() productData: MobileProductCreateDto,
+    @UploadedFile() imageFile: Express.Multer.File,
+  ): Promise<MobileProductResponseDto> {
+    if (!imageFile) {
+      throw new BadRequestException('Image file is required');
+    }
+
+    // Convert Express.Multer.File to Buffer
+    const imageBuffer = imageFile.buffer;
+
+    return this.productService.createProductWithPriceAndStore(
+      productData,
+      imageBuffer,
+    );
   }
 
   @Put(':id')
