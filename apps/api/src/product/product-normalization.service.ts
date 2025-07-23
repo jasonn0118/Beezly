@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { NormalizedProduct } from '../entities/normalized-product.entity';
 import { OpenAIService } from './openai.service';
+import { StorePatternMatcher } from './store-patterns.config';
 
 export interface ParsedPrice {
   amount: number;
@@ -32,11 +33,12 @@ export interface NormalizationResult {
   confidenceScore: number;
   isDiscount: boolean;
   isAdjustment: boolean;
+  isFee?: boolean; // If this is a fee/additional charge
   itemCode?: string;
   method?: string; // How the normalization was performed
   similarProducts?: SimilarProduct[]; // Similar products found
   linkedDiscounts?: DiscountLink[]; // Discounts that apply to this product
-  appliedToProductId?: string; // If this is a discount, which product it applies to
+  appliedToProductId?: string; // If this is a discount/fee, which product it applies to
 }
 
 export interface ExtendedNormalizationResult extends NormalizationResult {
@@ -70,10 +72,10 @@ export class ProductNormalizationService {
   private readonly logger = new Logger(ProductNormalizationService.name);
 
   /**
-   * Parse price strings that may contain discount indicators
-   * Examples: "5.88", "5.88-O", "-5.88", "$5.88-", "5.88-", "-$5.88"
+   * Parse price strings that may contain discount indicators with store-specific patterns
+   * Examples: "5.88", "5.88-O", "-5.88", "$5.88-", "5.88-", "-$5.88", "ROLLBACK $5.88", "Was $10.99 Now $8.99"
    */
-  public parsePrice(priceString: string): ParsedPrice {
+  public parsePrice(priceString: string, merchant?: string): ParsedPrice {
     if (!priceString || typeof priceString !== 'string') {
       return {
         amount: 0,
@@ -88,6 +90,67 @@ export class ProductNormalizationService {
     // Check for various negative/discount indicators
     let isNegative = false;
 
+    // Store-specific discount pattern detection
+    if (merchant) {
+      const storePattern = StorePatternMatcher.identifyStore(merchant);
+      if (storePattern) {
+        // Check store-specific discount indicators
+        for (const indicator of storePattern.receiptPatterns
+          .discountIndicators) {
+          if (cleanPrice.toLowerCase().includes(indicator.toLowerCase())) {
+            isNegative = true;
+            // Remove the discount indicator from price
+            cleanPrice = cleanPrice
+              .replace(new RegExp(indicator, 'gi'), '')
+              .trim();
+            break;
+          }
+        }
+
+        // Handle store-specific price formats
+        switch (storePattern.storeId) {
+          case 'COSTCO': {
+            // Costco asterisk indicates sale price
+            if (cleanPrice.includes('*')) {
+              isNegative = true; // Consider asterisk items as discounts
+              cleanPrice = cleanPrice.replace(/\*/g, '');
+            }
+            // Handle instant savings format: "$5.88 - $1.00"
+            const costcoSavingsMatch = cleanPrice.match(
+              /\$?([\d,]+\.\d{2})\s*-\s*\$?([\d,]+\.\d{2})/,
+            );
+            if (costcoSavingsMatch) {
+              isNegative = true;
+              cleanPrice = costcoSavingsMatch[1]; // Use the discounted price
+            }
+            break;
+          }
+
+          case 'WALMART': {
+            // Handle "Was $X Now $Y" format
+            const walmartWasNowMatch = cleanPrice.match(
+              /was\s+\$?([\d,]+\.\d{2})\s+now\s+\$?([\d,]+\.\d{2})/i,
+            );
+            if (walmartWasNowMatch) {
+              isNegative = true;
+              cleanPrice = walmartWasNowMatch[2]; // Use the "Now" price
+            }
+            break;
+          }
+
+          // TODO: Add Canadian grocery chains when implemented
+          // case 'SAVE_ON_FOODS':
+          // case 'SAFEWAY':
+          // case 'LOBLAWS':
+          // case 'METRO':
+          // case 'SOBEYS':
+          //   // Handle club/loyalty pricing formats
+          //   break;
+        }
+      }
+    }
+
+    // Generic discount patterns (existing logic)
     // Pattern 1: Starts with minus sign: "-5.88", "-$5.88"
     if (cleanPrice.startsWith('-')) {
       isNegative = true;
@@ -122,7 +185,8 @@ export class ProductNormalizationService {
 
   // Common discount/adjustment patterns
   private readonly discountPatterns = [
-    /^TPD\/\d+$/i, // TPD/1858985
+    /^TPD\/.*$/i, // TPD/1858985 or TPD/BATTERY
+    /^\d+\s+TPD\/.*$/i, // 1955651 TPD/1648955 (with item number prefix)
     /^DISC(OUNT)?/i, // DISCOUNT, DISC
     /^ADJ(USTMENT)?/i, // ADJUSTMENT, ADJ
     /^REFUND/i, // REFUND
@@ -132,6 +196,16 @@ export class ProductNormalizationService {
     /^-\$?\d+/, // -$5.00
     /^MEMBER\s*(DISC|SAVINGS)/i, // MEMBER DISC, MEMBER SAVINGS
     /^STORE\s*CREDIT/i, // STORE CREDIT
+  ];
+
+  // Fee patterns (additional charges, not discounts)
+  private readonly feePatterns = [
+    /^ECO\s*FEE/i, // ECO FEE BAT
+    /^ENV\s*FEE/i, // ENVIRONMENTAL FEE
+    /^DEPOSIT/i, // BOTTLE DEPOSIT
+    /^RECYCLING\s*FEE/i, // RECYCLING FEE
+    /^BAG\s*FEE/i, // BAG FEE
+    /^SERVICE\s*FEE/i, // SERVICE FEE
   ];
 
   private readonly adjustmentPatterns = [
@@ -162,18 +236,24 @@ export class ProductNormalizationService {
     // Step 1: Clean the raw name
     const cleanedName = this.cleanRawName(rawName);
 
-    // Step 2: Check if it's a discount or adjustment line
+    // Step 2: Check if it's a discount, adjustment, or fee line
     const isDiscount = this.isDiscountLine(cleanedName);
     const isAdjustment = this.isAdjustmentLine(cleanedName);
+    const isFee = this.isFee(cleanedName);
 
-    if (isDiscount || isAdjustment) {
+    if (isDiscount || isAdjustment || isFee) {
       const result: NormalizationResult = {
         normalizedName: cleanedName,
         confidenceScore: 1.0,
         isDiscount,
         isAdjustment,
+        isFee,
         itemCode,
-        method: isDiscount ? 'discount_detected' : 'adjustment_detected',
+        method: isDiscount
+          ? 'discount_detected'
+          : isAdjustment
+            ? 'adjustment_detected'
+            : 'fee_detected',
       };
 
       // Store the discount/adjustment mapping
@@ -268,6 +348,13 @@ export class ProductNormalizationService {
   }
 
   /**
+   * Check if the line represents a fee (additional charge)
+   */
+  isFee(cleanedName: string): boolean {
+    return this.feePatterns.some((pattern) => pattern.test(cleanedName));
+  }
+
+  /**
    * Find exact match in normalized products table
    */
   async findExactMatch(
@@ -336,7 +423,7 @@ export class ProductNormalizationService {
     merchant: string,
     itemCode?: string,
   ): Promise<NormalizationResult> {
-    this.logger.debug(`AI normalization for: ${cleanedName}`);
+    this.logger.debug(`AI normalization for: ${cleanedName} at ${merchant}`);
 
     try {
       // Check if OpenAI is configured
@@ -344,15 +431,42 @@ export class ProductNormalizationService {
         this.logger.debug(
           'OpenAI not configured, using fallback normalization',
         );
-        return this.getFallbackNormalization(cleanedName, itemCode);
+        return this.getFallbackNormalizationWithStoreContext(
+          cleanedName,
+          merchant,
+          itemCode,
+        );
       }
 
-      // Call OpenAI for normalization
+      // Identify store pattern for enhanced context
+      const storePattern = StorePatternMatcher.identifyStore(merchant);
+
+      // Build store-specific context
+      let context = `This is a receipt item from ${merchant}`;
+      if (storePattern) {
+        this.logger.debug(`Identified store pattern: ${storePattern.storeId}`);
+
+        // Add store-specific context
+        context = `This is a receipt item from ${merchant} (${storePattern.storeId} - ${storePattern.chain || 'Unknown Chain'})
+        
+Store-specific context:
+- Common store brands: ${storePattern.normalizationHints.commonBrands.join(', ')}
+${
+  storePattern.normalizationHints.categoryMappings
+    ? `- Store category mappings: ${JSON.stringify(storePattern.normalizationHints.categoryMappings)}`
+    : ''
+}
+
+Store-specific instructions for ${storePattern.storeId}:
+${this.getStoreSpecificInstructions(storePattern.storeId)}`;
+      }
+
+      // Call OpenAI for normalization with enhanced context
       const llmResponse = await this.openAIService.normalizeProductWithLLM({
         rawName: cleanedName,
         merchant,
         itemCode,
-        context: `This is a receipt item from ${merchant}`,
+        context,
       });
 
       // Convert LLM response to our interface
@@ -370,8 +484,12 @@ export class ProductNormalizationService {
         `LLM normalization failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
 
-      // Fall back to pattern-based normalization on error
-      return this.getFallbackNormalization(cleanedName, itemCode);
+      // Fall back to pattern-based normalization on error with store context
+      return this.getFallbackNormalizationWithStoreContext(
+        cleanedName,
+        merchant,
+        itemCode,
+      );
     }
   }
 
@@ -438,6 +556,139 @@ export class ProductNormalizationService {
       isAdjustment: false,
       itemCode,
     };
+  }
+
+  /**
+   * Enhanced fallback normalization with store context
+   */
+  private getFallbackNormalizationWithStoreContext(
+    cleanedName: string,
+    merchant: string,
+    itemCode?: string,
+  ): NormalizationResult {
+    const storePattern = StorePatternMatcher.identifyStore(merchant);
+
+    if (!storePattern) {
+      // Use regular fallback if no store pattern found
+      return this.getFallbackNormalization(cleanedName, itemCode);
+    }
+
+    this.logger.debug(
+      `Using store-specific fallback for ${storePattern.storeId}`,
+    );
+
+    let brand: string | undefined;
+    let category: string | undefined;
+
+    // Check for store-specific brands first
+    for (const storeBrand of storePattern.normalizationHints.commonBrands) {
+      if (cleanedName.toLowerCase().includes(storeBrand.toLowerCase())) {
+        brand = storeBrand;
+        break;
+      }
+    }
+
+    // If no store brand found, check common patterns
+    if (!brand) {
+      const brandPatterns = [
+        /^(PEPSI|COCA COLA|COKE|SPRITE|FANTA)/i,
+        /^(APPLE|SAMSUNG|GOOGLE|MICROSOFT)/i,
+        /^(TIDE|DOWNY|GAIN|PERSIL)/i,
+        /^(KRAFT|HEINZ|CAMPBELL)/i,
+        /^(ORG|ORGANIC)/i,
+      ];
+
+      for (const pattern of brandPatterns) {
+        const match = cleanedName.match(pattern);
+        if (match) {
+          brand = match[1];
+          break;
+        }
+      }
+    }
+
+    // Apply store-specific category mappings
+    if (storePattern.normalizationHints.categoryMappings) {
+      for (const [storeCategory, standardCategory] of Object.entries(
+        storePattern.normalizationHints.categoryMappings,
+      )) {
+        if (cleanedName.toLowerCase().includes(storeCategory.toLowerCase())) {
+          category = standardCategory;
+          break;
+        }
+      }
+    }
+
+    // Generic category inference if no store-specific mapping found
+    if (!category) {
+      if (
+        cleanedName.includes('MILK') ||
+        cleanedName.includes('CHEESE') ||
+        cleanedName.includes('YOGURT')
+      ) {
+        category = 'Dairy & Eggs';
+      } else if (
+        cleanedName.includes('BREAD') ||
+        cleanedName.includes('BAGEL') ||
+        cleanedName.includes('MUFFIN')
+      ) {
+        category = 'Bakery & Bread';
+      } else if (
+        cleanedName.includes('APPLE') ||
+        cleanedName.includes('BANANA') ||
+        cleanedName.includes('ORANGE')
+      ) {
+        category = 'Produce';
+      } else if (
+        cleanedName.includes('CHICKEN') ||
+        cleanedName.includes('BEEF') ||
+        cleanedName.includes('PORK')
+      ) {
+        category = 'Meat & Seafood';
+      }
+    }
+
+    return {
+      normalizedName: cleanedName,
+      brand,
+      category,
+      confidenceScore: 0.6, // Slightly higher confidence due to store context
+      isDiscount: false,
+      isAdjustment: false,
+      itemCode,
+    };
+  }
+
+  /**
+   * Get store-specific normalization instructions
+   */
+  private getStoreSpecificInstructions(storeId: string): string {
+    const instructions: Record<string, string> = {
+      COSTCO: `
+- Prioritize Kirkland Signature as the brand for store-brand items
+- Items are typically sold in bulk quantities - normalize to individual units when possible
+- Look for membership pricing indicators (* asterisk means sale price)
+- Handle "INSTANT SAVINGS" as discounts, not separate products
+- TPD/[number] format indicates "Total Price Discount" on item with that number
+- Item numbers usually appear at the beginning of product lines`,
+
+      WALMART: `
+- Prioritize Great Value, Equate, Mainstays, Parent's Choice as store brands
+- "ROLLBACK" indicates temporary price reduction, not a separate discount item
+- Handle department codes that may appear before item names
+- "Was/Now" pricing should be processed as current price with original price context`,
+
+      // TODO: Add instructions for Canadian grocery chains when implemented
+      // SAVE_ON_FOODS: `...`,
+      // SAFEWAY: `...`,
+      // LOBLAWS: `...`,
+      // METRO: `...`,
+      // SOBEYS: `...`,
+    };
+
+    return (
+      instructions[storeId] || 'Apply standard product normalization rules.'
+    );
   }
 
   /**
@@ -572,7 +823,7 @@ export class ProductNormalizationService {
 
     for (const item of items) {
       // Parse the price to detect negative/discount amounts
-      const parsedPrice = this.parsePrice(item.price);
+      const parsedPrice = this.parsePrice(item.price, merchant);
 
       // Check if price format indicates this is a discount
       const isPriceBasedDiscount = parsedPrice.isNegative;
@@ -618,15 +869,47 @@ export class ProductNormalizationService {
     items: NormalizationResult[],
   ): NormalizationResult[] {
     const products = items.filter(
-      (item) => !item.isDiscount && !item.isAdjustment,
+      (item) => !item.isDiscount && !item.isAdjustment && !item.isFee,
     );
     const discounts = items.filter((item) => item.isDiscount);
+    const fees = items.filter((item) => item.isFee);
+
+    this.logger.debug(
+      `Filtered items: ${products.length} products, ${discounts.length} discounts, ${fees.length} fees`,
+    );
+
+    // Log each category
+    products.forEach((product, index) => {
+      this.logger.debug(
+        `Product ${index}: "${product.normalizedName}" (isDiscount: ${product.isDiscount}, originalIndex: ${isExtendedNormalizationResult(product) ? product.originalIndex : 'unknown'})`,
+      );
+    });
+
+    discounts.forEach((discount, index) => {
+      this.logger.debug(
+        `Discount ${index}: "${discount.normalizedName}" (isDiscount: ${discount.isDiscount}, originalIndex: ${isExtendedNormalizationResult(discount) ? discount.originalIndex : 'unknown'})`,
+      );
+    });
+
+    fees.forEach((fee, index) => {
+      this.logger.debug(
+        `Fee ${index}: "${fee.normalizedName}" (isFee: ${fee.isFee}, originalIndex: ${isExtendedNormalizationResult(fee) ? fee.originalIndex : 'unknown'})`,
+      );
+    });
 
     // For each discount, try to find the product it applies to
     for (const discount of discounts) {
+      this.logger.debug(
+        `Processing discount: "${discount.normalizedName}" (isDiscount: ${discount.isDiscount}, index: ${isExtendedNormalizationResult(discount) ? discount.originalIndex : 'unknown'})`,
+      );
+
       const linkedProduct = this.findProductForDiscount(discount, products);
 
       if (linkedProduct) {
+        this.logger.debug(
+          `Linking discount "${discount.normalizedName}" to product "${linkedProduct.normalizedName}"`,
+        );
+
         // Add discount to product
         if (!linkedProduct.linkedDiscounts) {
           linkedProduct.linkedDiscounts = [];
@@ -659,6 +942,43 @@ export class ProductNormalizationService {
         )
           ? linkedProduct.originalIndex.toString()
           : 'unknown';
+      } else {
+        this.logger.debug(
+          `No product found for discount "${discount.normalizedName}"`,
+        );
+      }
+    }
+
+    // For each fee, try to find the product it applies to (similar to discounts)
+    for (const fee of fees) {
+      const linkedProduct = this.findProductForFee(fee, products);
+
+      if (linkedProduct) {
+        // Add fee to product (similar to discounts but as positive charge)
+        if (!linkedProduct.linkedDiscounts) {
+          linkedProduct.linkedDiscounts = [];
+        }
+
+        const feeAmount = isExtendedNormalizationResult(fee)
+          ? fee.originalPrice // Fees are positive amounts
+          : 0;
+
+        const feeLink: DiscountLink = {
+          discountId: isExtendedNormalizationResult(fee)
+            ? fee.originalIndex.toString()
+            : 'unknown',
+          discountAmount: feeAmount, // Positive for fees
+          discountType: 'fixed',
+          discountDescription: fee.normalizedName,
+          confidence: this.calculateDiscountLinkConfidence(fee, linkedProduct),
+        };
+
+        linkedProduct.linkedDiscounts.push(feeLink);
+
+        // Mark fee as applied to this product
+        fee.appliedToProductId = isExtendedNormalizationResult(linkedProduct)
+          ? linkedProduct.originalIndex.toString()
+          : 'unknown';
       }
     }
 
@@ -679,7 +999,110 @@ export class ProductNormalizationService {
       ? Math.abs(discount.originalPrice)
       : 0;
 
-    // Strategy 1: Look for adjacent products (most common)
+    // Strategy 1: Costco TPD pattern handling
+    // Handle both "TPD/1648955" and "1955651 TPD/1648955" formats
+    let tpdMatch = discount.normalizedName.match(/^TPD\/(.+)$/i);
+    if (!tpdMatch) {
+      // Try pattern with item number prefix: "1955651 TPD/1648955"
+      tpdMatch = discount.normalizedName.match(/^\d+\s+TPD\/(.+)$/i);
+    }
+
+    if (tpdMatch) {
+      const tpdReference = tpdMatch[1].trim();
+
+      // Pattern 1: TPD/[exact_item_number] - direct item number match
+      if (/^\d+$/.test(tpdReference)) {
+        const targetItemNumber = tpdReference;
+        const targetProduct = products.find((product) => {
+          return product.itemCode === targetItemNumber;
+        });
+
+        if (targetProduct) {
+          this.logger.debug(
+            `Found TPD/${targetItemNumber} exact item match for product: ${targetProduct.normalizedName}`,
+          );
+          return targetProduct;
+        } else {
+          this.logger.warn(
+            `Could not find product for TPD/${targetItemNumber}`,
+          );
+        }
+      }
+
+      // Pattern 2: TPD/[product_type] - contextual matching (e.g., TPD/BATTERY)
+      else {
+        const targetProductType = tpdReference.toUpperCase();
+
+        // For cases like TPD/BATTERY, we need to find the most recent product
+        // that would logically be associated with this discount type
+        // In Costco receipts, TPD items usually appear after their associated product
+
+        // First, try to find products with similar keywords
+        const keywordMatchProduct = products.find((product) => {
+          const productName = product.normalizedName.toUpperCase();
+
+          // Special case mappings for common Costco TPD patterns
+          const productTypeKeywords: Record<string, string[]> = {
+            BATTERY: [
+              'OPTIMUM',
+              'DURACELL',
+              'ENERGIZER',
+              'BATTERY',
+              'ALKALINE',
+            ],
+            APPLE: ['APPLE', 'FRUIT'],
+            ORGANIC: ['ORGANIC', 'ORG'],
+            MILK: ['MILK', 'DAIRY'],
+            MEAT: ['BEEF', 'CHICKEN', 'PORK', 'MEAT'],
+          };
+
+          if (productTypeKeywords[targetProductType]) {
+            return productTypeKeywords[targetProductType].some((keyword) =>
+              productName.includes(keyword),
+            );
+          }
+
+          // Direct substring match
+          return productName.includes(targetProductType);
+        });
+
+        if (keywordMatchProduct) {
+          this.logger.debug(
+            `Found TPD/${targetProductType} keyword match for product: ${keywordMatchProduct.normalizedName}`,
+          );
+          return keywordMatchProduct;
+        }
+
+        // Fallback: For TPD/[type] patterns, use the most recent product before this discount
+        // This handles cases where the product type doesn't match exactly
+        const recentProduct = products
+          .filter(
+            (p) =>
+              isExtendedNormalizationResult(p) &&
+              p.originalIndex < discountIndex,
+          )
+          .sort((a, b) => {
+            const aIndex = isExtendedNormalizationResult(a)
+              ? a.originalIndex
+              : 0;
+            const bIndex = isExtendedNormalizationResult(b)
+              ? b.originalIndex
+              : 0;
+            return bIndex - aIndex;
+          })[0];
+
+        if (recentProduct) {
+          this.logger.debug(
+            `Using fallback adjacent product for TPD/${targetProductType}: ${recentProduct.normalizedName}`,
+          );
+          return recentProduct;
+        }
+
+        this.logger.warn(`Could not find product for TPD/${targetProductType}`);
+      }
+    }
+
+    // Strategy 2: Look for adjacent products (most common)
     // Check items immediately before the discount
     for (let i = 1; i <= 3; i++) {
       const adjacentIndex = discountIndex - i;
@@ -700,7 +1123,7 @@ export class ProductNormalizationService {
       }
     }
 
-    // Strategy 2: Look for products with matching price patterns
+    // Strategy 3: Look for products with matching price patterns
     const matchingProducts = products.filter((product) => {
       const productPrice = isExtendedNormalizationResult(product)
         ? product.originalPrice
@@ -712,7 +1135,7 @@ export class ProductNormalizationService {
       return matchingProducts[0];
     }
 
-    // Strategy 3: Look for specific discount patterns that mention products
+    // Strategy 4: Look for specific discount patterns that mention products
     const productKeywords = this.extractProductKeywordsFromDiscount(
       discount.normalizedName,
     );
@@ -725,7 +1148,7 @@ export class ProductNormalizationService {
       }
     }
 
-    // Strategy 4: Default to the most recent product if no clear match
+    // Strategy 5: Default to the most recent product if no clear match
     const recentProducts = products
       .filter(
         (p) =>
@@ -738,6 +1161,99 @@ export class ProductNormalizationService {
       });
 
     return recentProducts[0] || null;
+  }
+
+  /**
+   * Find the product that a fee should be linked to
+   */
+  private findProductForFee(
+    fee: NormalizationResult,
+    products: NormalizationResult[],
+  ): NormalizationResult | null {
+    const feeIndex = isExtendedNormalizationResult(fee) ? fee.originalIndex : 0;
+
+    // Strategy 1: ECO FEE pattern handling (e.g., "ECO FEE BAT" links to battery products)
+    const ecoFeeMatch = fee.normalizedName.match(/^ECO\s*FEE\s*(.+)$/i);
+    if (ecoFeeMatch) {
+      const feeType = ecoFeeMatch[1].trim().toUpperCase();
+
+      // Find products with keywords matching the fee type
+      const keywordMatchProduct = products.find((product) => {
+        const productName = product.normalizedName.toUpperCase();
+
+        // Special case mappings for common ECO FEE patterns
+        const feeTypeKeywords: Record<string, string[]> = {
+          BAT: ['OPTIMUM', 'DURACELL', 'ENERGIZER', 'BATTERY', 'ALKALINE'],
+          BATTERY: ['OPTIMUM', 'DURACELL', 'ENERGIZER', 'BATTERY', 'ALKALINE'],
+          ELECTRONIC: ['ELECTRONIC', 'DEVICE', 'GADGET'],
+          TIRE: ['TIRE', 'WHEEL'],
+          OIL: ['OIL', 'MOTOR', 'ENGINE'],
+        };
+
+        if (feeTypeKeywords[feeType]) {
+          return feeTypeKeywords[feeType].some((keyword) =>
+            productName.includes(keyword),
+          );
+        }
+
+        // Direct substring match
+        return productName.includes(feeType);
+      });
+
+      if (keywordMatchProduct) {
+        this.logger.debug(
+          `Found ECO FEE ${feeType} keyword match for product: ${keywordMatchProduct.normalizedName}`,
+        );
+        return keywordMatchProduct;
+      }
+    }
+
+    // Strategy 2: Look for adjacent products (most common for fees)
+    // Check items immediately before the fee
+    for (let i = 1; i <= 3; i++) {
+      const adjacentIndex = feeIndex - i;
+      const adjacentProduct = products.find(
+        (p) =>
+          isExtendedNormalizationResult(p) && p.originalIndex === adjacentIndex,
+      );
+
+      if (
+        adjacentProduct &&
+        !adjacentProduct.isDiscount &&
+        !adjacentProduct.isAdjustment
+      ) {
+        this.logger.debug(
+          `Found adjacent product for fee: ${adjacentProduct.normalizedName}`,
+        );
+        return adjacentProduct;
+      }
+    }
+
+    // Strategy 3: Look for the most recent product before this fee
+    const recentProducts = products
+      .filter(
+        (p) =>
+          isExtendedNormalizationResult(p) &&
+          p.originalIndex < feeIndex &&
+          !p.isDiscount &&
+          !p.isAdjustment &&
+          !p.isFee,
+      )
+      .sort((a, b) => {
+        const aIndex = isExtendedNormalizationResult(a) ? a.originalIndex : 0;
+        const bIndex = isExtendedNormalizationResult(b) ? b.originalIndex : 0;
+        return bIndex - aIndex;
+      });
+
+    if (recentProducts.length > 0) {
+      this.logger.debug(
+        `Using fallback recent product for fee: ${recentProducts[0].normalizedName}`,
+      );
+      return recentProducts[0];
+    }
+
+    this.logger.warn(`Could not find product for fee: ${fee.normalizedName}`);
+    return null;
   }
 
   /**

@@ -307,28 +307,45 @@ export class OcrService {
           // Use improved price parsing that handles discount formats
           const parsedPrice = this.productNormalizationService.parsePrice(
             originalItem.price,
+            ocrResult.merchant,
           );
           const originalPrice = parsedPrice.amount;
 
-          // For discount items that have been linked to products,
+          // For discount/fee items that have been linked to products,
           // we'll filter them out unless they couldn't be linked
-          if (normalization.isDiscount && normalization.appliedToProductId) {
-            // This discount was successfully linked to a product,
+          if (
+            (normalization.isDiscount || normalization.isFee) &&
+            normalization.appliedToProductId
+          ) {
+            // This discount/fee was successfully linked to a product,
             // so we don't show it as a separate item
             return null;
           }
 
-          // Calculate final price after discounts
+          // Calculate final price after discounts and fees
           let finalPrice = originalPrice;
           if (
             normalization.linkedDiscounts &&
             normalization.linkedDiscounts.length > 0
           ) {
-            const totalDiscount = normalization.linkedDiscounts.reduce(
-              (sum, discount) => sum + discount.discountAmount,
-              0,
-            );
-            finalPrice = Math.max(0, originalPrice - totalDiscount);
+            // Separate discounts (negative) from fees (positive)
+            let totalDiscount = 0;
+            let totalFees = 0;
+
+            normalization.linkedDiscounts.forEach((discount) => {
+              // Check if this is a fee by looking at the description
+              if (
+                discount.discountDescription.match(
+                  /^(ECO\s*FEE|ENV\s*FEE|DEPOSIT|RECYCLING\s*FEE|BAG\s*FEE|SERVICE\s*FEE)/i,
+                )
+              ) {
+                totalFees += discount.discountAmount;
+              } else {
+                totalDiscount += discount.discountAmount;
+              }
+            });
+
+            finalPrice = Math.max(0, originalPrice - totalDiscount + totalFees);
           }
 
           return {
