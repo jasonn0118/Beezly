@@ -172,4 +172,41 @@ export class CategoryService {
       updated_at: category.updatedAt.toISOString(),
     };
   }
+
+  async getDistinctCategory1(): Promise<string[]> {
+    const result = (await supabase.rpc('get_distinct_category1')) as {
+      data: { category1: string }[] | null;
+      error: PostgrestError | null;
+    };
+
+    if (result.error) throw new Error(result.error.message);
+    return result.data?.map((row) => row.category1) ?? [];
+  }
+  async getDistinctCategory2(category1: string): Promise<string[]> {
+    const result = (await supabase.rpc('get_distinct_category2', {
+      category1_input: category1,
+    })) as {
+      data: { category2: string }[] | null;
+      error: PostgrestError | null;
+    };
+
+    if (result.error) throw new Error(result.error.message);
+    return result.data?.map((row) => row.category2) ?? [];
+  }
+
+  async getDistinctCategory3(
+    category1: string,
+    category2: string,
+  ): Promise<string[]> {
+    const result = (await supabase.rpc('get_distinct_category3', {
+      category1_input: category1,
+      category2_input: category2,
+    })) as {
+      data: { category3: string }[] | null;
+      error: PostgrestError | null;
+    };
+
+    if (result.error) throw new Error(result.error.message);
+    return result.data?.map((row) => row.category3) ?? [];
+  }
 }
