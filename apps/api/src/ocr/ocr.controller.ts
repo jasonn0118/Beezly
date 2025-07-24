@@ -111,9 +111,9 @@ export class OcrController {
             store_address: { type: 'string' },
             date: { type: 'string' },
             time: { type: 'string' },
-            total: { type: 'string' },
-            subtotal: { type: 'string' },
-            tax: { type: 'string' },
+            total: { type: 'number' },
+            subtotal: { type: 'number' },
+            tax: { type: 'number' },
             items: {
               type: 'array',
               items: {
@@ -291,9 +291,9 @@ export class OcrController {
             store_address: { type: 'string' },
             date: { type: 'string' },
             time: { type: 'string' },
-            total: { type: 'string' },
-            subtotal: { type: 'string' },
-            tax: { type: 'string' },
+            total: { type: 'number' },
+            subtotal: { type: 'number' },
+            tax: { type: 'number' },
             items: {
               type: 'array',
               items: {

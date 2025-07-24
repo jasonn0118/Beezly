@@ -47,9 +47,9 @@ export interface OcrResult {
   store_address?: string;
   date: string;
   time?: string;
-  total: string;
-  subtotal?: string;
-  tax?: string;
+  total: number;
+  subtotal?: number;
+  tax?: number;
   items: OcrItem[];
   item_count: number;
   raw_text: string;
@@ -336,7 +336,7 @@ export class OcrService {
               // Check if this is a fee by looking at the description
               if (
                 discount.discountDescription.match(
-                  /^(ECO\s*FEE|ENV\s*FEE|DEPOSIT|RECYCLING\s*FEE|BAG\s*FEE|SERVICE\s*FEE)/i,
+                  /^(ECO\s*FEE|ENV(?:IRO)?\s*FEE|DEPOSIT|RECYCLING\s*FEE|BAG\s*FEE|SERVICE\s*FEE)/i,
                 )
               ) {
                 totalFees += discount.discountAmount;
@@ -468,10 +468,13 @@ export class OcrService {
       if (item.linked_discounts) {
         return (
           sum +
-          item.linked_discounts.reduce(
-            (discountSum, discount) => discountSum + discount.discount_amount,
-            0,
-          )
+          item.linked_discounts.reduce((discountSum, discount) => {
+            // Only count actual discounts, not fees
+            const isFee = discount.discount_description.match(
+              /^(ECO\s*FEE|ENV(?:IRO)?\s*FEE|DEPOSIT|RECYCLING\s*FEE|BAG\s*FEE|SERVICE\s*FEE)/i,
+            );
+            return isFee ? discountSum : discountSum + discount.discount_amount;
+          }, 0)
         );
       }
       return sum;
@@ -523,10 +526,13 @@ export class OcrService {
       if (item.linked_discounts) {
         return (
           sum +
-          item.linked_discounts.reduce(
-            (discountSum, discount) => discountSum + discount.discount_amount,
-            0,
-          )
+          item.linked_discounts.reduce((discountSum, discount) => {
+            // Only count actual discounts, not fees
+            const isFee = discount.discount_description.match(
+              /^(ECO\s*FEE|ENV(?:IRO)?\s*FEE|DEPOSIT|RECYCLING\s*FEE|BAG\s*FEE|SERVICE\s*FEE)/i,
+            );
+            return isFee ? discountSum : discountSum + discount.discount_amount;
+          }, 0)
         );
       }
       return sum;

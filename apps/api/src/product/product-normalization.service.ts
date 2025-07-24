@@ -201,7 +201,7 @@ export class ProductNormalizationService {
   // Fee patterns (additional charges, not discounts)
   private readonly feePatterns = [
     /^ECO\s*FEE/i, // ECO FEE BAT
-    /^ENV\s*FEE/i, // ENVIRONMENTAL FEE
+    /^ENV(?:IRO)?\s*FEE/i, // ENVIRONMENTAL FEE, ENVIRO FEE
     /^DEPOSIT/i, // BOTTLE DEPOSIT
     /^RECYCLING\s*FEE/i, // RECYCLING FEE
     /^BAG\s*FEE/i, // BAG FEE
@@ -450,7 +450,7 @@ export class ProductNormalizationService {
         context = `This is a receipt item from ${merchant} (${storePattern.storeId} - ${storePattern.chain || 'Unknown Chain'})
         
 Store-specific context:
-- Common store brands: ${storePattern.normalizationHints.commonBrands.join(', ')}
+- Store brands available (use ONLY when item is actually that brand): ${storePattern.normalizationHints.commonBrands.join(', ')}
 ${
   storePattern.normalizationHints.categoryMappings
     ? `- Store category mappings: ${JSON.stringify(storePattern.normalizationHints.categoryMappings)}`
@@ -665,7 +665,9 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
   private getStoreSpecificInstructions(storeId: string): string {
     const instructions: Record<string, string> = {
       COSTCO: `
-- Prioritize Kirkland Signature as the brand for store-brand items
+- ONLY use "Kirkland Signature" as the brand for items that are actually Kirkland store-brand products
+- Recognize and preserve actual brand names: CK = Calvin Klein, HLSTN = Houston, Nike, Adidas, etc.
+- Do NOT default to Kirkland Signature for all items - identify the correct brand from the product name
 - Items are typically sold in bulk quantities - normalize to individual units when possible
 - Look for membership pricing indicators (* asterisk means sale price)
 - Handle "INSTANT SAVINGS" as discounts, not separate products
@@ -840,9 +842,6 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         result.isDiscount = true;
         result.isAdjustment = false;
         result.method = 'price_format_discount';
-        this.logger.debug(
-          `Price-based discount detected: ${item.name} with price ${item.price}`,
-        );
       }
 
       // Add item index for discount linking by creating an extended result
@@ -874,42 +873,11 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     const discounts = items.filter((item) => item.isDiscount);
     const fees = items.filter((item) => item.isFee);
 
-    this.logger.debug(
-      `Filtered items: ${products.length} products, ${discounts.length} discounts, ${fees.length} fees`,
-    );
-
-    // Log each category
-    products.forEach((product, index) => {
-      this.logger.debug(
-        `Product ${index}: "${product.normalizedName}" (isDiscount: ${product.isDiscount}, originalIndex: ${isExtendedNormalizationResult(product) ? product.originalIndex : 'unknown'})`,
-      );
-    });
-
-    discounts.forEach((discount, index) => {
-      this.logger.debug(
-        `Discount ${index}: "${discount.normalizedName}" (isDiscount: ${discount.isDiscount}, originalIndex: ${isExtendedNormalizationResult(discount) ? discount.originalIndex : 'unknown'})`,
-      );
-    });
-
-    fees.forEach((fee, index) => {
-      this.logger.debug(
-        `Fee ${index}: "${fee.normalizedName}" (isFee: ${fee.isFee}, originalIndex: ${isExtendedNormalizationResult(fee) ? fee.originalIndex : 'unknown'})`,
-      );
-    });
-
     // For each discount, try to find the product it applies to
     for (const discount of discounts) {
-      this.logger.debug(
-        `Processing discount: "${discount.normalizedName}" (isDiscount: ${discount.isDiscount}, index: ${isExtendedNormalizationResult(discount) ? discount.originalIndex : 'unknown'})`,
-      );
-
       const linkedProduct = this.findProductForDiscount(discount, products);
 
       if (linkedProduct) {
-        this.logger.debug(
-          `Linking discount "${discount.normalizedName}" to product "${linkedProduct.normalizedName}"`,
-        );
-
         // Add discount to product
         if (!linkedProduct.linkedDiscounts) {
           linkedProduct.linkedDiscounts = [];
@@ -942,10 +910,6 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         )
           ? linkedProduct.originalIndex.toString()
           : 'unknown';
-      } else {
-        this.logger.debug(
-          `No product found for discount "${discount.normalizedName}"`,
-        );
       }
     }
 
@@ -1018,14 +982,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         });
 
         if (targetProduct) {
-          this.logger.debug(
-            `Found TPD/${targetItemNumber} exact item match for product: ${targetProduct.normalizedName}`,
-          );
           return targetProduct;
-        } else {
-          this.logger.warn(
-            `Could not find product for TPD/${targetItemNumber}`,
-          );
         }
       }
 
@@ -1067,9 +1024,6 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         });
 
         if (keywordMatchProduct) {
-          this.logger.debug(
-            `Found TPD/${targetProductType} keyword match for product: ${keywordMatchProduct.normalizedName}`,
-          );
           return keywordMatchProduct;
         }
 
@@ -1092,13 +1046,8 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
           })[0];
 
         if (recentProduct) {
-          this.logger.debug(
-            `Using fallback adjacent product for TPD/${targetProductType}: ${recentProduct.normalizedName}`,
-          );
           return recentProduct;
         }
-
-        this.logger.warn(`Could not find product for TPD/${targetProductType}`);
       }
     }
 
@@ -1201,9 +1150,6 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       });
 
       if (keywordMatchProduct) {
-        this.logger.debug(
-          `Found ECO FEE ${feeType} keyword match for product: ${keywordMatchProduct.normalizedName}`,
-        );
         return keywordMatchProduct;
       }
     }
@@ -1222,9 +1168,6 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         !adjacentProduct.isDiscount &&
         !adjacentProduct.isAdjustment
       ) {
-        this.logger.debug(
-          `Found adjacent product for fee: ${adjacentProduct.normalizedName}`,
-        );
         return adjacentProduct;
       }
     }
@@ -1246,13 +1189,9 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       });
 
     if (recentProducts.length > 0) {
-      this.logger.debug(
-        `Using fallback recent product for fee: ${recentProducts[0].normalizedName}`,
-      );
       return recentProducts[0];
     }
 
-    this.logger.warn(`Could not find product for fee: ${fee.normalizedName}`);
     return null;
   }
 
