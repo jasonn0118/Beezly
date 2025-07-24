@@ -47,7 +47,7 @@ export class ProductResponseDto {
     example: 12,
     required: false,
   })
-  category?: string;
+  category?: number;
 
   @ApiProperty({
     description: 'Image URL of the product',

@@ -19,12 +19,12 @@ describe('BarcodeService', () => {
     flaggedCount: 0,
     categoryEntity: {
       id: 1,
-      name: 'Test Category',
-      slug: 'test-category',
-      level: 1,
-      useYn: true,
+      category1: 'Test Category',
+      category2: null,
+      category3: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      products: [],
     } as Product['categoryEntity'],
   };
 
@@ -64,7 +64,9 @@ describe('BarcodeService', () => {
         name: 'Test Product',
         barcode: '1234567890',
         brand: undefined,
-        category: 'Test Category',
+        category: 1,
+        barcodeType: undefined,
+        image_url: undefined,
         isVerified: true,
       });
     });
@@ -107,7 +109,9 @@ describe('BarcodeService', () => {
         name: 'Test Product',
         barcode: '1234567890',
         brand: undefined,
-        category: 'Test Category',
+        category: 1,
+        barcodeType: undefined,
+        image_url: undefined,
         isVerified: true,
       });
     });

@@ -55,6 +55,8 @@ export class ReceiptService {
     private readonly userService: UserService,
     private readonly storeService: StoreService,
     private readonly productService: ProductService,
+    @InjectRepository(Category)
+    private readonly categoryRepository: Repository<Category>,
   ) {}
 
   async getAllReceipts(limit: number = 50): Promise<ReceiptDTO[]> {
@@ -120,84 +122,65 @@ export class ReceiptService {
   }
 
   async createReceipt(receiptData: CreateReceiptRequest): Promise<ReceiptDTO> {
-    // Start a transaction for creating receipt with items
     return this.receiptRepository.manager.transaction(async (manager) => {
-      // Handle user lookup
       let userSk: string | undefined;
       if (receiptData.userId) {
         const user = await this.userService.getUserById(receiptData.userId);
-        if (user) {
-          userSk = user.id; // This is the UUID from the DTO
-        }
+        if (user) userSk = user.id;
       }
 
-      // Handle store lookup or creation
       let storeSk: string | undefined;
-
       if (receiptData.storeId) {
         const store = await this.storeService.getStoreById(receiptData.storeId);
-        if (store) {
-          storeSk = store.id; // This is the UUID from the DTO
-        }
+        if (store) storeSk = store.id;
       } else if (receiptData.storeName) {
-        // Try to find existing store by name
         const existingStore = await this.storeRepository.findOne({
           where: { name: receiptData.storeName },
         });
-        if (existingStore) {
-          storeSk = existingStore.storeSk;
-        }
+        if (existingStore) storeSk = existingStore.storeSk;
       }
 
-      // Calculate total amount if not provided (for future use)
-      // const totalAmount = receiptData.totalAmount ||
-      //   receiptData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-      // Create receipt
       const receipt = manager.create(Receipt, {
         userSk,
         storeSk,
         imageUrl: receiptData.imageUrl,
         status: 'pending',
-        parsedData: { items: receiptData.items }, // Store original parsed data
+        parsedData: { items: receiptData.items },
         purchaseDate: receiptData.purchaseDate || new Date(),
       });
 
       const savedReceipt = await manager.save(receipt);
 
-      // Create receipt items
       await Promise.all(
         receiptData.items.map(async (itemData) => {
-          // Try to find or create product
           let product = await this.productService.getProductByBarcode(
             itemData.barcode || '',
           );
 
           if (!product) {
             let categoryId: number | undefined;
+
             if (itemData.category) {
-              // Try to find category by name
-              let category = await this.storeRepository.manager.findOne(
-                Category,
-                {
-                  where: { name: itemData.category },
-                },
-              );
+              let category = await this.categoryRepository.findOne({
+                where: [
+                  { category1: itemData.category },
+                  { category2: itemData.category },
+                  { category3: itemData.category },
+                ],
+              });
 
               if (!category) {
-                // Optional: Create category if not found
-                category = this.storeRepository.manager.create(Category, {
-                  name: itemData.category,
-                  slug: itemData.category.toLowerCase().replace(/\s+/g, '-'),
-                  level: 1,
-                  useYn: true,
+                category = this.categoryRepository.create({
+                  category1: itemData.category,
+                  category2: itemData.category,
+                  category3: itemData.category,
                 });
-                category = await this.storeRepository.manager.save(category);
+                category = await this.categoryRepository.save(category);
               }
 
               categoryId = category.id;
             }
-            // Create new product if not found
+
             product = await this.productService.createProduct({
               name: itemData.productName,
               barcode: itemData.barcode,
@@ -217,14 +200,18 @@ export class ReceiptService {
         }),
       );
 
-      // Update receipt status to done after successful processing
       savedReceipt.status = 'done';
       await manager.save(savedReceipt);
 
-      // Return the complete receipt with items
       const completeReceipt = await manager.findOne(Receipt, {
         where: { id: savedReceipt.id },
-        relations: ['user', 'store', 'items', 'items.product'],
+        relations: [
+          'user',
+          'store',
+          'items',
+          'items.product',
+          'items.product.categoryEntity',
+        ],
       });
 
       return this.mapReceiptToDTO(completeReceipt!);

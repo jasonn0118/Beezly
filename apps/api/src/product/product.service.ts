@@ -187,15 +187,86 @@ export class ProductService {
     return products.map((product) => this.mapProductToDTO(product));
   }
 
+  // private async getProductsByCategoryLevel(
+  //   field: 'category1' | 'category2' | 'category3',
+  //   keyword: string,
+  //   limit = 50,
+  // ): Promise<NormalizedProductDTO[]> {
+  //   const category = await this.categoryRepository.findOne({
+  //     where: { [field]: ILike(`%${keyword}%`) },
+  //   });
+
+  //   if (!category) return [];
+
+  //   const products = await this.productRepository.find({
+  //     where: { category: category.id },
+  //     relations: ['categoryEntity'],
+  //     take: limit,
+  //     order: { name: 'ASC' },
+  //   });
+
+  //   return products.map((product) => this.mapProductToDTO(product));
+  // }
+
   /**
-   * Get products by category
+   * Get products by category1
    */
-  async getProductsByCategory(
-    categoryName: string,
+  async getProductsByCategory1(
+    keyword: string,
     limit: number = 50,
   ): Promise<NormalizedProductDTO[]> {
     const category = await this.categoryRepository.findOne({
-      where: { name: ILike(`%${categoryName}%`) },
+      where: { category1: ILike(`%${keyword}%`) },
+    });
+
+    if (!category) {
+      return [];
+    }
+
+    const products = await this.productRepository.find({
+      where: { category: category.id },
+      relations: ['categoryEntity'],
+      take: limit,
+      order: { name: 'ASC' },
+    });
+
+    return products.map((product) => this.mapProductToDTO(product));
+  }
+
+  /**
+   * Get products by category2
+   */
+  async getProductsByCategory2(
+    keyword: string,
+    limit: number = 50,
+  ): Promise<NormalizedProductDTO[]> {
+    const category = await this.categoryRepository.findOne({
+      where: { category2: ILike(`%${keyword}%`) },
+    });
+
+    if (!category) {
+      return [];
+    }
+
+    const products = await this.productRepository.find({
+      where: { category: category.id },
+      relations: ['categoryEntity'],
+      take: limit,
+      order: { name: 'ASC' },
+    });
+
+    return products.map((product) => this.mapProductToDTO(product));
+  }
+
+  /**
+   * Get products by category3
+   */
+  async getProductsByCategory3(
+    keyword: string,
+    limit: number = 50,
+  ): Promise<NormalizedProductDTO[]> {
+    const category = await this.categoryRepository.findOne({
+      where: { category3: ILike(`%${keyword}%`) },
     });
 
     if (!category) {
@@ -375,26 +446,6 @@ export class ProductService {
     }
 
     return product;
-  }
-
-  private async findOrCreateCategory(categoryName: string): Promise<Category> {
-    // Try to find existing category
-    let category = await this.categoryRepository.findOne({
-      where: { name: categoryName },
-    });
-
-    // Create new category if not found
-    if (!category) {
-      category = this.categoryRepository.create({
-        name: categoryName,
-        slug: categoryName.toLowerCase().replace(/\s+/g, '-'),
-        level: 1,
-        useYn: true,
-      });
-      category = await this.categoryRepository.save(category);
-    }
-
-    return category;
   }
 
   private mapProductToDTO(product: Product): NormalizedProductDTO {

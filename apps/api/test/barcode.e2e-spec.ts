@@ -4,12 +4,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { Repository } from 'typeorm';
 import { Product } from '../src/entities/product.entity';
+import { Category } from '../src/entities/category.entity';
+import { BarcodeType } from '@beezly/types';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Server } from 'http';
 
 describe('BarcodeController (e2e)', () => {
   let app: INestApplication;
   let productRepository: Repository<Product>;
+  let categoryRepository: Repository<Category>;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -23,6 +26,9 @@ describe('BarcodeController (e2e)', () => {
     productRepository = moduleFixture.get<Repository<Product>>(
       getRepositoryToken(Product),
     );
+    categoryRepository = moduleFixture.get<Repository<Category>>(
+      getRepositoryToken(Category),
+    );
   });
 
   afterEach(async () => {
@@ -31,13 +37,22 @@ describe('BarcodeController (e2e)', () => {
 
   describe('/barcode/lookup (POST)', () => {
     it('should return 200 with product data for valid barcode', async () => {
-      // Create a test product
+      const category = await categoryRepository.save({
+        category1: 'Food',
+        category2: 'Snacks',
+        category3: 'Chips',
+      });
+
       const testProduct = await productRepository.save({
         name: 'Test Product',
         barcode: '1234567890',
         creditScore: 5,
         verifiedCount: 10,
         flaggedCount: 0,
+        categoryEntity: category,
+        brandName: 'Lay’s',
+        barcodeType: BarcodeType.EAN13,
+        image_url: 'https://example.com/chips.jpg',
       });
 
       const server = app.getHttpServer() as Server;
@@ -50,6 +65,10 @@ describe('BarcodeController (e2e)', () => {
         id: testProduct.productSk,
         name: 'Test Product',
         barcode: '1234567890',
+        brand: 'Lay’s',
+        category: category.id,
+        barcodeType: 'UPC',
+        image_url: 'https://example.com/chips.jpg',
         isVerified: true,
       });
     });
@@ -64,6 +83,10 @@ describe('BarcodeController (e2e)', () => {
       expect(response.body).toMatchObject({
         name: 'Unknown Product (9999999999)',
         barcode: '9999999999',
+        brand: undefined,
+        category: undefined,
+        barcodeType: undefined,
+        image_url: undefined,
         isVerified: false,
       });
       expect(response.body).toHaveProperty('id');
@@ -80,13 +103,22 @@ describe('BarcodeController (e2e)', () => {
 
   describe('/barcode/:barcode (GET)', () => {
     it('should return product by barcode', async () => {
-      // Create a test product
+      const category = await categoryRepository.save({
+        category1: 'Drinks',
+        category2: 'Soda',
+        category3: 'Cola',
+      });
+
       const testProduct = await productRepository.save({
         name: 'Test Product',
         barcode: '1234567890',
         creditScore: 5,
         verifiedCount: 10,
         flaggedCount: 0,
+        categoryEntity: category,
+        brandName: 'Coca-Cola',
+        barcodeType: BarcodeType.EAN13,
+        image_url: 'https://example.com/coke.jpg',
       });
 
       const server = app.getHttpServer() as Server;
@@ -98,6 +130,10 @@ describe('BarcodeController (e2e)', () => {
         id: testProduct.productSk,
         name: 'Test Product',
         barcode: '1234567890',
+        brand: 'Coca-Cola',
+        category: category.id,
+        barcodeType: BarcodeType.EAN13,
+        image_url: 'https://example.com/coke.jpg',
         isVerified: true,
       });
     });
