@@ -11,6 +11,7 @@ import {
   MobileProductCreateDto,
   MobileProductResponseDto,
 } from './dto/mobile-product-create.dto';
+import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 
 export interface ProductSearchParams {
   name?: string;
@@ -94,6 +95,7 @@ export class ProductService {
     const product = this.productRepository.create({
       name: productData.name,
       barcode: productData.barcode,
+      barcodeType: productData.barcode_type,
       category: categoryId,
       imageUrl: productData.image_url,
       creditScore: productData.credit_score ?? 0,
@@ -118,6 +120,8 @@ export class ProductService {
     if (productData.name !== undefined) product.name = productData.name;
     if (productData.barcode !== undefined)
       product.barcode = productData.barcode;
+    if (productData.barcode_type !== undefined)
+      product.barcodeType = productData.barcode_type;
     if (productData.image_url !== undefined)
       product.imageUrl = productData.image_url;
 
@@ -170,6 +174,24 @@ export class ProductService {
     });
 
     return products.map((product) => this.mapProductToDTO(product));
+  }
+
+  /**
+   * Search products by name and/or brandName with fuzzy matching
+   */
+  async searchProductsByNameAndBrand(
+    query: string,
+    limit: number = 50,
+  ): Promise<ProductSearchResponseDto[]> {
+    const products = await this.productRepository
+      .createQueryBuilder('product')
+      .where('product.name ILIKE :query', { query: `%${query}%` })
+      .orWhere('product.brandName ILIKE :query', { query: `%${query}%` })
+      .orderBy('product.name', 'ASC')
+      .limit(limit)
+      .getMany();
+
+    return products.map((product) => this.mapProductToSearchResponse(product));
   }
 
   /**
@@ -453,13 +475,25 @@ export class ProductService {
       product_sk: product.productSk,
       name: product.name,
       barcode: product.barcode,
+      barcode_type: product.barcodeType,
       category: product.category,
       image_url: product.imageUrl,
+      brand_name: product.brandName,
       created_at: product.createdAt.toISOString(),
       updated_at: product.updatedAt.toISOString(),
       credit_score: product.creditScore ?? 0,
       verified_count: product.verifiedCount ?? 0,
       flagged_count: product.flaggedCount ?? 0,
+    };
+  }
+
+  private mapProductToSearchResponse(
+    product: Product,
+  ): ProductSearchResponseDto {
+    return {
+      name: product.name,
+      brand_name: product.brandName,
+      image_url: product.imageUrl,
     };
   }
 
@@ -511,6 +545,7 @@ export class ProductService {
       product = this.productRepository.create({
         name: productData.name,
         barcode: productData.barcode,
+        barcodeType: productData.barcodeType,
         category: productData.category,
         imageUrl: imageUrl,
         creditScore: 0,

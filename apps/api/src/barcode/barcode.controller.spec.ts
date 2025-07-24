@@ -7,7 +7,6 @@ describe('BarcodeController', () => {
   let controller: BarcodeController;
 
   const mockBarcodeService = {
-    lookupBarcode: jest.fn(),
     getProductByBarcode: jest.fn(),
   };
 
@@ -27,41 +26,6 @@ describe('BarcodeController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
-  });
-
-  describe('lookupBarcode', () => {
-    it('should call service.lookupBarcode with correct parameters', async () => {
-      const mockResponse = {
-        id: 'test-id',
-        name: 'Test Product',
-        barcode: '1234567890',
-        isVerified: true,
-      };
-      mockBarcodeService.lookupBarcode.mockResolvedValue(mockResponse);
-
-      const dto = { barcode: '1234567890' };
-      const result = await controller.lookupBarcode(dto);
-
-      expect(mockBarcodeService.lookupBarcode).toHaveBeenCalledWith(dto);
-      expect(result).toEqual(mockResponse);
-    });
-
-    it('should call service.lookupBarcode with barcode type when provided', async () => {
-      const mockResponse = {
-        id: 'test-id',
-        name: 'Test Product',
-        barcode: '1234567890',
-        barcodeType: BarcodeType.EAN13,
-        isVerified: true,
-      };
-      mockBarcodeService.lookupBarcode.mockResolvedValue(mockResponse);
-
-      const dto = { barcode: '1234567890', barcodeType: BarcodeType.EAN13 };
-      const result = await controller.lookupBarcode(dto);
-
-      expect(mockBarcodeService.lookupBarcode).toHaveBeenCalledWith(dto);
-      expect(result).toEqual(mockResponse);
-    });
   });
 
   describe('getProductByBarcode', () => {
