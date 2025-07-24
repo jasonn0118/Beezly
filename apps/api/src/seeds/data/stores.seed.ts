@@ -12,6 +12,7 @@ export async function seedStores(dataSource: DataSource) {
   }
 
   const stores = [
+    // Canadian Grocery Chains (Existing)
     {
       name: 'Loblaws',
       address: "1 President's Choice Cir, Brampton, ON L6Y 5S5",
@@ -102,6 +103,40 @@ export async function seedStores(dataSource: DataSource) {
         coordinates: [-80.5445328, 43.4842905],
       },
     },
+
+    // Major Retailers - Focus on Costco and Walmart for now
+    {
+      name: 'Costco Wholesale',
+      address: '1411 Castlefield Ave, Toronto, ON M6M 1Y6',
+      phone: '416-787-0229',
+      location: {
+        type: 'Point',
+        coordinates: [-79.4877982, 43.6911896],
+      },
+    },
+    {
+      name: 'Walmart Supercenter',
+      address: '3635 Portage Ave, Winnipeg, MB R3K 2H8',
+      phone: '204-885-3690',
+      location: {
+        type: 'Point',
+        coordinates: [-97.2263977, 49.8658773],
+      },
+    },
+
+    // TODO: Add more major retailers when store patterns are implemented
+    // {
+    //   name: 'Save-On-Foods',
+    //   ...
+    // },
+    // {
+    //   name: 'Safeway',
+    //   ...
+    // },
+    // {
+    //   name: 'T&T Supermarket',
+    //   ...
+    // },
   ];
 
   const createdStores = await storeRepository.save(stores);

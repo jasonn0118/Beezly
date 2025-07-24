@@ -4,6 +4,14 @@ import { Repository, ILike } from 'typeorm';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
 import { Product } from '../entities/product.entity';
 import { Category } from '../entities/category.entity';
+import { Store } from '../entities/store.entity';
+import { Price } from '../entities/price.entity';
+import { upload_product } from '../utils/storage.util';
+import {
+  MobileProductCreateDto,
+  MobileProductResponseDto,
+} from './dto/mobile-product-create.dto';
+import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 
 export interface ProductSearchParams {
   name?: string;
@@ -21,6 +29,10 @@ export class ProductService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
+    @InjectRepository(Store)
+    private readonly storeRepository: Repository<Store>,
+    @InjectRepository(Price)
+    private readonly priceRepository: Repository<Price>,
   ) {}
 
   async getAllProducts(limit: number = 100): Promise<NormalizedProductDTO[]> {
@@ -83,6 +95,7 @@ export class ProductService {
     const product = this.productRepository.create({
       name: productData.name,
       barcode: productData.barcode,
+      barcodeType: productData.barcode_type,
       category: categoryId,
       imageUrl: productData.image_url,
       creditScore: productData.credit_score ?? 0,
@@ -107,6 +120,8 @@ export class ProductService {
     if (productData.name !== undefined) product.name = productData.name;
     if (productData.barcode !== undefined)
       product.barcode = productData.barcode;
+    if (productData.barcode_type !== undefined)
+      product.barcodeType = productData.barcode_type;
     if (productData.image_url !== undefined)
       product.imageUrl = productData.image_url;
 
@@ -162,6 +177,24 @@ export class ProductService {
   }
 
   /**
+   * Search products by name and/or brandName with fuzzy matching
+   */
+  async searchProductsByNameAndBrand(
+    query: string,
+    limit: number = 50,
+  ): Promise<ProductSearchResponseDto[]> {
+    const products = await this.productRepository
+      .createQueryBuilder('product')
+      .where('product.name ILIKE :query', { query: `%${query}%` })
+      .orWhere('product.brandName ILIKE :query', { query: `%${query}%` })
+      .orderBy('product.name', 'ASC')
+      .limit(limit)
+      .getMany();
+
+    return products.map((product) => this.mapProductToSearchResponse(product));
+  }
+
+  /**
    * Search products by barcode (exact match)
    */
   async searchProductsByBarcode(
@@ -176,15 +209,86 @@ export class ProductService {
     return products.map((product) => this.mapProductToDTO(product));
   }
 
+  // private async getProductsByCategoryLevel(
+  //   field: 'category1' | 'category2' | 'category3',
+  //   keyword: string,
+  //   limit = 50,
+  // ): Promise<NormalizedProductDTO[]> {
+  //   const category = await this.categoryRepository.findOne({
+  //     where: { [field]: ILike(`%${keyword}%`) },
+  //   });
+
+  //   if (!category) return [];
+
+  //   const products = await this.productRepository.find({
+  //     where: { category: category.id },
+  //     relations: ['categoryEntity'],
+  //     take: limit,
+  //     order: { name: 'ASC' },
+  //   });
+
+  //   return products.map((product) => this.mapProductToDTO(product));
+  // }
+
   /**
-   * Get products by category
+   * Get products by category1
    */
-  async getProductsByCategory(
-    categoryName: string,
+  async getProductsByCategory1(
+    keyword: string,
     limit: number = 50,
   ): Promise<NormalizedProductDTO[]> {
     const category = await this.categoryRepository.findOne({
-      where: { name: ILike(`%${categoryName}%`) },
+      where: { category1: ILike(`%${keyword}%`) },
+    });
+
+    if (!category) {
+      return [];
+    }
+
+    const products = await this.productRepository.find({
+      where: { category: category.id },
+      relations: ['categoryEntity'],
+      take: limit,
+      order: { name: 'ASC' },
+    });
+
+    return products.map((product) => this.mapProductToDTO(product));
+  }
+
+  /**
+   * Get products by category2
+   */
+  async getProductsByCategory2(
+    keyword: string,
+    limit: number = 50,
+  ): Promise<NormalizedProductDTO[]> {
+    const category = await this.categoryRepository.findOne({
+      where: { category2: ILike(`%${keyword}%`) },
+    });
+
+    if (!category) {
+      return [];
+    }
+
+    const products = await this.productRepository.find({
+      where: { category: category.id },
+      relations: ['categoryEntity'],
+      take: limit,
+      order: { name: 'ASC' },
+    });
+
+    return products.map((product) => this.mapProductToDTO(product));
+  }
+
+  /**
+   * Get products by category3
+   */
+  async getProductsByCategory3(
+    keyword: string,
+    limit: number = 50,
+  ): Promise<NormalizedProductDTO[]> {
+    const category = await this.categoryRepository.findOne({
+      where: { category3: ILike(`%${keyword}%`) },
     });
 
     if (!category) {
@@ -366,38 +470,181 @@ export class ProductService {
     return product;
   }
 
-  private async findOrCreateCategory(categoryName: string): Promise<Category> {
-    // Try to find existing category
-    let category = await this.categoryRepository.findOne({
-      where: { name: categoryName },
-    });
-
-    // Create new category if not found
-    if (!category) {
-      category = this.categoryRepository.create({
-        name: categoryName,
-        slug: categoryName.toLowerCase().replace(/\s+/g, '-'),
-        level: 1,
-        useYn: true,
-      });
-      category = await this.categoryRepository.save(category);
-    }
-
-    return category;
-  }
-
   private mapProductToDTO(product: Product): NormalizedProductDTO {
     return {
       product_sk: product.productSk,
       name: product.name,
       barcode: product.barcode,
+      barcode_type: product.barcodeType,
       category: product.category,
       image_url: product.imageUrl,
+      brand_name: product.brandName,
       created_at: product.createdAt.toISOString(),
       updated_at: product.updatedAt.toISOString(),
       credit_score: product.creditScore ?? 0,
       verified_count: product.verifiedCount ?? 0,
       flagged_count: product.flaggedCount ?? 0,
     };
+  }
+
+  private mapProductToSearchResponse(
+    product: Product,
+  ): ProductSearchResponseDto {
+    return {
+      name: product.name,
+      brand_name: product.brandName,
+      image_url: product.imageUrl,
+    };
+  }
+
+  // Mobile-specific method for creating product with store and price
+  async createProductWithPriceAndStore(
+    productData: MobileProductCreateDto,
+    imageFile: Buffer,
+    userSk: string = 'mobile_user',
+  ): Promise<MobileProductResponseDto> {
+    // 1. Find or create store
+    const store = await this.findOrCreateStore(
+      productData.storeName,
+      productData.storeAddress,
+      productData.storeCity,
+      productData.storeProvince,
+      productData.storePostalCode,
+    );
+
+    // 2. Check if product already exists by barcode
+    let product = await this.productRepository.findOne({
+      where: { barcode: productData.barcode },
+      relations: ['categoryEntity'],
+    });
+
+    // 3. Upload image to Supabase storage
+    const imagePath = await upload_product(userSk, store.storeSk, imageFile);
+    let imageUrl: string | undefined;
+
+    if (imagePath) {
+      // Construct the public URL for the uploaded image
+      const supabaseUrl =
+        process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+      imageUrl = `${supabaseUrl}/storage/v1/object/public/product/${imagePath}`;
+    }
+
+    // 4. Create or update product
+    if (!product) {
+      // Validate category exists
+      const categoryExists = await this.categoryRepository.findOne({
+        where: { id: productData.category },
+      });
+
+      if (!categoryExists) {
+        throw new NotFoundException(
+          `Category with ID ${productData.category} not found`,
+        );
+      }
+
+      product = this.productRepository.create({
+        name: productData.name,
+        barcode: productData.barcode,
+        barcodeType: productData.barcodeType,
+        category: productData.category,
+        imageUrl: imageUrl,
+        creditScore: 0,
+        verifiedCount: 0,
+        flaggedCount: 0,
+      });
+
+      product = await this.productRepository.save(product);
+    } else {
+      // Update existing product if needed
+      if (imageUrl && !product.imageUrl) {
+        product.imageUrl = imageUrl;
+        product = await this.productRepository.save(product);
+      }
+    }
+
+    // 5. Create or update price entry
+    let price = await this.priceRepository.findOne({
+      where: {
+        productSk: product.productSk,
+        storeSk: store.storeSk,
+      },
+      order: { recordedAt: 'DESC' },
+    });
+
+    // Only create new price if doesn't exist or price changed
+    if (!price || price.price !== productData.price) {
+      price = this.priceRepository.create({
+        productSk: product.productSk,
+        storeSk: store.storeSk,
+        price: productData.price,
+        currency: 'KRW',
+        creditScore: 0,
+        verifiedCount: 0,
+        flaggedCount: 0,
+      });
+
+      price = await this.priceRepository.save(price);
+    }
+
+    // 6. Return enriched response
+    return {
+      product_sk: product.productSk,
+      name: product.name,
+      barcode: product.barcode || '',
+      category: product.category || 0,
+      image_url: product.imageUrl || '',
+      store: {
+        store_sk: store.storeSk,
+        name: store.name,
+        address: store.address || '',
+        city: store.city,
+        province: store.province,
+      },
+      price: {
+        price_sk: price.priceSk,
+        price: Number(price.price),
+        currency: price.currency || 'KRW',
+        recorded_at: price.recordedAt.toISOString(),
+      },
+    };
+  }
+
+  private async findOrCreateStore(
+    name: string,
+    address: string,
+    city?: string,
+    province?: string,
+    postalCode?: string,
+  ): Promise<Store> {
+    // Try to find existing store by name and address (exact match first)
+    let store = await this.storeRepository.findOne({
+      where: { name, address },
+    });
+
+    // If not found with exact match, try case-insensitive search
+    if (!store) {
+      store = await this.storeRepository
+        .createQueryBuilder('store')
+        .where('LOWER(store.name) = LOWER(:name)', { name })
+        .andWhere('LOWER(store.address) = LOWER(:address)', { address })
+        .getOne();
+    }
+
+    // Create new store only if no existing store found
+    if (!store) {
+      store = this.storeRepository.create({
+        name: name.trim(), // Trim whitespace
+        address: address.trim(),
+        city,
+        province,
+        postalCode,
+      });
+      store = await this.storeRepository.save(store);
+      console.log(`Created new store: ${store.name} at ${store.address}`);
+    } else {
+      console.log(`Found existing store: ${store.name} (ID: ${store.storeSk})`);
+    }
+
+    return store;
   }
 }

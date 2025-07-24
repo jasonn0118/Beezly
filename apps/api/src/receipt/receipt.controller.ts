@@ -11,6 +11,10 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ReceiptService, CreateReceiptRequest } from './receipt.service';
 import { ReceiptDTO } from '../../../packages/types/dto/receipt';
 import { CreateReceiptRequestDto } from './dto/create-receipt-request.dto';
+import {
+  TestNormalizationRequestDto,
+  TestNormalizationResponseDto,
+} from './dto/test-normalization-response.dto';
 
 @ApiTags('Receipts')
 @Controller('receipts')
@@ -100,5 +104,22 @@ export class ReceiptController {
   async deleteReceipt(@Param('id') id: string): Promise<{ message: string }> {
     await this.receiptService.deleteReceipt(id);
     return { message: 'Receipt deleted successfully' };
+  }
+
+  @Post('test-normalization')
+  @ApiOperation({
+    summary: 'Test product normalization on receipt items',
+    description:
+      'Test endpoint to demonstrate product normalization capabilities. Shows how raw receipt items are normalized, categorized, and matched against existing products.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Normalization test results with detailed breakdown',
+    type: TestNormalizationResponseDto,
+  })
+  async testNormalization(
+    @Body() request: TestNormalizationRequestDto,
+  ): Promise<TestNormalizationResponseDto> {
+    return this.receiptService.testNormalization(request);
   }
 }

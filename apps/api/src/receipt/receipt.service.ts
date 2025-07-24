@@ -1,15 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ReceiptDTO } from '../../../packages/types/dto/receipt';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
-import { Receipt } from '../entities/receipt.entity';
-import { ReceiptItem } from '../entities/receipt-item.entity';
-import { Store } from '../entities/store.entity';
-import { UserService } from '../user/user.service';
-import { StoreService } from '../store/store.service';
-import { ProductService } from '../product/product.service';
+import { ReceiptDTO } from '../../../packages/types/dto/receipt';
 import { Category } from '../entities/category.entity';
+import { ReceiptItem } from '../entities/receipt-item.entity';
+import { Receipt } from '../entities/receipt.entity';
+import { Store } from '../entities/store.entity';
+import { ProductService } from '../product/product.service';
+import { StoreService } from '../store/store.service';
+import { UserService } from '../user/user.service';
+import { ProductNormalizationService } from '../product/product-normalization.service';
+import {
+  NormalizationTestResultDto,
+  TestNormalizationRequestDto,
+  TestNormalizationResponseDto,
+} from './dto/test-normalization-response.dto';
 
 export interface CreateReceiptRequest {
   userId?: string;
@@ -55,6 +61,9 @@ export class ReceiptService {
     private readonly userService: UserService,
     private readonly storeService: StoreService,
     private readonly productService: ProductService,
+    private readonly productNormalizationService: ProductNormalizationService,
+    @InjectRepository(Category)
+    private readonly categoryRepository: Repository<Category>,
   ) {}
 
   async getAllReceipts(limit: number = 50): Promise<ReceiptDTO[]> {
@@ -120,84 +129,65 @@ export class ReceiptService {
   }
 
   async createReceipt(receiptData: CreateReceiptRequest): Promise<ReceiptDTO> {
-    // Start a transaction for creating receipt with items
     return this.receiptRepository.manager.transaction(async (manager) => {
-      // Handle user lookup
       let userSk: string | undefined;
       if (receiptData.userId) {
         const user = await this.userService.getUserById(receiptData.userId);
-        if (user) {
-          userSk = user.id; // This is the UUID from the DTO
-        }
+        if (user) userSk = user.id;
       }
 
-      // Handle store lookup or creation
       let storeSk: string | undefined;
-
       if (receiptData.storeId) {
         const store = await this.storeService.getStoreById(receiptData.storeId);
-        if (store) {
-          storeSk = store.id; // This is the UUID from the DTO
-        }
+        if (store) storeSk = store.id;
       } else if (receiptData.storeName) {
-        // Try to find existing store by name
         const existingStore = await this.storeRepository.findOne({
           where: { name: receiptData.storeName },
         });
-        if (existingStore) {
-          storeSk = existingStore.storeSk;
-        }
+        if (existingStore) storeSk = existingStore.storeSk;
       }
 
-      // Calculate total amount if not provided (for future use)
-      // const totalAmount = receiptData.totalAmount ||
-      //   receiptData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-      // Create receipt
       const receipt = manager.create(Receipt, {
         userSk,
         storeSk,
         imageUrl: receiptData.imageUrl,
         status: 'pending',
-        parsedData: { items: receiptData.items }, // Store original parsed data
+        parsedData: { items: receiptData.items },
         purchaseDate: receiptData.purchaseDate || new Date(),
       });
 
       const savedReceipt = await manager.save(receipt);
 
-      // Create receipt items
       await Promise.all(
         receiptData.items.map(async (itemData) => {
-          // Try to find or create product
           let product = await this.productService.getProductByBarcode(
             itemData.barcode || '',
           );
 
           if (!product) {
             let categoryId: number | undefined;
+
             if (itemData.category) {
-              // Try to find category by name
-              let category = await this.storeRepository.manager.findOne(
-                Category,
-                {
-                  where: { name: itemData.category },
-                },
-              );
+              let category = await this.categoryRepository.findOne({
+                where: [
+                  { category1: itemData.category },
+                  { category2: itemData.category },
+                  { category3: itemData.category },
+                ],
+              });
 
               if (!category) {
-                // Optional: Create category if not found
-                category = this.storeRepository.manager.create(Category, {
-                  name: itemData.category,
-                  slug: itemData.category.toLowerCase().replace(/\s+/g, '-'),
-                  level: 1,
-                  useYn: true,
+                category = this.categoryRepository.create({
+                  category1: itemData.category,
+                  category2: itemData.category,
+                  category3: itemData.category,
                 });
-                category = await this.storeRepository.manager.save(category);
+                category = await this.categoryRepository.save(category);
               }
 
               categoryId = category.id;
             }
-            // Create new product if not found
+
             product = await this.productService.createProduct({
               name: itemData.productName,
               barcode: itemData.barcode,
@@ -217,14 +207,18 @@ export class ReceiptService {
         }),
       );
 
-      // Update receipt status to done after successful processing
       savedReceipt.status = 'done';
       await manager.save(savedReceipt);
 
-      // Return the complete receipt with items
       const completeReceipt = await manager.findOne(Receipt, {
         where: { id: savedReceipt.id },
-        relations: ['user', 'store', 'items', 'items.product'],
+        relations: [
+          'user',
+          'store',
+          'items',
+          'items.product',
+          'items.product.categoryEntity',
+        ],
       });
 
       return this.mapReceiptToDTO(completeReceipt!);
@@ -445,6 +439,107 @@ export class ReceiptService {
     });
 
     return this.mapReceiptToDTO(completeReceipt!);
+  }
+
+  /**
+   * Test product normalization on receipt items
+   * Demonstrates how raw receipt items are normalized, categorized, and matched
+   */
+  async testNormalization(
+    request: TestNormalizationRequestDto,
+  ): Promise<TestNormalizationResponseDto> {
+    const { storeName, items } = request;
+    const processedAt = new Date().toISOString();
+
+    // Process each item through the normalization service
+    const normalizationResults: NormalizationTestResultDto[] =
+      await Promise.all(
+        items.map(async (item) => {
+          // Normalize the product
+          const normalizationResult =
+            await this.productNormalizationService.normalizeProduct({
+              merchant: storeName,
+              rawName: item.productName,
+              itemCode: item.barcode,
+              useAI: true, // Enable AI for comprehensive testing
+            });
+
+          // Calculate line total
+          const lineTotal = item.price * item.quantity;
+
+          // Build the test result
+          const testResult: NormalizationTestResultDto = {
+            originalName: item.productName,
+            normalizedName: normalizationResult.normalizedName,
+            brand: normalizationResult.brand,
+            category: normalizationResult.category,
+            confidenceScore: normalizationResult.confidenceScore,
+            isDiscount: normalizationResult.isDiscount,
+            isAdjustment: normalizationResult.isAdjustment,
+            itemCode: item.barcode,
+            normalizationMethod: normalizationResult.method || 'fallback',
+            price: item.price,
+            quantity: item.quantity,
+            lineTotal,
+          };
+
+          // Add similar products if found
+          if (
+            normalizationResult.similarProducts &&
+            normalizationResult.similarProducts.length > 0
+          ) {
+            testResult.similarProducts =
+              normalizationResult.similarProducts.map((similar) => ({
+                productId: similar.productId,
+                similarity: similar.similarity,
+                normalizedName: similar.normalizedName,
+                merchant: similar.merchant,
+              }));
+          }
+
+          return testResult;
+        }),
+      );
+
+    // Calculate summary statistics
+    const totalItems = normalizationResults.length;
+    const productItems = normalizationResults.filter(
+      (r) => !r.isDiscount && !r.isAdjustment,
+    ).length;
+    const discountItems = normalizationResults.filter(
+      (r) => r.isDiscount,
+    ).length;
+    const adjustmentItems = normalizationResults.filter(
+      (r) => r.isAdjustment,
+    ).length;
+
+    // Calculate average confidence (excluding discounts/adjustments)
+    const productConfidenceScores = normalizationResults
+      .filter((r) => !r.isDiscount && !r.isAdjustment)
+      .map((r) => r.confidenceScore);
+    const averageConfidence =
+      productConfidenceScores.length > 0
+        ? productConfidenceScores.reduce((sum, score) => sum + score, 0) /
+          productConfidenceScores.length
+        : 0;
+
+    // Calculate total receipt amount
+    const totalAmount = normalizationResults.reduce(
+      (sum, result) => sum + result.lineTotal,
+      0,
+    );
+
+    return {
+      storeName,
+      totalItems,
+      productItems,
+      discountItems,
+      adjustmentItems,
+      averageConfidence: Math.round(averageConfidence * 100) / 100, // Round to 2 decimal places
+      totalAmount: Math.round(totalAmount * 100) / 100, // Round to 2 decimal places
+      items: normalizationResults,
+      processedAt,
+    };
   }
 
   // PRIVATE HELPER METHODS

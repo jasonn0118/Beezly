@@ -12,69 +12,174 @@ export async function seedCategories(dataSource: DataSource) {
   }
 
   const categories = [
-    // Main grocery categories
-    { name: 'Produce', description: 'Fresh fruits and vegetables' },
+    { category1: 'Produce', category2: 'Fruits', category3: 'Citrus' },
+    { category1: 'Produce', category2: 'Fruits', category3: 'Berries' },
     {
-      name: 'Meat & Seafood',
-      description: 'Fresh and frozen meats and seafood',
-    },
-    { name: 'Dairy & Eggs', description: 'Milk, cheese, yogurt, and eggs' },
-    {
-      name: 'Bakery & Bread',
-      description: 'Fresh bread, baked goods, and pastries',
+      category1: 'Produce',
+      category2: 'Vegetables',
+      category3: 'Leafy Greens',
     },
     {
-      name: 'Pantry & Dry Goods',
-      description: 'Canned goods, pasta, rice, and cereals',
+      category1: 'Produce',
+      category2: 'Vegetables',
+      category3: 'Root Vegetables',
+    },
+
+    { category1: 'Meat & Seafood', category2: 'Meat', category3: 'Beef' },
+    { category1: 'Meat & Seafood', category2: 'Meat', category3: 'Poultry' },
+    { category1: 'Meat & Seafood', category2: 'Seafood', category3: 'Fish' },
+    {
+      category1: 'Meat & Seafood',
+      category2: 'Seafood',
+      category3: 'Shellfish',
+    },
+
+    { category1: 'Dairy & Eggs', category2: 'Dairy', category3: 'Milk' },
+    { category1: 'Dairy & Eggs', category2: 'Dairy', category3: 'Cheese' },
+    { category1: 'Dairy & Eggs', category2: 'Eggs', category3: 'Eggs' },
+
+    {
+      category1: 'Bakery & Bread',
+      category2: 'Bread',
+      category3: 'White Bread',
     },
     {
-      name: 'Beverages',
-      description: 'Soft drinks, juices, water, and coffee',
+      category1: 'Bakery & Bread',
+      category2: 'Bread',
+      category3: 'Whole Grain',
     },
     {
-      name: 'Frozen Foods',
-      description: 'Frozen meals, vegetables, and desserts',
+      category1: 'Bakery & Bread',
+      category2: 'Pastries',
+      category3: 'Croissants',
+    },
+
+    {
+      category1: 'Pantry & Dry Goods',
+      category2: 'Pasta & Rice',
+      category3: 'Spaghetti',
     },
     {
-      name: 'Snacks & Candy',
-      description: 'Chips, cookies, nuts, and confectionery',
+      category1: 'Pantry & Dry Goods',
+      category2: 'Canned Goods',
+      category3: 'Beans',
     },
     {
-      name: 'Health & Beauty',
-      description: 'Personal care, vitamins, and cosmetics',
+      category1: 'Pantry & Dry Goods',
+      category2: 'Cereals',
+      category3: 'Granola',
+    },
+
+    { category1: 'Beverages', category2: 'Soft Drinks', category3: 'Cola' },
+    { category1: 'Beverages', category2: 'Juices', category3: 'Orange Juice' },
+    {
+      category1: 'Beverages',
+      category2: 'Coffee & Tea',
+      category3: 'Ground Coffee',
+    },
+
+    {
+      category1: 'Frozen Foods',
+      category2: 'Frozen Meals',
+      category3: 'Pizza',
     },
     {
-      name: 'Household & Cleaning',
-      description: 'Cleaning supplies and paper products',
+      category1: 'Frozen Foods',
+      category2: 'Frozen Vegetables',
+      category3: null,
+    },
+
+    { category1: 'Snacks & Candy', category2: 'Snacks', category3: 'Chips' },
+    { category1: 'Snacks & Candy', category2: 'Candy', category3: 'Chocolate' },
+
+    {
+      category1: 'Health & Beauty',
+      category2: 'Personal Care',
+      category3: 'Soap',
     },
     {
-      name: 'Baby & Kids',
-      description: "Baby food, diapers, and children's products",
+      category1: 'Health & Beauty',
+      category2: 'Vitamins',
+      category3: 'Multivitamins',
     },
-    { name: 'Pet Care', description: 'Pet food, treats, and supplies' },
+
     {
-      name: 'Pharmacy',
-      description: 'Over-the-counter medications and first aid',
-    },
-    {
-      name: 'Deli & Prepared Foods',
-      description: 'Ready-to-eat meals and deli meats',
+      category1: 'Household & Cleaning',
+      category2: 'Cleaning Supplies',
+      category3: 'Disinfectant',
     },
     {
-      name: 'International Foods',
-      description: 'Ethnic and specialty international products',
+      category1: 'Household & Cleaning',
+      category2: 'Paper Products',
+      category3: 'Toilet Paper',
+    },
+
+    { category1: 'Baby & Kids', category2: 'Baby Food', category3: 'Formula' },
+    { category1: 'Baby & Kids', category2: 'Diapers', category3: 'Newborn' },
+
+    { category1: 'Pet Care', category2: 'Pet Food', category3: 'Dog Food' },
+    { category1: 'Pet Care', category2: 'Pet Supplies', category3: 'Litter' },
+
+    {
+      category1: 'Pharmacy',
+      category2: 'OTC Medications',
+      category3: 'Pain Relief',
+    },
+    { category1: 'Pharmacy', category2: 'First Aid', category3: 'Bandages' },
+
+    {
+      category1: 'Deli & Prepared Foods',
+      category2: 'Deli Meats',
+      category3: 'Ham',
     },
     {
-      name: 'Organic & Natural',
-      description: 'Organic and natural food products',
+      category1: 'Deli & Prepared Foods',
+      category2: 'Prepared Meals',
+      category3: 'Salad',
+    },
+
+    {
+      category1: 'International Foods',
+      category2: 'Asian',
+      category3: 'Soy Sauce',
     },
     {
-      name: 'Spices & Condiments',
-      description: 'Spices, sauces, and cooking condiments',
+      category1: 'International Foods',
+      category2: 'Mexican',
+      category3: 'Tortillas',
+    },
+
+    {
+      category1: 'Organic & Natural',
+      category2: 'Produce',
+      category3: 'Organic Apples',
     },
     {
-      name: 'Baking & Desserts',
-      description: 'Baking ingredients and dessert mixes',
+      category1: 'Organic & Natural',
+      category2: 'Pantry',
+      category3: 'Organic Beans',
+    },
+
+    {
+      category1: 'Spices & Condiments',
+      category2: 'Spices',
+      category3: 'Cumin',
+    },
+    {
+      category1: 'Spices & Condiments',
+      category2: 'Sauces',
+      category3: 'Hot Sauce',
+    },
+
+    {
+      category1: 'Baking & Desserts',
+      category2: 'Baking Ingredients',
+      category3: 'Flour',
+    },
+    {
+      category1: 'Baking & Desserts',
+      category2: 'Desserts',
+      category3: 'Cake Mix',
     },
   ];
 

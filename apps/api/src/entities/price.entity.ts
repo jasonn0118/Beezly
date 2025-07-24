@@ -3,6 +3,13 @@ import { BaseEntity } from './base.entity';
 import { Product } from './product.entity';
 import { Store } from './store.entity';
 
+export enum DiscountType {
+  PERCENTAGE = 'percentage',
+  FIXED_AMOUNT = 'fixed_amount',
+  COUPON = 'coupon',
+  ADJUSTMENT = 'adjustment',
+}
+
 @Entity('Price')
 export class Price extends BaseEntity {
   @Column({ name: 'price_sk', unique: true })
@@ -44,4 +51,21 @@ export class Price extends BaseEntity {
 
   @Column({ name: 'flagged_count', type: 'int', nullable: true })
   flaggedCount?: number;
+
+  @Column({ name: 'is_discount', type: 'boolean', default: false })
+  isDiscount: boolean;
+
+  @Column({
+    name: 'discount_type',
+    type: 'enum',
+    enum: DiscountType,
+    nullable: true,
+  })
+  discountType?: DiscountType;
+
+  @Column({ name: 'original_price', type: 'numeric', nullable: true })
+  originalPrice?: number;
+
+  @Column({ name: 'discount_reason', type: 'text', nullable: true })
+  discountReason?: string;
 }

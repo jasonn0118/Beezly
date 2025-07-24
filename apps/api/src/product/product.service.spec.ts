@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Category } from '../entities/category.entity';
 import { Product } from '../entities/product.entity';
+import { Store } from '../entities/store.entity';
+import { Price } from '../entities/price.entity';
 import { ProductService } from './product.service';
 
 describe('ProductService', () => {
@@ -22,6 +24,19 @@ describe('ProductService', () => {
     save: jest.fn(),
   };
 
+  const mockStoreRepository = {
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  };
+
+  const mockPriceRepository = {
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -35,6 +50,14 @@ describe('ProductService', () => {
         {
           provide: getRepositoryToken(Category),
           useValue: mockCategoryRepository,
+        },
+        {
+          provide: getRepositoryToken(Store),
+          useValue: mockStoreRepository,
+        },
+        {
+          provide: getRepositoryToken(Price),
+          useValue: mockPriceRepository,
         },
       ],
     }).compile();

@@ -42,6 +42,44 @@ export class CategoryController {
     return this.categoryService.findOne(Number(id));
   }
 
+  @Get('distinct/category1')
+  @ApiOperation({ summary: 'Get distinct category1 values' })
+  @ApiResponse({
+    status: 200,
+    description: 'Successfully retrieved category1 list',
+  })
+  getDistinctCategory1() {
+    return this.categoryService.getDistinctCategory1();
+  }
+
+  @Get('distinct/category2/:category1')
+  @ApiOperation({
+    summary: 'Get distinct category2 values for a given category1',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Successfully retrieved category2 list',
+  })
+  getDistinctCategory2(@Param('category1') category1: string) {
+    return this.categoryService.getDistinctCategory2(category1);
+  }
+
+  @Get('distinct/category3/:category1/:category2')
+  @ApiOperation({
+    summary:
+      'Get distinct category3 values for a given category1 and category2',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Successfully retrieved category3 list',
+  })
+  getDistinctCategory3(
+    @Param('category1') category1: string,
+    @Param('category2') category2: string,
+  ) {
+    return this.categoryService.getDistinctCategory3(category1, category2);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create new category' })
   @ApiResponse({ status: 201, description: 'Category successfully created' })
