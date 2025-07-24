@@ -819,19 +819,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       return existingProduct;
     }
 
-    // Generate embedding for the normalized name
-    let embedding: number[] | undefined;
-    try {
-      embedding = await this.vectorEmbeddingService.generateEmbedding(
-        result.normalizedName,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to generate embedding for ${result.normalizedName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-      // Continue without embedding
-    }
-
+    // Create product without embedding first for faster response
     const normalizedProduct = this.normalizedProductRepository.create({
       rawName,
       merchant,
@@ -840,7 +828,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       brand: result.brand,
       category: result.category,
       confidenceScore: result.confidenceScore,
-      embedding,
+      embedding: undefined, // Will be generated asynchronously
       isDiscount: result.isDiscount,
       isAdjustment: result.isAdjustment,
       matchCount: 1,
@@ -848,7 +836,13 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     });
 
     try {
-      return await this.normalizedProductRepository.save(normalizedProduct);
+      const savedProduct =
+        await this.normalizedProductRepository.save(normalizedProduct);
+
+      // Generate embedding asynchronously in the background
+      this.generateAndUpdateEmbeddingAsync(savedProduct);
+
+      return savedProduct;
     } catch (error: any) {
       // Handle duplicate key constraint violation as fallback
       /* eslint-disable @typescript-eslint/no-unsafe-member-access */
@@ -959,6 +953,53 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     }
 
     return false;
+  }
+
+  /**
+   * Generate embedding asynchronously and update the product in the background
+   */
+  private generateAndUpdateEmbeddingAsync(product: NormalizedProduct): void {
+    // Use setImmediate to make this truly asynchronous and non-blocking
+    setImmediate(() => {
+      this.performEmbeddingGeneration(product).catch((error) => {
+        this.logger.warn(
+          `Background embedding generation failed for ${product.normalizedName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      });
+    });
+  }
+
+  /**
+   * Perform the actual embedding generation and update
+   */
+  private async performEmbeddingGeneration(
+    product: NormalizedProduct,
+  ): Promise<void> {
+    try {
+      this.logger.debug(
+        `Generating embedding asynchronously for product: ${product.normalizedName}`,
+      );
+
+      const embedding = await this.vectorEmbeddingService.generateEmbedding(
+        product.normalizedName,
+      );
+
+      // Update the product with the generated embedding
+      await this.normalizedProductRepository.update(
+        { normalizedProductSk: product.normalizedProductSk },
+        { embedding },
+      );
+
+      this.logger.debug(
+        `Successfully updated embedding for product: ${product.normalizedName}`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to generate/update embedding for ${product.normalizedName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      // Re-throw so the caller can handle it
+      throw error;
+    }
   }
 
   /**

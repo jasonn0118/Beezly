@@ -19,6 +19,10 @@ export interface StoreEmbeddingSearchOptions {
   includeAdjustments?: boolean;
 }
 
+interface SimilarityQueryRawResult {
+  similarity: string | number;
+}
+
 @Injectable()
 export class VectorEmbeddingService {
   private readonly logger = new Logger(VectorEmbeddingService.name);
@@ -174,6 +178,135 @@ export class VectorEmbeddingService {
   }
 
   /**
+   * Batch version of findSimilarProductsEnhanced for processing multiple queries at once
+   * Much faster than individual calls due to batch embedding generation
+   */
+  async batchFindSimilarProducts(
+    queries: { queryText: string; options: StoreEmbeddingSearchOptions }[],
+  ): Promise<EmbeddingResult[][]> {
+    if (queries.length === 0) {
+      return [];
+    }
+
+    try {
+      // Extract unique query texts for batch embedding generation
+      const uniqueTexts = [...new Set(queries.map((q) => q.queryText))];
+
+      // Generate embeddings for all unique texts in batch
+      const embeddingResponses =
+        await this.openAIService.generateBatchEmbeddings(
+          uniqueTexts,
+          'text-embedding-3-small',
+        );
+
+      // Create a map from text to embedding
+      const embeddingMap = new Map<string, number[]>();
+      uniqueTexts.forEach((text, index) => {
+        const embeddingResponse = embeddingResponses[index];
+        if (embeddingResponse?.embedding) {
+          embeddingMap.set(text, embeddingResponse.embedding);
+        }
+      });
+
+      // Process each query using the pre-generated embeddings
+      const results = await Promise.all(
+        queries.map(async ({ queryText, options }) => {
+          const queryEmbedding = embeddingMap.get(queryText);
+          if (!queryEmbedding) {
+            return [];
+          }
+
+          return await this.findSimilarProductsWithEmbedding(
+            queryEmbedding,
+            options,
+          );
+        }),
+      );
+
+      return results;
+    } catch (error) {
+      this.logger.error('Batch similarity search failed', error);
+      // Fallback to individual calls if batch fails
+      return await Promise.all(
+        queries.map(({ options }) => this.findSimilarProductsEnhanced(options)),
+      );
+    }
+  }
+
+  /**
+   * Internal method to search using pre-generated embedding
+   */
+  private async findSimilarProductsWithEmbedding(
+    queryEmbedding: number[],
+    options: StoreEmbeddingSearchOptions,
+  ): Promise<EmbeddingResult[]> {
+    const {
+      merchant,
+      similarityThreshold = 0.8,
+      limit = 5,
+      includeDiscounts = false,
+      includeAdjustments = false,
+    } = options;
+
+    // Build query
+    let query = this.normalizedProductRepository
+      .createQueryBuilder('np')
+      .select([
+        'np.normalizedProductSk',
+        'np.rawName',
+        'np.merchant',
+        'np.itemCode',
+        'np.normalizedName',
+        'np.brand',
+        'np.category',
+        'np.confidenceScore',
+        'np.embedding',
+        'np.isDiscount',
+        'np.isAdjustment',
+        'np.matchCount',
+        'np.lastMatchedAt',
+        'np.createdAt',
+        'np.updatedAt',
+      ])
+      .addSelect(`1 - (np.embedding <=> :queryEmbedding::vector)`, 'similarity')
+      .where('np.merchant = :merchant', { merchant })
+      .andWhere('np.embedding IS NOT NULL')
+      .andWhere(
+        `1 - (np.embedding <=> :queryEmbedding::vector) >= :threshold`,
+        {
+          queryEmbedding: `[${queryEmbedding.join(',')}]`,
+          threshold: similarityThreshold,
+        },
+      )
+      .orderBy('similarity', 'DESC')
+      .limit(limit);
+
+    // Apply filters
+    if (!includeDiscounts) {
+      query = query.andWhere('np.isDiscount = false');
+    }
+
+    if (!includeAdjustments) {
+      query = query.andWhere('np.isAdjustment = false');
+    }
+
+    const results = await query.getRawAndEntities();
+
+    return results.entities.map((entity, index) => {
+      const rawResult = results.raw[index] as SimilarityQueryRawResult;
+      const similarityValue = rawResult?.similarity
+        ? String(rawResult.similarity)
+        : '0';
+
+      return {
+        productId: entity.normalizedProductSk,
+        similarity: parseFloat(similarityValue),
+        normalizedProduct: entity,
+      };
+    });
+  }
+
+  /**
    * Enhanced similar product search with more options
    */
   async findSimilarProductsEnhanced(
@@ -239,11 +372,18 @@ export class VectorEmbeddingService {
 
     const results = await query.getRawAndEntities();
 
-    return results.entities.map((entity, index) => ({
-      productId: entity.normalizedProductSk,
-      similarity: (results.raw[index] as { similarity: number }).similarity,
-      normalizedProduct: entity,
-    }));
+    return results.entities.map((entity, index) => {
+      const rawResult = results.raw[index] as SimilarityQueryRawResult;
+      const similarityValue = rawResult?.similarity
+        ? String(rawResult.similarity)
+        : '0';
+
+      return {
+        productId: entity.normalizedProductSk,
+        similarity: parseFloat(similarityValue),
+        normalizedProduct: entity,
+      };
+    });
   }
 
   /**

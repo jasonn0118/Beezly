@@ -590,38 +590,58 @@ export class OcrService {
 
   /**
    * Perform embedding lookup for all receipt items before normalization
+   * Uses batch processing for maximum performance
    */
   private async performEmbeddingLookupForItems(
     items: OcrItem[],
     merchant: string,
   ): Promise<EmbeddingLookupResult[]> {
-    const lookupResults: EmbeddingLookupResult[] = [];
+    // Prepare batch queries - filter out discount/adjustment items
+    const queries: { index: number; queryText: string; options: any }[] = [];
+    const results: EmbeddingLookupResult[] = new Array(items.length);
 
-    for (const item of items) {
-      try {
-        // Skip obvious discount/adjustment items to avoid unnecessary lookups
-        if (this.isLikelyDiscountOrAdjustment(item.name)) {
-          lookupResults.push({
-            found: false,
-            method: 'no_match',
-          });
-          continue;
-        }
-
-        // Search for similar products using embeddings
-        const similarProducts =
-          await this.vectorEmbeddingService.findSimilarProductsEnhanced({
+    // First pass: identify non-discount items for batch processing
+    items.forEach((item, index) => {
+      if (this.isLikelyDiscountOrAdjustment(item.name)) {
+        results[index] = {
+          found: false,
+          method: 'no_match',
+        };
+      } else {
+        queries.push({
+          index,
+          queryText: item.name,
+          options: {
             queryText: item.name,
             merchant,
-            similarityThreshold: 0.85, // High threshold for confidence
-            limit: 1, // We only need the best match
+            similarityThreshold: 0.85,
+            limit: 1,
             includeDiscounts: false,
             includeAdjustments: false,
-          });
+          },
+        });
+      }
+    });
 
-        if (similarProducts.length > 0) {
+    // If no items need embedding lookup, return early
+    if (queries.length === 0) {
+      return results;
+    }
+
+    try {
+      // Use batch processing for all embedding lookups
+      const batchResults =
+        await this.vectorEmbeddingService.batchFindSimilarProducts(
+          queries.map((q) => ({ queryText: q.queryText, options: q.options })),
+        );
+
+      // Process batch results and fill in the results array
+      queries.forEach((query, batchIndex) => {
+        const similarProducts = batchResults[batchIndex];
+
+        if (similarProducts && similarProducts.length > 0) {
           const bestMatch = similarProducts[0];
-          lookupResults.push({
+          results[query.index] = {
             found: true,
             normalized_name: bestMatch.normalizedProduct.normalizedName,
             brand: bestMatch.normalizedProduct.brand,
@@ -630,24 +650,26 @@ export class OcrService {
             similarity_score: bestMatch.similarity,
             method: 'embedding_match',
             raw_name: bestMatch.normalizedProduct.rawName,
-          });
+          };
         } else {
-          lookupResults.push({
+          results[query.index] = {
             found: false,
             method: 'no_match',
-          });
+          };
         }
-      } catch (error) {
-        // Log error but continue processing
-        console.warn(`Embedding lookup failed for item "${item.name}":`, error);
-        lookupResults.push({
+      });
+    } catch (error) {
+      // Log error and mark all remaining items as no_match
+      console.warn('Batch embedding lookup failed:', error);
+      queries.forEach((query) => {
+        results[query.index] = {
           found: false,
           method: 'no_match',
-        });
-      }
+        };
+      });
     }
 
-    return lookupResults;
+    return results;
   }
 
   /**
