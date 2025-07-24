@@ -7,6 +7,7 @@ import {
   ProductNormalizationService,
   NormalizationResult,
 } from '../product/product-normalization.service';
+import { VectorEmbeddingService } from '../product/vector-embedding.service';
 
 export interface OcrItem {
   name: string;
@@ -24,6 +25,17 @@ export interface DiscountInfo {
   link_confidence: number;
 }
 
+export interface EmbeddingLookupResult {
+  found: boolean;
+  normalized_name?: string;
+  brand?: string;
+  category?: string;
+  confidence_score?: number;
+  similarity_score?: number;
+  method: 'embedding_match' | 'no_match';
+  raw_name?: string;
+}
+
 export interface EnhancedOcrItem extends OcrItem {
   normalized_name: string;
   brand?: string;
@@ -32,6 +44,7 @@ export interface EnhancedOcrItem extends OcrItem {
   is_discount: boolean;
   is_adjustment: boolean;
   normalization_method: string;
+  embedding_lookup?: EmbeddingLookupResult; // Results from embedding search
   linked_discounts?: DiscountInfo[]; // Discounts that apply to this product
   applied_to_product_id?: string; // If this is a discount, which product it applies to
   original_price_numeric?: number; // For calculation purposes
@@ -77,6 +90,7 @@ export class OcrService {
   constructor(
     private readonly ocrAzureService: OcrAzureService,
     private readonly productNormalizationService: ProductNormalizationService,
+    private readonly vectorEmbeddingService: VectorEmbeddingService,
   ) {}
 
   /**
@@ -284,7 +298,13 @@ export class OcrService {
       // Step 1: Get OCR results
       const ocrResult = await this.processReceipt(buffer, endpoint, apiKey);
 
-      // Step 2: Prepare items for discount linking
+      // Step 2: Perform embedding lookup for all items first
+      const embeddingLookups = await this.performEmbeddingLookupForItems(
+        ocrResult.items,
+        ocrResult.merchant,
+      );
+
+      // Step 3: Prepare items for discount linking
       const itemsWithIndex = ocrResult.items.map((item, index) => ({
         name: item.name,
         price: item.price,
@@ -293,17 +313,34 @@ export class OcrService {
         index: index,
       }));
 
-      // Step 3: Normalize items with discount linking
+      // Step 4: Normalize items with discount linking
       const normalizedResults =
         await this.productNormalizationService.normalizeReceiptWithDiscountLinking(
           itemsWithIndex,
           ocrResult.merchant,
         );
 
-      // Step 4: Convert to EnhancedOcrItem format and filter out linked discounts
+      // Step 5: Convert to EnhancedOcrItem format and filter out linked discounts
       const enhancedItems: EnhancedOcrItem[] = ocrResult.items
         .map((originalItem, index): EnhancedOcrItem | null => {
           const normalization = normalizedResults[index];
+          const embeddingLookup = embeddingLookups[index];
+
+          // Use embedding result if found and has high confidence
+          let finalNormalization = normalization;
+          if (
+            embeddingLookup.found &&
+            this.shouldUseEmbeddingResult(embeddingLookup, normalization)
+          ) {
+            finalNormalization = {
+              ...normalization,
+              normalizedName: embeddingLookup.normalized_name!,
+              brand: embeddingLookup.brand,
+              category: embeddingLookup.category,
+              confidenceScore: embeddingLookup.confidence_score!, // Use original normalization confidence, not similarity
+              method: 'embedding_lookup',
+            };
+          }
           // Use improved price parsing that handles discount formats
           const parsedPrice = this.productNormalizationService.parsePrice(
             originalItem.price,
@@ -314,8 +351,8 @@ export class OcrService {
           // For discount/fee items that have been linked to products,
           // we'll filter them out unless they couldn't be linked
           if (
-            (normalization.isDiscount || normalization.isFee) &&
-            normalization.appliedToProductId
+            (finalNormalization.isDiscount || finalNormalization.isFee) &&
+            finalNormalization.appliedToProductId
           ) {
             // This discount/fee was successfully linked to a product,
             // so we don't show it as a separate item
@@ -325,14 +362,14 @@ export class OcrService {
           // Calculate final price after discounts and fees
           let finalPrice = originalPrice;
           if (
-            normalization.linkedDiscounts &&
-            normalization.linkedDiscounts.length > 0
+            finalNormalization.linkedDiscounts &&
+            finalNormalization.linkedDiscounts.length > 0
           ) {
             // Separate discounts (negative) from fees (positive)
             let totalDiscount = 0;
             let totalFees = 0;
 
-            normalization.linkedDiscounts.forEach((discount) => {
+            finalNormalization.linkedDiscounts.forEach((discount) => {
               // Check if this is a fee by looking at the description
               if (
                 discount.discountDescription.match(
@@ -350,14 +387,15 @@ export class OcrService {
 
           return {
             ...originalItem,
-            normalized_name: normalization.normalizedName,
-            brand: normalization.brand,
-            category: normalization.category,
-            confidence_score: normalization.confidenceScore,
-            is_discount: normalization.isDiscount,
-            is_adjustment: normalization.isAdjustment,
-            normalization_method: normalization.method || 'fallback',
-            linked_discounts: normalization.linkedDiscounts?.map(
+            normalized_name: finalNormalization.normalizedName,
+            brand: finalNormalization.brand,
+            category: finalNormalization.category,
+            confidence_score: finalNormalization.confidenceScore,
+            is_discount: finalNormalization.isDiscount,
+            is_adjustment: finalNormalization.isAdjustment,
+            normalization_method: finalNormalization.method || 'fallback',
+            embedding_lookup: embeddingLookup,
+            linked_discounts: finalNormalization.linkedDiscounts?.map(
               (discount) => ({
                 discount_id: discount.discountId,
                 discount_amount: discount.discountAmount,
@@ -366,7 +404,7 @@ export class OcrService {
                 link_confidence: discount.confidence,
               }),
             ),
-            applied_to_product_id: normalization.appliedToProductId,
+            applied_to_product_id: finalNormalization.appliedToProductId,
             original_price_numeric: originalPrice,
             final_price: finalPrice,
             price_format_info: {
@@ -548,5 +586,128 @@ export class OcrService {
       total_discount_amount: Math.round(totalDiscountAmount * 100) / 100, // Round to 2 decimal places
       products_with_discounts: productsWithDiscounts,
     };
+  }
+
+  /**
+   * Perform embedding lookup for all receipt items before normalization
+   */
+  private async performEmbeddingLookupForItems(
+    items: OcrItem[],
+    merchant: string,
+  ): Promise<EmbeddingLookupResult[]> {
+    const lookupResults: EmbeddingLookupResult[] = [];
+
+    for (const item of items) {
+      try {
+        // Skip obvious discount/adjustment items to avoid unnecessary lookups
+        if (this.isLikelyDiscountOrAdjustment(item.name)) {
+          lookupResults.push({
+            found: false,
+            method: 'no_match',
+          });
+          continue;
+        }
+
+        // Search for similar products using embeddings
+        const similarProducts =
+          await this.vectorEmbeddingService.findSimilarProductsEnhanced({
+            queryText: item.name,
+            merchant,
+            similarityThreshold: 0.85, // High threshold for confidence
+            limit: 1, // We only need the best match
+            includeDiscounts: false,
+            includeAdjustments: false,
+          });
+
+        if (similarProducts.length > 0) {
+          const bestMatch = similarProducts[0];
+          lookupResults.push({
+            found: true,
+            normalized_name: bestMatch.normalizedProduct.normalizedName,
+            brand: bestMatch.normalizedProduct.brand,
+            category: bestMatch.normalizedProduct.category,
+            confidence_score: bestMatch.normalizedProduct.confidenceScore,
+            similarity_score: bestMatch.similarity,
+            method: 'embedding_match',
+            raw_name: bestMatch.normalizedProduct.rawName,
+          });
+        } else {
+          lookupResults.push({
+            found: false,
+            method: 'no_match',
+          });
+        }
+      } catch (error) {
+        // Log error but continue processing
+        console.warn(`Embedding lookup failed for item "${item.name}":`, error);
+        lookupResults.push({
+          found: false,
+          method: 'no_match',
+        });
+      }
+    }
+
+    return lookupResults;
+  }
+
+  /**
+   * Determine if we should use the embedding result over the normalization result
+   */
+  private shouldUseEmbeddingResult(
+    embeddingResult: EmbeddingLookupResult,
+    normalizationResult: NormalizationResult,
+  ): boolean {
+    // Don't use embedding for discount/adjustment items
+    if (normalizationResult.isDiscount || normalizationResult.isAdjustment) {
+      return false;
+    }
+
+    // Use embedding result if:
+    // 1. Similarity score is very high (>= 0.9)
+    // 2. OR similarity score is high (>= 0.85) AND normalization confidence is low (< 0.7)
+    // 3. OR normalization method is fallback and similarity is decent (>= 0.8)
+
+    const similarityScore = embeddingResult.similarity_score || 0;
+    const normalizationConfidence = normalizationResult.confidenceScore;
+    const normalizationMethod = normalizationResult.method;
+
+    // Very high similarity - always use embedding
+    if (similarityScore >= 0.9) {
+      return true;
+    }
+
+    // High similarity with low normalization confidence
+    if (similarityScore >= 0.85 && normalizationConfidence < 0.7) {
+      return true;
+    }
+
+    // Fallback method with decent similarity
+    if (normalizationMethod === 'fallback' && similarityScore >= 0.8) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Quick check if an item name looks like a discount or adjustment
+   */
+  private isLikelyDiscountOrAdjustment(itemName: string): boolean {
+    const name = itemName.toLowerCase();
+
+    // Common discount/adjustment patterns
+    const patterns = [
+      /^tpd\//, // TPD/ pattern
+      /discount/, // Contains discount
+      /coupon/, // Contains coupon
+      /adjustment/, // Contains adjustment
+      /refund/, // Contains refund
+      /credit/, // Contains credit
+      /tax\s*(adj|adjustment)/, // Tax adjustment
+      /^-/, // Starts with minus sign
+      /-\s*[a-z]*$/, // Ends with dash and letters
+    ];
+
+    return patterns.some((pattern) => pattern.test(name));
   }
 }

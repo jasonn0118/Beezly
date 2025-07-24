@@ -23,6 +23,7 @@ import {
   UserScore,
   VerificationLogs,
 } from './entities';
+import { NormalizedProduct } from './entities/normalized-product.entity';
 import { OcrModule } from './ocr/ocr.module';
 import { PriceModule } from './price/price.module';
 import { ProductModule } from './product/product.module';
@@ -80,6 +81,7 @@ import { UserModule } from './user/user.module';
           UserScore,
           Price,
           VerificationLogs,
+          NormalizedProduct,
         ],
         synchronize: process.env.NODE_ENV === 'test', // Only synchronize for tests, use migrations for dev/prod
         logging: process.env.DB_LOGGING === 'true',

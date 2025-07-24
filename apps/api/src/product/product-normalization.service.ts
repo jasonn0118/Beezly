@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { NormalizedProduct } from '../entities/normalized-product.entity';
 import { OpenAIService } from './openai.service';
 import { StorePatternMatcher } from './store-patterns.config';
+import { VectorEmbeddingService } from './vector-embedding.service';
 
 export interface ParsedPrice {
   amount: number;
@@ -247,6 +248,7 @@ export class ProductNormalizationService {
     @InjectRepository(NormalizedProduct)
     private readonly normalizedProductRepository: Repository<NormalizedProduct>,
     private readonly openAIService: OpenAIService,
+    private readonly vectorEmbeddingService: VectorEmbeddingService,
   ) {}
 
   /**
@@ -255,7 +257,13 @@ export class ProductNormalizationService {
   async normalizeProduct(
     options: ProductNormalizationOptions,
   ): Promise<NormalizationResult> {
-    const { merchant, rawName, itemCode, useAI = true } = options;
+    const {
+      merchant,
+      rawName,
+      itemCode,
+      useAI = true,
+      similarityThreshold = 0.85,
+    } = options;
 
     this.logger.debug(`Normalizing product: ${rawName} from ${merchant}`);
 
@@ -282,43 +290,66 @@ export class ProductNormalizationService {
             : 'fee_detected',
       };
 
-      // Store the discount/adjustment mapping
-      // TODO: Enable when entity is properly loaded
-      // await this.storeNormalizationResult(merchant, rawName, result);
-      return Promise.resolve(result);
+      // Store the discount/adjustment mapping with embedding
+      await this.storeNormalizationResult(merchant, rawName, result);
+      return result;
     }
 
     // Step 3: Check for exact match
-    // TODO: Enable when entity is properly loaded
-    // const exactMatch = await this.findExactMatch(rawName, merchant);
-    // if (exactMatch) {
-    //   await this.updateMatchingStatistics(exactMatch);
-    //   const result = this.convertEntityToResult(exactMatch);
-    //   result.method = 'exact_match';
-    //   return result;
-    // }
+    const exactMatch = await this.findExactMatch(rawName, merchant);
+    if (exactMatch) {
+      await this.updateMatchingStatistics(exactMatch);
+      const result = this.convertEntityToResult(exactMatch);
+      result.method = 'exact_match';
+      return result;
+    }
 
-    // Step 4: Check for similar products (semantic similarity)
-    // TODO: Enable when entity is properly loaded
-    // const similarProducts = await this.findSimilarProducts(
-    //   cleanedName,
-    //   merchant,
-    //   similarityThreshold,
-    // );
-    // if (similarProducts.length > 0) {
-    //   const bestMatch = similarProducts[0];
-    //   await this.updateMatchingStatistics(bestMatch);
-    //   const result = this.convertEntityToResult(bestMatch);
-    //   result.method = 'similarity_match';
-    //   // Add similar products info for test endpoint
-    //   result.similarProducts = similarProducts.slice(0, 5).map((product) => ({
-    //     productId: product.normalizedProductSk,
-    //     similarity: 0.8, // Placeholder, would be calculated in real implementation
-    //     normalizedName: product.normalizedName,
-    //     merchant: product.merchant,
-    //   }));
-    //   return result;
-    // }
+    // Step 4: Check for similar products using embeddings
+    try {
+      const embeddingSimilarProducts =
+        await this.vectorEmbeddingService.findSimilarProductsEnhanced({
+          queryText: cleanedName,
+          merchant,
+          similarityThreshold,
+          limit: 5,
+          includeDiscounts: false,
+          includeAdjustments: false,
+        });
+
+      if (embeddingSimilarProducts.length > 0) {
+        const bestMatch = embeddingSimilarProducts[0];
+
+        // Only use embedding match if similarity is very high
+        if (bestMatch.similarity >= similarityThreshold) {
+          await this.updateMatchingStatistics(bestMatch.normalizedProduct);
+          const result = this.convertEntityToResult(
+            bestMatch.normalizedProduct,
+          );
+          result.method = 'embedding_match';
+          result.confidenceScore = bestMatch.similarity; // Use similarity as confidence
+
+          // Add similar products info
+          result.similarProducts = embeddingSimilarProducts.map(
+            (embedResult) => ({
+              productId: embedResult.productId,
+              similarity: embedResult.similarity,
+              normalizedName: embedResult.normalizedProduct.normalizedName,
+              merchant: embedResult.normalizedProduct.merchant,
+            }),
+          );
+
+          this.logger.debug(
+            `Found embedding match with similarity ${bestMatch.similarity}`,
+          );
+          return result;
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Embedding search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      // Continue with other methods if embedding search fails
+    }
 
     // Step 5: Use AI normalization if enabled
     if (useAI) {
@@ -328,8 +359,7 @@ export class ProductNormalizationService {
         itemCode,
       );
       aiResult.method = 'ai_generated';
-      // TODO: Enable when entity is properly loaded
-      // await this.storeNormalizationResult(merchant, rawName, aiResult);
+      await this.storeNormalizationResult(merchant, rawName, aiResult);
       return aiResult;
     }
 
@@ -343,9 +373,8 @@ export class ProductNormalizationService {
       method: 'fallback',
     };
 
-    // TODO: Enable when entity is properly loaded
-    // await this.storeNormalizationResult(merchant, rawName, fallbackResult);
-    return Promise.resolve(fallbackResult);
+    await this.storeNormalizationResult(merchant, rawName, fallbackResult);
+    return fallbackResult;
   }
 
   /**
@@ -767,13 +796,42 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
   }
 
   /**
-   * Store normalization result in the database
+   * Store normalization result in the database with embedding
    */
   private async storeNormalizationResult(
     merchant: string,
     rawName: string,
     result: NormalizationResult,
   ): Promise<NormalizedProduct> {
+    // Check for comprehensive duplicates before attempting to save
+    const existingProduct = await this.findComprehensiveDuplicate(
+      merchant,
+      rawName,
+      result,
+    );
+
+    if (existingProduct) {
+      this.logger.debug(
+        `Comprehensive duplicate found for ${rawName} from ${merchant}. Using existing record.`,
+      );
+      // Update match statistics and return existing product
+      await this.updateMatchingStatistics(existingProduct);
+      return existingProduct;
+    }
+
+    // Generate embedding for the normalized name
+    let embedding: number[] | undefined;
+    try {
+      embedding = await this.vectorEmbeddingService.generateEmbedding(
+        result.normalizedName,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to generate embedding for ${result.normalizedName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      // Continue without embedding
+    }
+
     const normalizedProduct = this.normalizedProductRepository.create({
       rawName,
       merchant,
@@ -782,14 +840,125 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       brand: result.brand,
       category: result.category,
       confidenceScore: result.confidenceScore,
-      embedding: undefined as number[] | undefined, // Will be set by VectorEmbeddingService
+      embedding,
       isDiscount: result.isDiscount,
       isAdjustment: result.isAdjustment,
       matchCount: 1,
       lastMatchedAt: new Date(),
     });
 
-    return await this.normalizedProductRepository.save(normalizedProduct);
+    try {
+      return await this.normalizedProductRepository.save(normalizedProduct);
+    } catch (error: any) {
+      // Handle duplicate key constraint violation as fallback
+      /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+      if (
+        error.code === '23505' &&
+        error.constraint === 'UQ_raw_name_merchant'
+      ) {
+        /* eslint-enable @typescript-eslint/no-unsafe-member-access */
+        this.logger.debug(
+          `Product already exists: ${rawName} from ${merchant}. Retrieving existing record.`,
+        );
+
+        // Another request created this product concurrently, retrieve the existing one
+        const concurrentExistingProduct = await this.findExactMatch(
+          rawName,
+          merchant,
+        );
+        if (concurrentExistingProduct) {
+          // Update the existing product's match statistics and return it
+          await this.updateMatchingStatistics(concurrentExistingProduct);
+          return concurrentExistingProduct;
+        }
+      }
+
+      // Re-throw other errors
+      throw error;
+    }
+  }
+
+  /**
+   * Find comprehensive duplicate based on raw_name, merchant, item_code,
+   * and normalization results (normalized_name, brand, category, confidence_score)
+   */
+  private async findComprehensiveDuplicate(
+    merchant: string,
+    rawName: string,
+    result: NormalizationResult,
+  ): Promise<NormalizedProduct | null> {
+    // Build query conditions with proper typing
+    const whereConditions: {
+      rawName: string;
+      merchant: string;
+      itemCode?: string;
+    } = {
+      rawName,
+      merchant,
+    };
+
+    // Include item_code in the search if provided
+    if (result.itemCode) {
+      whereConditions.itemCode = result.itemCode;
+    }
+
+    // Find products that match raw_name, merchant, and optionally item_code
+    const candidates = await this.normalizedProductRepository.find({
+      where: whereConditions,
+    });
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    // Check each candidate for comprehensive duplicate criteria
+    for (const candidate of candidates) {
+      const isDuplicate = this.isComprehensiveDuplicate(candidate, result);
+      if (isDuplicate) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Check if a candidate product is a comprehensive duplicate
+   * based on normalization results or confidence score
+   */
+  private isComprehensiveDuplicate(
+    candidate: NormalizedProduct,
+    result: NormalizationResult,
+  ): boolean {
+    // Check if normalized results are the same
+    const sameNormalizedResults =
+      candidate.normalizedName === result.normalizedName &&
+      candidate.brand === result.brand &&
+      candidate.category === result.category &&
+      candidate.isDiscount === result.isDiscount &&
+      candidate.isAdjustment === result.isAdjustment;
+
+    if (sameNormalizedResults) {
+      this.logger.debug(
+        `Found duplicate with same normalized results: ${candidate.normalizedName}`,
+      );
+      return true;
+    }
+
+    // Check if confidence scores are the same (within a small tolerance)
+    const confidenceThreshold = 0.001; // Allow small floating point differences
+    const sameConfidenceScore =
+      Math.abs(candidate.confidenceScore - result.confidenceScore) <
+      confidenceThreshold;
+
+    if (sameConfidenceScore) {
+      this.logger.debug(
+        `Found duplicate with same confidence score: ${candidate.confidenceScore}`,
+      );
+      return true;
+    }
+
+    return false;
   }
 
   /**

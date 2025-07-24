@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { ProductNormalizationService } from './product-normalization.service';
 import { NormalizedProduct } from '../entities/normalized-product.entity';
 import { OpenAIService } from './openai.service';
+import { VectorEmbeddingService } from './vector-embedding.service';
 
 describe('ProductNormalizationService', () => {
   let service: ProductNormalizationService;
@@ -43,6 +44,11 @@ describe('ProductNormalizationService', () => {
       testConnection: jest.fn(),
     };
 
+    const mockVectorEmbeddingService = {
+      generateEmbedding: jest.fn().mockResolvedValue(new Array(1536).fill(0)),
+      findSimilarProductsEnhanced: jest.fn().mockResolvedValue([]),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProductNormalizationService,
@@ -53,6 +59,10 @@ describe('ProductNormalizationService', () => {
         {
           provide: OpenAIService,
           useValue: mockOpenAIService,
+        },
+        {
+          provide: VectorEmbeddingService,
+          useValue: mockVectorEmbeddingService,
         },
       ],
     }).compile();
@@ -316,9 +326,10 @@ describe('ProductNormalizationService', () => {
         rawName: 'ORGANIC APPLES',
       });
 
-      // Currently exact match functionality is disabled (TODO), so it falls back to AI/fallback normalization
-      expect(result.normalizedName).toBe('ORGANIC APPLES');
-      expect(result.confidenceScore).toBe(0.5); // Regular fallback confidence (store pattern may not be recognized)
+      // Exact match functionality is now enabled
+      expect(result.normalizedName).toBe('Organic Apples');
+      expect(result.confidenceScore).toBe(0.95);
+      expect(result.method).toBe('exact_match');
     });
 
     it('should use AI normalization when no matches found', async () => {
