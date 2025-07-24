@@ -22,28 +22,66 @@ export class AddProductNormalizationFields1753160046810
       return;
     }
 
-    // Create the normalized_products table
-    await queryRunner.query(`
-      CREATE TABLE "normalized_products" (
-        "normalized_product_sk" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        "raw_name" text NOT NULL,
-        "merchant" text NOT NULL,
-        "item_code" text,
-        "normalized_name" text NOT NULL,
-        "brand" text,
-        "category" text,
-        "confidence_score" decimal(3,2) NOT NULL,
-        "embedding" vector(1536),
-        "is_discount" boolean NOT NULL DEFAULT false,
-        "is_adjustment" boolean NOT NULL DEFAULT false,
-        "match_count" integer NOT NULL DEFAULT 1,
-        "last_matched_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-        "created_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-        "updated_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT "CHK_confidence_score_range" CHECK ("confidence_score" >= 0 AND "confidence_score" <= 1),
-        CONSTRAINT "UQ_raw_name_merchant" UNIQUE ("raw_name", "merchant")
+    // Try to enable vector extension if available
+    let hasVectorSupport = false;
+    try {
+      await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+      hasVectorSupport = true;
+      console.log('pgvector extension enabled successfully.');
+    } catch (error) {
+      console.warn(
+        'pgvector extension not available. Creating table without vector column:',
+        (error as Error).message,
       );
-    `);
+      hasVectorSupport = false;
+    }
+
+    // Create the normalized_products table with conditional vector column
+    const createTableQuery = hasVectorSupport
+      ? `
+        CREATE TABLE "normalized_products" (
+          "normalized_product_sk" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "raw_name" text NOT NULL,
+          "merchant" text NOT NULL,
+          "item_code" text,
+          "normalized_name" text NOT NULL,
+          "brand" text,
+          "category" text,
+          "confidence_score" decimal(3,2) NOT NULL,
+          "embedding" vector(1536),
+          "is_discount" boolean NOT NULL DEFAULT false,
+          "is_adjustment" boolean NOT NULL DEFAULT false,
+          "match_count" integer NOT NULL DEFAULT 1,
+          "last_matched_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+          "created_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+          "updated_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "CHK_confidence_score_range" CHECK ("confidence_score" >= 0 AND "confidence_score" <= 1),
+          CONSTRAINT "UQ_raw_name_merchant" UNIQUE ("raw_name", "merchant")
+        );
+      `
+      : `
+        CREATE TABLE "normalized_products" (
+          "normalized_product_sk" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "raw_name" text NOT NULL,
+          "merchant" text NOT NULL,
+          "item_code" text,
+          "normalized_name" text NOT NULL,
+          "brand" text,
+          "category" text,
+          "confidence_score" decimal(3,2) NOT NULL,
+          "embedding" text,
+          "is_discount" boolean NOT NULL DEFAULT false,
+          "is_adjustment" boolean NOT NULL DEFAULT false,
+          "match_count" integer NOT NULL DEFAULT 1,
+          "last_matched_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+          "created_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+          "updated_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "CHK_confidence_score_range" CHECK ("confidence_score" >= 0 AND "confidence_score" <= 1),
+          CONSTRAINT "UQ_raw_name_merchant" UNIQUE ("raw_name", "merchant")
+        );
+      `;
+
+    await queryRunner.query(createTableQuery);
 
     // Create indexes for better performance
     await queryRunner.query(`
@@ -66,14 +104,37 @@ export class AddProductNormalizationFields1753160046810
       CREATE INDEX "IDX_normalized_products_is_discount" ON "normalized_products" ("is_discount");
     `);
 
-    // Create index for vector similarity search using IVFFlat
-    // Note: This index type is optimal for datasets with more than 1000 vectors
-    await queryRunner.query(`
-      CREATE INDEX "IDX_normalized_products_embedding" 
-      ON "normalized_products" 
-      USING ivfflat (embedding vector_cosine_ops)
-      WITH (lists = 100);
-    `);
+    // Create vector index only if vector support is available
+    if (hasVectorSupport) {
+      try {
+        // Create index for vector similarity search using IVFFlat
+        // Note: This index type is optimal for datasets with more than 1000 vectors
+        await queryRunner.query(`
+          CREATE INDEX "IDX_normalized_products_embedding" 
+          ON "normalized_products" 
+          USING ivfflat (embedding vector_cosine_ops)
+          WITH (lists = 100);
+        `);
+        console.log('Vector similarity index created successfully.');
+      } catch (error) {
+        console.warn(
+          'Failed to create vector index. Will use regular text index:',
+          (error as Error).message,
+        );
+        // Create a regular text index as fallback
+        await queryRunner.query(`
+          CREATE INDEX "IDX_normalized_products_embedding_text" ON "normalized_products" ("embedding");
+        `);
+      }
+    } else {
+      // Create a regular text index for the embedding column
+      await queryRunner.query(`
+        CREATE INDEX "IDX_normalized_products_embedding_text" ON "normalized_products" ("embedding");
+      `);
+      console.log(
+        'Created text index for embedding column (vector not available).',
+      );
+    }
 
     console.log('normalized_products table created successfully.');
   }

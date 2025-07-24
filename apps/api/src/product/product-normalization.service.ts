@@ -185,17 +185,43 @@ export class ProductNormalizationService {
 
   // Common discount/adjustment patterns
   private readonly discountPatterns = [
+    // Costco patterns
     /^TPD\/.*$/i, // TPD/1858985 or TPD/BATTERY
     /^\d+\s+TPD\/.*$/i, // 1955651 TPD/1648955 (with item number prefix)
+    /^INSTANT\s*SAVINGS/i, // INSTANT SAVINGS
+    /^MEMBER\s*(DISC|SAVINGS)/i, // MEMBER DISC, MEMBER SAVINGS
+    /^WAREHOUSE\s*COUPON/i, // WAREHOUSE COUPON
+    /^MANUFACTURER\s*COUPON/i, // MANUFACTURER COUPON
+
+    // Walmart patterns
+    /^ROLLBACK/i, // ROLLBACK
+    /^CLEARANCE/i, // CLEARANCE
+    /^SPECIAL\s*(BUY|PURCHASE)/i, // SPECIAL BUY, SPECIAL PURCHASE
+    /^MANAGER\s*SPECIAL/i, // MANAGER SPECIAL
+    /^MARKDOWN/i, // MARKDOWN
+    /^WALMART\s*COUPON/i, // WALMART COUPON
+    /^STORE\s*COUPON/i, // STORE COUPON
+    /^DIGITAL\s*COUPON/i, // DIGITAL COUPON
+    /^MFR\s*COUPON/i, // MFR COUPON (manufacturer coupon)
+    /^WALMART\+\s*DISCOUNT/i, // WALMART+ DISCOUNT
+    /^MEMBER\s*PRICE/i, // MEMBER PRICE
+    /^SCAN\s*&\s*GO\s*DISCOUNT/i, // SCAN & GO DISCOUNT
+    /^GROCERY\s*PICKUP\s*DISCOUNT/i, // GROCERY PICKUP DISCOUNT
+    /^ONLINE\s*GROCERY\s*DISCOUNT/i, // ONLINE GROCERY DISCOUNT
+    /^PRICE\s*MATCH/i, // PRICE MATCH
+    /^AD\s*MATCH/i, // AD MATCH
+    /^WAS\s+\$[\d,]+\.\d{2}\s+NOW\s+\$[\d,]+\.\d{2}/i, // Was $5.99 Now $3.99
+
+    // Generic patterns
     /^DISC(OUNT)?/i, // DISCOUNT, DISC
     /^ADJ(USTMENT)?/i, // ADJUSTMENT, ADJ
     /^REFUND/i, // REFUND
     /^CREDIT/i, // CREDIT
-    /^COUPON/i, // COUPON
+    /^COUPON/i, // Generic COUPON
     /^\$?\d+\.?\d*\s*(OFF|DISCOUNT)/i, // $5 OFF, 10% DISCOUNT
     /^-\$?\d+/, // -$5.00
-    /^MEMBER\s*(DISC|SAVINGS)/i, // MEMBER DISC, MEMBER SAVINGS
     /^STORE\s*CREDIT/i, // STORE CREDIT
+    /^SAVINGS/i, // Generic SAVINGS
   ];
 
   // Fee patterns (additional charges, not discounts)
@@ -233,8 +259,8 @@ export class ProductNormalizationService {
 
     this.logger.debug(`Normalizing product: ${rawName} from ${merchant}`);
 
-    // Step 1: Clean the raw name
-    const cleanedName = this.cleanRawName(rawName);
+    // Step 1: Clean the raw name (with store context)
+    const cleanedName = this.cleanRawName(rawName, merchant);
 
     // Step 2: Check if it's a discount, adjustment, or fee line
     const isDiscount = this.isDiscountLine(cleanedName);
@@ -325,12 +351,59 @@ export class ProductNormalizationService {
   /**
    * Clean and preprocess the raw product name
    */
-  cleanRawName(rawName: string): string {
-    return rawName
+  cleanRawName(rawName: string, merchant?: string): string {
+    let cleaned = rawName
       .trim()
       .replace(/\s+/g, ' ') // Normalize whitespace
       .replace(/[^\w\s\-./&]/g, '') // Remove special chars except common ones
       .toUpperCase(); // Standardize casing
+
+    // Expand store-specific abbreviated brand names if merchant is known
+    if (merchant) {
+      const storePattern = StorePatternMatcher.identifyStore(merchant);
+      if (storePattern?.storeId === 'WALMART') {
+        cleaned = this.expandWalmartAbbreviations(cleaned);
+      }
+    }
+
+    return cleaned;
+  }
+
+  /**
+   * Expand common Walmart brand abbreviations
+   */
+  private expandWalmartAbbreviations(name: string): string {
+    // Common Walmart brand abbreviations
+    const abbreviations: Array<[RegExp, string]> = [
+      [/^GV\s+/i, 'GREAT VALUE '], // GV followed by space
+      [/^GV([A-Z])/i, 'GREAT VALUE $1'], // GV followed by uppercase letter (e.g., GVLASAGNA)
+      [/^EQ\s+/i, 'EQUATE '],
+      [/^EQ([A-Z])/i, 'EQUATE $1'],
+      [/^MS\s+/i, 'MAINSTAYS '],
+      [/^MS([A-Z])/i, 'MAINSTAYS $1'],
+      [/^PC\s+/i, 'PARENTS CHOICE '],
+      [/^PC([A-Z])/i, 'PARENTS CHOICE $1'],
+      [/^MKS\s+/i, 'MARKETSIDE '],
+      [/^MKS([A-Z])/i, 'MARKETSIDE $1'],
+      [/^FG\s+/i, 'FRESHNESS GUARANTEED '],
+      [/^FG([A-Z])/i, 'FRESHNESS GUARANTEED $1'],
+      [/^OT\s+/i, 'OZARK TRAIL '],
+      [/^OT([A-Z])/i, 'OZARK TRAIL $1'],
+      [/^AW\s+/i, 'ATHLETIC WORKS '],
+      [/^AW([A-Z])/i, 'ATHLETIC WORKS $1'],
+      [/^HT\s+/i, 'HYPER TOUGH '],
+      [/^HT([A-Z])/i, 'HYPER TOUGH $1'],
+    ];
+
+    // Check if name starts with any abbreviation
+    for (const [pattern, replacement] of abbreviations) {
+      if (pattern.test(name)) {
+        name = name.replace(pattern, replacement);
+        break; // Only expand one abbreviation
+      }
+    }
+
+    return name;
   }
 
   /**
