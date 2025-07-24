@@ -95,6 +95,7 @@ export class ProductService {
     const product = this.productRepository.create({
       name: productData.name,
       barcode: productData.barcode,
+      barcodeType: productData.barcode_type,
       category: categoryId,
       imageUrl: productData.image_url,
       creditScore: productData.credit_score ?? 0,
@@ -119,6 +120,8 @@ export class ProductService {
     if (productData.name !== undefined) product.name = productData.name;
     if (productData.barcode !== undefined)
       product.barcode = productData.barcode;
+    if (productData.barcode_type !== undefined)
+      product.barcodeType = productData.barcode_type;
     if (productData.image_url !== undefined)
       product.imageUrl = productData.image_url;
 
@@ -472,6 +475,7 @@ export class ProductService {
       product_sk: product.productSk,
       name: product.name,
       barcode: product.barcode,
+      barcode_type: product.barcodeType,
       category: product.category,
       image_url: product.imageUrl,
       brand_name: product.brandName,
@@ -541,6 +545,7 @@ export class ProductService {
       product = this.productRepository.create({
         name: productData.name,
         barcode: productData.barcode,
+        barcodeType: productData.barcodeType,
         category: productData.category,
         imageUrl: imageUrl,
         creditScore: 0,

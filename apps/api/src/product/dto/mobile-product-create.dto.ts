@@ -5,7 +5,9 @@ import {
   IsOptional,
   IsNotEmpty,
   Min,
+  IsEnum,
 } from 'class-validator';
+import { BarcodeType } from '@beezly/types';
 
 export class MobileProductCreateDto {
   @ApiProperty({
@@ -23,6 +25,15 @@ export class MobileProductCreateDto {
   @IsString()
   @IsNotEmpty()
   barcode: string;
+
+  @ApiPropertyOptional({
+    example: BarcodeType.EAN13,
+    description: 'Type of barcode',
+    enum: BarcodeType,
+  })
+  @IsEnum(BarcodeType)
+  @IsOptional()
+  barcodeType?: BarcodeType;
 
   @ApiProperty({
     example: 101001,

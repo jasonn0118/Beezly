@@ -138,6 +138,21 @@ export class ProductController {
       properties: {
         name: { type: 'string', example: 'Organic Apple' },
         barcode: { type: 'string', example: '1234567890123' },
+        barcodeType: {
+          type: 'string',
+          example: 'ean13',
+          description: 'Type of barcode (optional)',
+          enum: [
+            'code39',
+            'ean8',
+            'ean13',
+            'codabar',
+            'itf14',
+            'code128',
+            'upc_a',
+            'upc_e',
+          ],
+        },
         category: { type: 'number', example: 101001 },
         storeName: { type: 'string', example: 'Homeplus' },
         storeAddress: { type: 'string', example: '123 Main St, Seoul' },
