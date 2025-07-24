@@ -11,6 +11,7 @@ import {
   MobileProductCreateDto,
   MobileProductResponseDto,
 } from './dto/mobile-product-create.dto';
+import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 
 export interface ProductSearchParams {
   name?: string;
@@ -170,6 +171,24 @@ export class ProductService {
     });
 
     return products.map((product) => this.mapProductToDTO(product));
+  }
+
+  /**
+   * Search products by name and/or brandName with fuzzy matching
+   */
+  async searchProductsByNameAndBrand(
+    query: string,
+    limit: number = 50,
+  ): Promise<ProductSearchResponseDto[]> {
+    const products = await this.productRepository
+      .createQueryBuilder('product')
+      .where('product.name ILIKE :query', { query: `%${query}%` })
+      .orWhere('product.brandName ILIKE :query', { query: `%${query}%` })
+      .orderBy('product.name', 'ASC')
+      .limit(limit)
+      .getMany();
+
+    return products.map((product) => this.mapProductToSearchResponse(product));
   }
 
   /**
@@ -455,11 +474,22 @@ export class ProductService {
       barcode: product.barcode,
       category: product.category,
       image_url: product.imageUrl,
+      brand_name: product.brandName,
       created_at: product.createdAt.toISOString(),
       updated_at: product.updatedAt.toISOString(),
       credit_score: product.creditScore ?? 0,
       verified_count: product.verifiedCount ?? 0,
       flagged_count: product.flaggedCount ?? 0,
+    };
+  }
+
+  private mapProductToSearchResponse(
+    product: Product,
+  ): ProductSearchResponseDto {
+    return {
+      name: product.name,
+      brand_name: product.brandName,
+      image_url: product.imageUrl,
     };
   }
 

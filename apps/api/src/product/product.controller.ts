@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
@@ -18,6 +19,7 @@ import {
   ApiResponse,
   ApiConsumes,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
@@ -25,6 +27,7 @@ import {
   MobileProductCreateDto,
   MobileProductResponseDto,
 } from './dto/mobile-product-create.dto';
+import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 
 @ApiTags('Products')
 @Controller('products')
@@ -42,21 +45,45 @@ export class ProductController {
     return this.productService.getAllProducts();
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Get a product by ID' })
+  @Get('search')
+  @ApiOperation({
+    summary: 'Search products by name and/or brand name (fuzzy matching)',
+  })
+  @ApiQuery({
+    name: 'q',
+    description: 'Search query for product name or brand name',
+    required: true,
+    example: 'apple',
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of results to return (max: 100)',
+    required: false,
+    type: Number,
+    example: 50,
+  })
   @ApiResponse({
     status: 200,
-    description: 'Product found by ID',
-    type: NormalizedProductDTO,
+    description: 'List of products matching the search query',
+    type: [ProductSearchResponseDto],
   })
   @ApiResponse({
-    status: 404,
-    description: 'Product not found',
+    status: 400,
+    description: 'Bad request - missing or empty query parameter',
   })
-  async getProductById(
-    @Param('id') id: string,
-  ): Promise<NormalizedProductDTO | null> {
-    return this.productService.getProductById(id);
+  async searchProducts(
+    @Query('q') query: string,
+    @Query('limit') limit?: number,
+  ): Promise<ProductSearchResponseDto[]> {
+    if (!query || query.trim().length === 0) {
+      throw new BadRequestException('Search query parameter "q" is required');
+    }
+
+    const searchLimit = limit && limit > 0 ? Math.min(limit, 100) : 50;
+    return this.productService.searchProductsByNameAndBrand(
+      query.trim(),
+      searchLimit,
+    );
   }
 
   @Get('barcode/:barcode')
@@ -80,6 +107,23 @@ export class ProductController {
     }
 
     return product;
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a product by ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Product found by ID',
+    type: NormalizedProductDTO,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+  })
+  async getProductById(
+    @Param('id') id: string,
+  ): Promise<NormalizedProductDTO | null> {
+    return this.productService.getProductById(id);
   }
 
   @Post()

@@ -26,6 +26,12 @@ export class NormalizedProductDTO {
   image_url?: string;
 
   @ApiPropertyOptional({
+    example: "Cheil Jedang",
+    description: "Optional product brand name",
+  })
+  brand_name?: string;
+
+  @ApiPropertyOptional({
     example: 80.5,
     description: "Initial credit score of the product (0~100)",
   })
