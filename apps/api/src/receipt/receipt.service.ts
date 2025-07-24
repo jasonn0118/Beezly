@@ -1,20 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ReceiptDTO } from '../../../packages/types/dto/receipt';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
-import { Receipt } from '../entities/receipt.entity';
-import { ReceiptItem } from '../entities/receipt-item.entity';
-import { Store } from '../entities/store.entity';
-import { UserService } from '../user/user.service';
-import { StoreService } from '../store/store.service';
-import { ProductService } from '../product/product.service';
-import { ProductNormalizationService } from '../product/product-normalization.service';
+import { ReceiptDTO } from '../../../packages/types/dto/receipt';
 import { Category } from '../entities/category.entity';
+import { ReceiptItem } from '../entities/receipt-item.entity';
+import { Receipt } from '../entities/receipt.entity';
+import { Store } from '../entities/store.entity';
+import { ProductService } from '../product/product.service';
+import { StoreService } from '../store/store.service';
+import { UserService } from '../user/user.service';
+import { ProductNormalizationService } from '../product/product-normalization.service';
 import {
+  NormalizationTestResultDto,
   TestNormalizationRequestDto,
   TestNormalizationResponseDto,
-  NormalizationTestResultDto,
 } from './dto/test-normalization-response.dto';
 
 export interface CreateReceiptRequest {
@@ -61,6 +61,7 @@ export class ReceiptService {
     private readonly userService: UserService,
     private readonly storeService: StoreService,
     private readonly productService: ProductService,
+    private readonly productNormalizationService: ProductNormalizationService,
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
   ) {}
@@ -188,7 +189,7 @@ export class ReceiptService {
             }
 
             product = await this.productService.createProduct({
-              name: productName,
+              name: itemData.productName,
               barcode: itemData.barcode,
               category: categoryId,
             });
