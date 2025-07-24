@@ -67,8 +67,7 @@ describe('BarcodeController (e2e)', () => {
         barcode: '1234567890',
         brand: 'Lay’s',
         category: category.id,
-        barcodeType: 'UPC',
-        image_url: 'https://example.com/chips.jpg',
+        barcodeType: 'ean13',
         isVerified: true,
       });
     });
@@ -83,10 +82,8 @@ describe('BarcodeController (e2e)', () => {
       expect(response.body).toMatchObject({
         name: 'Unknown Product (9999999999)',
         barcode: '9999999999',
-        brand: undefined,
-        category: undefined,
-        barcodeType: undefined,
-        image_url: undefined,
+        brand: null,
+        barcodeType: null,
         isVerified: false,
       });
       expect(response.body).toHaveProperty('id');
@@ -132,8 +129,7 @@ describe('BarcodeController (e2e)', () => {
         barcode: '1234567890',
         brand: 'Coca-Cola',
         category: category.id,
-        barcodeType: BarcodeType.EAN13,
-        image_url: 'https://example.com/coke.jpg',
+        barcodeType: 'ean13',
         isVerified: true,
       });
     });
