@@ -22,16 +22,53 @@ export class AddProductNormalizationFields1753160046810
       return;
     }
 
-    // Try to enable vector extension if available
+    // Try to enable vector extension if available using transaction isolation
     let hasVectorSupport = false;
+
+    // Check if user has privileges to create extensions
     try {
-      await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
-      hasVectorSupport = true;
-      console.log('pgvector extension enabled successfully.');
-    } catch (error) {
+      const userPrivileges = (await queryRunner.query(`
+        SELECT rolsuper FROM pg_roles WHERE rolname = current_user;
+      `)) as [{ rolsuper: boolean }];
+
+      const isSuperUser = userPrivileges?.[0]?.rolsuper === true;
+
+      if (!isSuperUser) {
+        console.log(
+          'User does not have superuser privileges. Skipping vector extension creation.',
+        );
+        hasVectorSupport = false;
+      } else {
+        // Use a savepoint to isolate the extension creation
+        await queryRunner.query(`SAVEPOINT vector_extension_attempt;`);
+
+        try {
+          await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+          await queryRunner.query(
+            `RELEASE SAVEPOINT vector_extension_attempt;`,
+          );
+          hasVectorSupport = true;
+          console.log('pgvector extension enabled successfully.');
+        } catch (extensionError) {
+          // Rollback to savepoint to clean up transaction state
+          await queryRunner.query(
+            `ROLLBACK TO SAVEPOINT vector_extension_attempt;`,
+          );
+          await queryRunner.query(
+            `RELEASE SAVEPOINT vector_extension_attempt;`,
+          );
+
+          console.warn(
+            'pgvector extension not available. Creating table without vector column:',
+            (extensionError as Error).message,
+          );
+          hasVectorSupport = false;
+        }
+      }
+    } catch (privilegeError) {
       console.warn(
-        'pgvector extension not available. Creating table without vector column:',
-        (error as Error).message,
+        'Could not check user privileges. Assuming no vector support:',
+        (privilegeError as Error).message,
       );
       hasVectorSupport = false;
     }
@@ -106,6 +143,9 @@ export class AddProductNormalizationFields1753160046810
 
     // Create vector index only if vector support is available
     if (hasVectorSupport) {
+      // Use savepoint for vector index creation to avoid transaction issues
+      await queryRunner.query(`SAVEPOINT vector_index_attempt;`);
+
       try {
         // Create index for vector similarity search using IVFFlat
         // Note: This index type is optimal for datasets with more than 1000 vectors
@@ -115,16 +155,23 @@ export class AddProductNormalizationFields1753160046810
           USING ivfflat (embedding vector_cosine_ops)
           WITH (lists = 100);
         `);
+        await queryRunner.query(`RELEASE SAVEPOINT vector_index_attempt;`);
         console.log('Vector similarity index created successfully.');
-      } catch (error) {
+      } catch (indexError) {
+        // Rollback to savepoint and create text index as fallback
+        await queryRunner.query(`ROLLBACK TO SAVEPOINT vector_index_attempt;`);
+        await queryRunner.query(`RELEASE SAVEPOINT vector_index_attempt;`);
+
         console.warn(
           'Failed to create vector index. Will use regular text index:',
-          (error as Error).message,
+          (indexError as Error).message,
         );
+
         // Create a regular text index as fallback
         await queryRunner.query(`
           CREATE INDEX "IDX_normalized_products_embedding_text" ON "normalized_products" ("embedding");
         `);
+        console.log('Created text index as fallback for embedding column.');
       }
     } else {
       // Create a regular text index for the embedding column
@@ -136,7 +183,10 @@ export class AddProductNormalizationFields1753160046810
       );
     }
 
-    console.log('normalized_products table created successfully.');
+    const setupType = hasVectorSupport
+      ? 'with vector support'
+      : 'with text-based embedding';
+    console.log(`normalized_products table created successfully ${setupType}.`);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
