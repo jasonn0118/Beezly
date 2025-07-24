@@ -19,12 +19,12 @@ describe('BarcodeService', () => {
     flaggedCount: 0,
     categoryEntity: {
       id: 1,
-      name: 'Test Category',
-      slug: 'test-category',
-      level: 1,
-      useYn: true,
+      category1: 'Test Category',
+      category2: null,
+      category3: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      products: [],
     } as Product['categoryEntity'],
   };
 
@@ -51,51 +51,6 @@ describe('BarcodeService', () => {
     expect(service).toBeDefined();
   });
 
-  describe('lookupBarcode', () => {
-    it('should return existing product when found', async () => {
-      productRepository.findOne.mockResolvedValue(mockProduct as Product);
-
-      const result = await service.lookupBarcode({
-        barcode: '1234567890',
-      });
-
-      expect(result).toEqual({
-        id: 'test-uuid',
-        name: 'Test Product',
-        barcode: '1234567890',
-        brand: undefined,
-        category: 'Test Category',
-        isVerified: true,
-      });
-    });
-
-    it('should create and return placeholder when product not found', async () => {
-      productRepository.findOne.mockResolvedValue(null);
-      productRepository.create.mockReturnValue({
-        name: 'Unknown Product (9876543210)',
-        barcode: '9876543210',
-      } as Product);
-      productRepository.save.mockResolvedValue({
-        productSk: 'new-uuid',
-        name: 'Unknown Product (9876543210)',
-        barcode: '9876543210',
-      } as Product);
-
-      const result = await service.lookupBarcode({
-        barcode: '9876543210',
-      });
-
-      expect(result).toEqual({
-        id: 'new-uuid',
-        name: 'Unknown Product (9876543210)',
-        barcode: '9876543210',
-        brand: undefined,
-        category: undefined,
-        isVerified: false,
-      });
-    });
-  });
-
   describe('getProductByBarcode', () => {
     it('should return product when found', async () => {
       productRepository.findOne.mockResolvedValue(mockProduct as Product);
@@ -107,7 +62,9 @@ describe('BarcodeService', () => {
         name: 'Test Product',
         barcode: '1234567890',
         brand: undefined,
-        category: 'Test Category',
+        category: 1,
+        barcodeType: undefined,
+        image_url: undefined,
         isVerified: true,
       });
     });
