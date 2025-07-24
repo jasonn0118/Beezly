@@ -84,8 +84,12 @@ import { UserModule } from './user/user.module';
           NormalizedProduct,
         ],
         synchronize: process.env.NODE_ENV === 'test', // Only synchronize for tests, use migrations for dev/prod
-        logging: process.env.DB_LOGGING === 'verbose' ? true : 
-                 process.env.DB_LOGGING === 'minimal' ? ['error', 'warn', 'migration'] : false,
+        logging:
+          process.env.DB_LOGGING === 'verbose'
+            ? true
+            : process.env.DB_LOGGING === 'minimal'
+              ? ['error', 'warn', 'migration']
+              : false,
         ssl:
           process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
         dropSchema: process.env.NODE_ENV === 'test',
