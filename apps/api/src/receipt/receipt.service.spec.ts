@@ -7,6 +7,7 @@ import { Category } from '../entities/category.entity';
 import { UserService } from '../user/user.service';
 import { StoreService } from '../store/store.service';
 import { ProductService } from '../product/product.service';
+import { ProductNormalizationService } from '../product/product-normalization.service';
 
 describe('ReceiptService', () => {
   let service: ReceiptService;
@@ -38,6 +39,10 @@ describe('ReceiptService', () => {
     getProductByBarcode: jest.fn(),
     createProduct: jest.fn(),
     getProductById: jest.fn(),
+  };
+
+  const mockProductNormalizationService = {
+    normalizeProduct: jest.fn(),
   };
 
   const mockCategoryRepository = {
@@ -73,6 +78,10 @@ describe('ReceiptService', () => {
         {
           provide: ProductService,
           useValue: mockProductService,
+        },
+        {
+          provide: ProductNormalizationService,
+          useValue: mockProductNormalizationService,
         },
       ],
     }).compile();

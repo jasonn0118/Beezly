@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OcrService } from './ocr.service';
 import { OcrAzureService } from './ocr-azure.service';
+import { ProductNormalizationService } from '../product/product-normalization.service';
 
 describe('OcrService', () => {
   let service: OcrService;
@@ -13,6 +14,12 @@ describe('OcrService', () => {
           provide: OcrAzureService,
           useValue: {
             extractWithPrebuiltReceipt: jest.fn(),
+          },
+        },
+        {
+          provide: ProductNormalizationService,
+          useValue: {
+            normalizeProduct: jest.fn(),
           },
         },
       ],
