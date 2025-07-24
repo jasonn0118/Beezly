@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ReceiptService } from './receipt.service';
 import { Receipt } from '../entities/receipt.entity';
 import { Store } from '../entities/store.entity';
+import { Category } from '../entities/category.entity';
 import { UserService } from '../user/user.service';
 import { StoreService } from '../store/store.service';
 import { ProductService } from '../product/product.service';
@@ -39,6 +40,12 @@ describe('ReceiptService', () => {
     getProductById: jest.fn(),
   };
 
+  const mockCategoryRepository = {
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,6 +57,10 @@ describe('ReceiptService', () => {
         {
           provide: getRepositoryToken(Store),
           useValue: mockStoreRepository,
+        },
+        {
+          provide: getRepositoryToken(Category),
+          useValue: mockCategoryRepository,
         },
         {
           provide: UserService,

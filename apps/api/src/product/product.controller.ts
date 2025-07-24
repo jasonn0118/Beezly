@@ -9,6 +9,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -56,6 +57,29 @@ export class ProductController {
     @Param('id') id: string,
   ): Promise<NormalizedProductDTO | null> {
     return this.productService.getProductById(id);
+  }
+
+  @Get('barcode/:barcode')
+  @ApiOperation({ summary: 'Get a product by barcode' })
+  @ApiResponse({
+    status: 200,
+    description: 'Product found by barcode',
+    type: NormalizedProductDTO,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+  })
+  async getProductByBarcode(
+    @Param('barcode') barcode: string,
+  ): Promise<NormalizedProductDTO> {
+    const product = await this.productService.getProductByBarcode(barcode);
+
+    if (!product) {
+      throw new NotFoundException(`Product with barcode ${barcode} not found`);
+    }
+
+    return product;
   }
 
   @Post()

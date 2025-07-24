@@ -98,8 +98,8 @@ export class BarcodeService {
       name: product.name,
       barcode: product.barcode || '',
       barcodeType: product.barcodeType,
-      brand: this.extractBrandFromName(product.name),
-      category: product.categoryEntity?.name,
+      brand: product.brandName,
+      category: product.categoryEntity?.id || undefined,
       image_url: product.imageUrl ?? undefined,
       isVerified: isVerified,
     };
@@ -109,14 +109,14 @@ export class BarcodeService {
    * Attempts to extract brand name from product name
    * This is a simple implementation that can be enhanced later
    */
-  private extractBrandFromName(productName: string): string | undefined {
-    // Common patterns: "Brand - Product" or "Brand Product"
-    const parts = productName.split(' - ');
-    if (parts.length > 1) {
-      return parts[0].trim();
-    }
+  // private extractBrandFromName(productName: string): string | undefined {
+  //   // Common patterns: "Brand - Product" or "Brand Product"
+  //   const parts = productName.split(' - ');
+  //   if (parts.length > 1) {
+  //     return parts[0].trim();
+  //   }
 
-    // For now, return undefined if we can't determine the brand
-    return undefined;
-  }
+  //   // For now, return undefined if we can't determine the brand
+  //   return undefined;
+  // }
 }

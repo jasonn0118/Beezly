@@ -21,7 +21,12 @@ export async function seedProducts(dataSource: DataSource) {
   const categoryMap = new Map<string, number>();
 
   categories.forEach((cat) => {
-    const key = cat.name?.toLowerCase().replace(/[^a-z]/g, '') || '';
+    const key =
+      cat.category1?.toLowerCase().replace(/[^a-z]/g, '') ||
+      cat.category2?.toLowerCase().replace(/[^a-z]/g, '') ||
+      cat.category3?.toLowerCase().replace(/[^a-z]/g, '') ||
+      '';
+
     if (key.includes('produce')) categoryMap.set('produce', cat.id);
     if (key.includes('dairy') || key.includes('eggs'))
       categoryMap.set('dairy', cat.id);
