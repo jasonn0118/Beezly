@@ -37,7 +37,7 @@ export class NormalizedProductDTO {
     example: "Cheil Jedang",
     description: "Optional product brand name",
   })
-  brand_name?: string;
+  brandName?: string;
 
   @ApiPropertyOptional({
     example: 80.5,
