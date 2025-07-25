@@ -25,6 +25,7 @@ describe('Product Search (e2e)', () => {
         if (query.toLowerCase().includes('apple')) {
           return Promise.resolve([
             {
+              product_sk: '550e8400-e29b-41d4-a716-446655440001',
               name: 'Organic Apple',
               brand_name: 'Cheil Jedang',
               image_url: 'https://example.com/apple.jpg',
@@ -35,6 +36,7 @@ describe('Product Search (e2e)', () => {
         if (query.toLowerCase().includes('cheil')) {
           return Promise.resolve([
             {
+              product_sk: '550e8400-e29b-41d4-a716-446655440002',
               name: 'Rice Cake',
               brand_name: 'Cheil Jedang',
               image_url: 'https://example.com/rice-cake.jpg',
@@ -93,6 +95,7 @@ describe('Product Search (e2e)', () => {
       expect(response.body).toHaveLength(1);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body[0]).toMatchObject({
+        product_sk: '550e8400-e29b-41d4-a716-446655440001',
         name: 'Organic Apple',
         brand_name: 'Cheil Jedang',
         image_url: 'https://example.com/apple.jpg',
@@ -109,6 +112,7 @@ describe('Product Search (e2e)', () => {
       expect(response.body).toHaveLength(1);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body[0]).toMatchObject({
+        product_sk: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Rice Cake',
         brand_name: 'Cheil Jedang',
         image_url: 'https://example.com/rice-cake.jpg',
