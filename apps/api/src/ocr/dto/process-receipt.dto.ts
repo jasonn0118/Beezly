@@ -9,7 +9,17 @@ export class ProcessReceiptDto {
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : (value as string)))
+  @Transform(({ value }) => {
+    if (
+      value === '' ||
+      value === 'string' ||
+      value === 'undefined' ||
+      value === 'null'
+    ) {
+      return undefined;
+    }
+    return value as string;
+  })
   @IsUUID(4, { message: 'user_id must be a valid UUID' })
   user_id?: string;
 
@@ -19,7 +29,17 @@ export class ProcessReceiptDto {
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : (value as string)))
+  @Transform(({ value }) => {
+    if (
+      value === '' ||
+      value === 'string' ||
+      value === 'undefined' ||
+      value === 'null'
+    ) {
+      return undefined;
+    }
+    return value as string;
+  })
   @IsUUID(4, { message: 'store_id must be a valid UUID' })
   store_id?: string;
 }

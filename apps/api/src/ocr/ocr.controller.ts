@@ -19,6 +19,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { OcrService, OcrResult, EnhancedOcrResult } from './ocr.service';
 import { ReceiptService } from '../receipt/receipt.service';
+import { ReceiptNormalizationService } from '../receipt/receipt-normalization.service';
 import { upload_receipt } from '../utils/storage.util';
 import {
   ProcessReceiptDto,
@@ -31,6 +32,7 @@ export class OcrController {
   constructor(
     private readonly ocrService: OcrService,
     private readonly receiptService: ReceiptService,
+    private readonly normalizationService: ReceiptNormalizationService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -474,6 +476,18 @@ export class OcrController {
           );
           receiptId = receipt.receiptSk;
           console.log(`Receipt created in database with ID: ${receiptId}`);
+
+          // Trigger normalization as a background process (fire-and-forget)
+          if (body.include_normalization !== false) {
+            this.normalizationService
+              .normalizeReceiptItems(receiptId)
+              .then(() => {
+                console.log(`Receipt ${receiptId} normalization completed`);
+              })
+              .catch((error) => {
+                console.error(`Error normalizing receipt ${receiptId}:`, error);
+              });
+          }
         } catch (error) {
           console.error('Error creating receipt in database:', error);
           // Continue without receipt creation - OCR result still valid

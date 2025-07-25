@@ -6,7 +6,9 @@ import {
   UpdateDateColumn,
   Index,
   Check,
+  OneToMany,
 } from 'typeorm';
+import { ReceiptItemNormalization } from './receipt-item-normalization.entity';
 
 @Entity('normalized_products')
 @Index(['rawName', 'merchant'], { unique: true })
@@ -84,4 +86,11 @@ export class NormalizedProduct {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp with time zone' })
   updatedAt: Date;
+
+  // Relationships
+  @OneToMany(
+    () => ReceiptItemNormalization,
+    (normalization) => normalization.normalizedProduct,
+  )
+  receiptItemNormalizations?: ReceiptItemNormalization[];
 }

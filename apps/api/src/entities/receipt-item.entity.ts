@@ -37,74 +37,57 @@ export class ReceiptItem extends BaseEntity {
   })
   lineTotal: number;
 
-  // Normalization fields from OCR processing
-  @Column({ name: 'raw_name', type: 'varchar', length: 255, nullable: true })
-  rawName?: string;
-
+  // Core receipt item data from OCR
   @Column({
-    name: 'normalized_name',
+    name: 'raw_name',
     type: 'varchar',
     length: 255,
-    nullable: true,
+    comment: 'Raw item name from OCR',
   })
-  normalizedName?: string;
-
-  @Column({ name: 'brand', type: 'varchar', length: 100, nullable: true })
-  brand?: string;
-
-  @Column({ name: 'category', type: 'varchar', length: 100, nullable: true })
-  category?: string;
+  rawName: string;
 
   @Column({
-    name: 'confidence_score',
+    name: 'item_code',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+    comment: 'Item code/SKU from receipt',
+  })
+  itemCode?: string;
+
+  // Basic flags from OCR (can be determined from raw text)
+  @Column({
+    name: 'is_discount_line',
+    type: 'boolean',
+    default: false,
+    comment: 'Whether this line represents a discount',
+  })
+  isDiscountLine: boolean;
+
+  @Column({
+    name: 'is_adjustment_line',
+    type: 'boolean',
+    default: false,
+    comment: 'Whether this line represents an adjustment (tax, tip, etc.)',
+  })
+  isAdjustmentLine: boolean;
+
+  // OCR metadata
+  @Column({
+    name: 'ocr_confidence',
     type: 'decimal',
     precision: 5,
     scale: 4,
     nullable: true,
+    comment: 'OCR confidence for this line',
   })
-  confidenceScore?: number;
-
-  @Column({ name: 'is_discount', type: 'boolean', default: false })
-  isDiscount: boolean;
-
-  @Column({ name: 'is_adjustment', type: 'boolean', default: false })
-  isAdjustment: boolean;
+  ocrConfidence?: number;
 
   @Column({
-    name: 'normalization_method',
-    type: 'varchar',
-    length: 50,
+    name: 'line_number',
+    type: 'int',
     nullable: true,
+    comment: 'Line number on the receipt',
   })
-  normalizationMethod?: string;
-
-  @Column({ name: 'embedding_data', type: 'jsonb', nullable: true })
-  embeddingData?: any;
-
-  @Column({ name: 'linked_discounts', type: 'jsonb', nullable: true })
-  linkedDiscounts?: any;
-
-  @Column({
-    name: 'original_price',
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-    nullable: true,
-  })
-  originalPrice?: number;
-
-  @Column({
-    name: 'final_price',
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-    nullable: true,
-  })
-  finalPrice?: number;
-
-  @Column({ name: 'price_format_info', type: 'jsonb', nullable: true })
-  priceFormatInfo?: any;
-
-  @Column({ name: 'item_code', type: 'varchar', length: 50, nullable: true })
-  itemCode?: string;
+  lineNumber?: number;
 }

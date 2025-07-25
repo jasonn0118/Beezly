@@ -263,15 +263,50 @@ export class ReceiptService {
     uploadedFilePath?: string,
   ): Promise<Receipt> {
     return this.receiptRepository.manager.transaction(async (manager) => {
-      // Sanitize userId: convert empty string to undefined
-      const sanitizedUserId =
-        userId && userId.trim() !== '' ? userId : undefined;
+      // Sanitize userId: convert empty string to undefined and validate UUID format
+      let sanitizedUserId: string | undefined;
+
+      if (userId && typeof userId === 'string' && userId.trim() !== '') {
+        const trimmedUserId = userId.trim();
+        // Reject common invalid values
+        if (
+          trimmedUserId === 'string' ||
+          trimmedUserId === 'undefined' ||
+          trimmedUserId === 'null'
+        ) {
+          console.warn(`⚠️ Rejected invalid userId value: ${trimmedUserId}`);
+          sanitizedUserId = undefined;
+        } else {
+          // Check if it's a valid UUID format (basic check)
+          const uuidRegex =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (uuidRegex.test(trimmedUserId)) {
+            sanitizedUserId = trimmedUserId;
+          } else {
+            console.warn(`⚠️ Invalid UUID format for userId: ${trimmedUserId}`);
+            sanitizedUserId = undefined;
+          }
+        }
+      } else {
+        sanitizedUserId = undefined;
+      }
 
       // Step 1: Find or create the store from merchant data
       const store = await this.storeService.findOrCreateStoreFromOcr({
         merchant: ocrResult.merchant,
         store_address: ocrResult.store_address,
       });
+
+      // Validate store UUID
+      if (
+        !store.storeSk ||
+        typeof store.storeSk !== 'string' ||
+        store.storeSk === 'string'
+      ) {
+        throw new Error(
+          `Invalid store UUID received: ${JSON.stringify(store.storeSk)}`,
+        );
+      }
 
       // Step 2: Parse receipt date
       let receiptDate: Date | undefined;
@@ -331,20 +366,12 @@ export class ReceiptService {
           let productSk: string | undefined;
 
           try {
-            // First, try to find existing product by barcode if available
+            // Find or create product with race condition handling
             const itemCode = enhancedItem?.item_number || item.item_number;
-            if (itemCode) {
-              const existingProduct =
-                await this.productService.getProductByBarcode(itemCode);
-              if (existingProduct) {
-                productSk = existingProduct.product_sk;
-              }
-            }
+            const productName = enhancedItem?.normalized_name || item.name;
 
-            // If no existing product found, create a new one
-            if (!productSk) {
-              const productName = enhancedItem?.normalized_name || item.name;
-              const newProduct = await this.productService.createProduct({
+            if (itemCode || productName) {
+              const product = await this.productService.findOrCreateProduct({
                 name: productName,
                 barcode: itemCode,
                 // Add category if available from normalization
@@ -352,7 +379,7 @@ export class ReceiptService {
                   ? this.getCategoryId(enhancedItem.category)
                   : undefined,
               });
-              productSk = newProduct.product_sk;
+              productSk = product.product_sk;
             }
           } catch (productError) {
             console.warn(
@@ -372,28 +399,20 @@ export class ReceiptService {
               ? parseInt(item.quantity, 10) || 1
               : Number(item.quantity) || 1;
 
-          // Create the receipt item with all available data
+          // Create the receipt item with only OCR data
           const receiptItem = manager.create(ReceiptItem, {
             receiptSk: savedReceipt.receiptSk,
             productSk,
             price,
             quantity,
 
-            // Enhanced normalization data (if available)
-            rawName: item.name,
-            normalizedName: enhancedItem?.normalized_name,
-            brand: enhancedItem?.brand,
-            category: enhancedItem?.category,
-            confidenceScore: enhancedItem?.confidence_score,
-            isDiscount: enhancedItem?.is_discount || false,
-            isAdjustment: enhancedItem?.is_adjustment || false,
-            normalizationMethod: enhancedItem?.normalization_method,
-            embeddingData: enhancedItem?.embedding_lookup,
-            linkedDiscounts: enhancedItem?.linked_discounts,
-            originalPrice: enhancedItem?.original_price_numeric,
-            finalPrice: enhancedItem?.final_price,
-            priceFormatInfo: enhancedItem?.price_format_info,
+            // Core OCR data only
+            rawName: item.name || 'Unknown Item', // Ensure rawName is never undefined
             itemCode: enhancedItem?.item_number || item.item_number,
+
+            // OCR flags (determined from raw text, not from normalization)
+            isDiscountLine: enhancedItem?.is_discount || false,
+            isAdjustmentLine: enhancedItem?.is_adjustment || false,
           });
 
           return manager.save(receiptItem);
