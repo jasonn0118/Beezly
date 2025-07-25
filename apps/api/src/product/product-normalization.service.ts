@@ -5,6 +5,10 @@ import { NormalizedProduct } from '../entities/normalized-product.entity';
 import { OpenAIService } from './openai.service';
 import { StorePatternMatcher } from './store-patterns.config';
 import { VectorEmbeddingService } from './vector-embedding.service';
+import {
+  findGroceryChainByName,
+  getStoreNormalizationCriteria,
+} from '../constants';
 
 export interface ParsedPrice {
   amount: number;
@@ -270,8 +274,8 @@ export class ProductNormalizationService {
     // Step 1: Clean the raw name (with store context)
     const cleanedName = this.cleanRawName(rawName, merchant);
 
-    // Step 2: Check if it's a discount, adjustment, or fee line
-    const isDiscount = this.isDiscountLine(cleanedName);
+    // Step 2: Check if it's a discount, adjustment, or fee line (with store-specific patterns)
+    const isDiscount = this.isDiscountLine(cleanedName, merchant);
     const isAdjustment = this.isAdjustmentLine(cleanedName);
     const isFee = this.isFee(cleanedName);
 
@@ -389,10 +393,7 @@ export class ProductNormalizationService {
 
     // Expand store-specific abbreviated brand names if merchant is known
     if (merchant) {
-      const storePattern = StorePatternMatcher.identifyStore(merchant);
-      if (storePattern?.storeId === 'WALMART') {
-        cleaned = this.expandWalmartAbbreviations(cleaned);
-      }
+      cleaned = this.expandStoreBrandAbbreviations(cleaned, merchant);
     }
 
     return cleaned;
@@ -436,10 +437,82 @@ export class ProductNormalizationService {
   }
 
   /**
-   * Check if the line represents a discount
+   * Expand store-specific brand abbreviations using grocery store constants
    */
-  isDiscountLine(cleanedName: string): boolean {
-    return this.discountPatterns.some((pattern) => pattern.test(cleanedName));
+  private expandStoreBrandAbbreviations(
+    name: string,
+    merchant: string,
+  ): string {
+    const storeNormalizationCriteria = getStoreNormalizationCriteria(merchant);
+
+    if (!storeNormalizationCriteria.commonPatterns) {
+      // Fallback to Walmart-specific logic for backward compatibility
+      const groceryChain = findGroceryChainByName(merchant);
+      if (groceryChain?.normalizedName === 'Walmart') {
+        return this.expandWalmartAbbreviations(name);
+      }
+      return name;
+    }
+
+    // Apply store-specific pattern expansions
+    let expandedName = name;
+
+    for (const pattern of storeNormalizationCriteria.commonPatterns) {
+      // Handle common abbreviation patterns
+      if (pattern.includes(' ')) {
+        // Full brand name pattern - expand common abbreviations
+        const brandWords = pattern.trim().split(' ');
+        const abbreviation = brandWords.map((word) => word.charAt(0)).join('');
+
+        // Create regex patterns for abbreviation matching
+        const patterns = [
+          new RegExp(`^${abbreviation}\\s+`, 'i'), // "GV " -> "GREAT VALUE "
+          new RegExp(`^${abbreviation}([A-Z])`, 'i'), // "GV" followed by uppercase -> "GREAT VALUE $1"
+        ];
+
+        for (const regex of patterns) {
+          if (regex.test(expandedName)) {
+            const replacement = regex.source.includes('\\s+')
+              ? `${pattern.toUpperCase()} `
+              : `${pattern.toUpperCase()} $1`;
+            expandedName = expandedName.replace(regex, replacement);
+            break;
+          }
+        }
+      }
+    }
+
+    return expandedName;
+  }
+
+  /**
+   * Check if the line represents a discount
+   * Enhanced with store-specific discount indicators
+   */
+  isDiscountLine(cleanedName: string, merchant?: string): boolean {
+    // First check general discount patterns
+    const hasGeneralDiscountPattern = this.discountPatterns.some((pattern) =>
+      pattern.test(cleanedName),
+    );
+
+    if (hasGeneralDiscountPattern) {
+      return true;
+    }
+
+    // If merchant is provided, check store-specific discount indicators
+    if (merchant) {
+      const storeNormalizationCriteria =
+        getStoreNormalizationCriteria(merchant);
+
+      if (storeNormalizationCriteria.discountIndicators) {
+        const upperCleanedName = cleanedName.toUpperCase();
+        return storeNormalizationCriteria.discountIndicators.some((indicator) =>
+          upperCleanedName.includes(indicator.toUpperCase()),
+        );
+      }
+    }
+
+    return false;
   }
 
   /**

@@ -639,7 +639,7 @@ export class ProductService {
       store: {
         store_sk: store.storeSk,
         name: store.name,
-        address: store.address || '',
+        address: store.fullAddress || '',
         city: store.city,
         province: store.province,
       },
@@ -661,7 +661,7 @@ export class ProductService {
   ): Promise<Store> {
     // Try to find existing store by name and address (exact match first)
     let store = await this.storeRepository.findOne({
-      where: { name, address },
+      where: { name, fullAddress: address },
     });
 
     // If not found with exact match, try case-insensitive search
@@ -669,7 +669,7 @@ export class ProductService {
       store = await this.storeRepository
         .createQueryBuilder('store')
         .where('LOWER(store.name) = LOWER(:name)', { name })
-        .andWhere('LOWER(store.address) = LOWER(:address)', { address })
+        .andWhere('LOWER(store.fullAddress) = LOWER(:address)', { address })
         .getOne();
     }
 
@@ -677,13 +677,13 @@ export class ProductService {
     if (!store) {
       store = this.storeRepository.create({
         name: name.trim(), // Trim whitespace
-        address: address.trim(),
+        fullAddress: address.trim(),
         city,
         province,
         postalCode,
       });
       store = await this.storeRepository.save(store);
-      console.log(`Created new store: ${store.name} at ${store.address}`);
+      console.log(`Created new store: ${store.name} at ${store.fullAddress}`);
     } else {
       console.log(`Found existing store: ${store.name} (ID: ${store.storeSk})`);
     }

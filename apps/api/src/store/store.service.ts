@@ -19,10 +19,14 @@ export interface StoreDistance extends StoreDTO {
 interface RawStoreQueryResult {
   store_sk: string;
   name: string;
-  address?: string;
+  street_number?: string;
+  road?: string;
+  street_address?: string;
+  full_address?: string;
   city?: string;
   province?: string;
   postal_code?: string;
+  country_region?: string;
   latitude?: number;
   longitude?: number;
   place_id?: string;
@@ -81,10 +85,14 @@ export class StoreService {
   async createStore(storeData: Partial<StoreDTO>): Promise<StoreDTO> {
     const store = this.storeRepository.create({
       name: storeData.name,
-      address: storeData.address,
+      streetNumber: storeData.streetNumber,
+      road: storeData.road,
+      streetAddress: storeData.streetAddress,
+      fullAddress: storeData.fullAddress,
       city: storeData.city,
       province: storeData.province,
       postalCode: storeData.postalCode,
+      countryRegion: storeData.countryRegion,
       latitude: storeData.latitude,
       longitude: storeData.longitude,
       placeId: (storeData as StoreDataWithPlaceId).placeId,
@@ -105,11 +113,19 @@ export class StoreService {
 
     // Update fields
     if (storeData.name !== undefined) store.name = storeData.name;
-    if (storeData.address !== undefined) store.address = storeData.address;
+    if (storeData.streetNumber !== undefined)
+      store.streetNumber = storeData.streetNumber;
+    if (storeData.road !== undefined) store.road = storeData.road;
+    if (storeData.streetAddress !== undefined)
+      store.streetAddress = storeData.streetAddress;
+    if (storeData.fullAddress !== undefined)
+      store.fullAddress = storeData.fullAddress;
     if (storeData.city !== undefined) store.city = storeData.city;
     if (storeData.province !== undefined) store.province = storeData.province;
     if (storeData.postalCode !== undefined)
       store.postalCode = storeData.postalCode;
+    if (storeData.countryRegion !== undefined)
+      store.countryRegion = storeData.countryRegion;
     if (storeData.latitude !== undefined) store.latitude = storeData.latitude;
     if (storeData.longitude !== undefined)
       store.longitude = storeData.longitude;
@@ -331,10 +347,14 @@ export class StoreService {
     return {
       id: store.storeSk, // Use UUID as the public ID
       name: store.name,
-      address: store.address,
+      streetNumber: store.streetNumber,
+      road: store.road,
+      streetAddress: store.streetAddress,
+      fullAddress: store.fullAddress,
       city: store.city,
       province: store.province,
       postalCode: store.postalCode,
+      countryRegion: store.countryRegion,
       latitude: store.latitude,
       longitude: store.longitude,
       placeId: store.placeId,
@@ -347,10 +367,14 @@ export class StoreService {
     return {
       id: rawStore.store_sk,
       name: rawStore.name,
-      address: rawStore.address,
+      streetNumber: rawStore.street_number,
+      road: rawStore.road,
+      streetAddress: rawStore.street_address,
+      fullAddress: rawStore.full_address,
       city: rawStore.city,
       province: rawStore.province,
       postalCode: rawStore.postal_code,
+      countryRegion: rawStore.country_region,
       latitude: rawStore.latitude,
       longitude: rawStore.longitude,
       placeId: rawStore.place_id,
@@ -441,7 +465,7 @@ export class StoreService {
 
     const newStore = this.storeRepository.create({
       name: normalizedName,
-      address: store_address || addressComponents.fullAddress,
+      fullAddress: store_address || addressComponents.fullAddress,
       city: addressComponents.city,
       province: addressComponents.province,
       postalCode: addressComponents.postalCode,
