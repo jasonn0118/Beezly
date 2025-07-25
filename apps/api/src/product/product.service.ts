@@ -491,6 +491,7 @@ export class ProductService {
     product: Product,
   ): ProductSearchResponseDto {
     return {
+      product_sk: product.productSk,
       name: product.name,
       brand_name: product.brandName,
       image_url: product.imageUrl,
