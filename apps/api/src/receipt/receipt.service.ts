@@ -11,11 +11,39 @@ import { ProductService } from '../product/product.service';
 import { StoreService } from '../store/store.service';
 import { UserService } from '../user/user.service';
 import { ProductNormalizationService } from '../product/product-normalization.service';
+import { EnhancedOcrResult, OcrResult } from '../ocr/ocr.service';
 import {
   NormalizationTestResultDto,
   TestNormalizationRequestDto,
   TestNormalizationResponseDto,
 } from './dto/test-normalization-response.dto';
+
+// Base OCR item interface
+interface BaseOcrItem {
+  name: string;
+  price: string | number;
+  quantity: string | number;
+  item_number?: string;
+}
+
+// Enhanced item interface for type safety
+interface EnhancedReceiptItem extends BaseOcrItem {
+  normalized_name?: string;
+  brand?: string;
+  category?: string;
+  confidence_score?: number;
+  is_discount?: boolean;
+  is_adjustment?: boolean;
+  normalization_method?: string;
+  embedding_lookup?: unknown;
+  linked_discounts?: unknown;
+  original_price_numeric?: number;
+  final_price?: number;
+  price_format_info?: {
+    was_negative?: boolean;
+    original_format?: string;
+  };
+}
 
 export interface CreateReceiptRequest {
   userId?: string;
@@ -222,6 +250,167 @@ export class ReceiptService {
       });
 
       return this.mapReceiptToDTO(completeReceipt!);
+    });
+  }
+
+  /**
+   * Create a receipt from OCR processing result
+   * Handles both enhanced and regular OCR results with store linking
+   */
+  async createReceiptFromOcrResult(
+    ocrResult: EnhancedOcrResult | OcrResult,
+    userId?: string,
+    uploadedFilePath?: string,
+  ): Promise<Receipt> {
+    return this.receiptRepository.manager.transaction(async (manager) => {
+      // Sanitize userId: convert empty string to undefined
+      const sanitizedUserId =
+        userId && userId.trim() !== '' ? userId : undefined;
+
+      // Step 1: Find or create the store from merchant data
+      const store = await this.storeService.findOrCreateStoreFromOcr({
+        merchant: ocrResult.merchant,
+        store_address: ocrResult.store_address,
+      });
+
+      // Step 2: Parse receipt date
+      let receiptDate: Date | undefined;
+      let receiptTime: string | undefined;
+
+      if (ocrResult.date) {
+        try {
+          receiptDate = new Date(ocrResult.date);
+          receiptTime = ocrResult.time;
+        } catch {
+          console.warn('Failed to parse receipt date:', ocrResult.date);
+        }
+      }
+
+      // Step 3: Create the receipt record
+      const receipt = manager.create(Receipt, {
+        userSk: sanitizedUserId,
+        storeSk: store.storeSk,
+        imageUrl: uploadedFilePath,
+        status: 'processing',
+
+        // OCR metadata
+        rawText: ocrResult.raw_text,
+        ocrConfidence: ocrResult.azure_confidence,
+        engineUsed: ocrResult.engine_used,
+        ocrData: ocrResult,
+
+        // Enhanced normalization data (if available)
+        normalizationSummary: this.isEnhancedResult(ocrResult)
+          ? ocrResult.normalization_summary
+          : undefined,
+
+        // Receipt financial data
+        receiptDate,
+        receiptTime,
+        subtotal: ocrResult.subtotal,
+        tax: ocrResult.tax,
+        total: ocrResult.total,
+        purchaseDate: receiptDate || new Date(),
+      });
+
+      const savedReceipt = await manager.save(receipt);
+
+      // Step 4: Create receipt items
+      await Promise.all(
+        ocrResult.items.map(async (item) => {
+          // Validate item structure first
+          if (!this.isBaseOcrItem(item)) {
+            console.warn('Invalid item structure, skipping:', item);
+            return;
+          }
+
+          // Use type guard to safely check for enhanced properties
+          const enhancedItem = this.isEnhancedItem(item) ? item : null;
+
+          // Try to find or create the product
+          let productSk: string | undefined;
+
+          try {
+            // First, try to find existing product by barcode if available
+            const itemCode = enhancedItem?.item_number || item.item_number;
+            if (itemCode) {
+              const existingProduct =
+                await this.productService.getProductByBarcode(itemCode);
+              if (existingProduct) {
+                productSk = existingProduct.product_sk;
+              }
+            }
+
+            // If no existing product found, create a new one
+            if (!productSk) {
+              const productName = enhancedItem?.normalized_name || item.name;
+              const newProduct = await this.productService.createProduct({
+                name: productName,
+                barcode: itemCode,
+                // Add category if available from normalization
+                category: enhancedItem?.category
+                  ? this.getCategoryId(enhancedItem.category)
+                  : undefined,
+              });
+              productSk = newProduct.product_sk;
+            }
+          } catch (productError) {
+            console.warn(
+              'Failed to create/find product, creating receipt item without product link:',
+              productError,
+            );
+          }
+
+          // Parse price (handle string prices from OCR)
+          const price =
+            typeof item.price === 'string'
+              ? parseFloat(item.price.replace(/[^0-9.-]/g, '')) || 0
+              : Number(item.price) || 0;
+
+          const quantity =
+            typeof item.quantity === 'string'
+              ? parseInt(item.quantity, 10) || 1
+              : Number(item.quantity) || 1;
+
+          // Create the receipt item with all available data
+          const receiptItem = manager.create(ReceiptItem, {
+            receiptSk: savedReceipt.receiptSk,
+            productSk,
+            price,
+            quantity,
+
+            // Enhanced normalization data (if available)
+            rawName: item.name,
+            normalizedName: enhancedItem?.normalized_name,
+            brand: enhancedItem?.brand,
+            category: enhancedItem?.category,
+            confidenceScore: enhancedItem?.confidence_score,
+            isDiscount: enhancedItem?.is_discount || false,
+            isAdjustment: enhancedItem?.is_adjustment || false,
+            normalizationMethod: enhancedItem?.normalization_method,
+            embeddingData: enhancedItem?.embedding_lookup,
+            linkedDiscounts: enhancedItem?.linked_discounts,
+            originalPrice: enhancedItem?.original_price_numeric,
+            finalPrice: enhancedItem?.final_price,
+            priceFormatInfo: enhancedItem?.price_format_info,
+            itemCode: enhancedItem?.item_number || item.item_number,
+          });
+
+          return manager.save(receiptItem);
+        }),
+      );
+
+      // Step 5: Update receipt status to done
+      savedReceipt.status = 'done';
+      await manager.save(savedReceipt);
+
+      // Step 6: Load complete receipt with relationships
+      const completeReceipt = await manager.findOne(Receipt, {
+        where: { id: savedReceipt.id },
+        relations: ['user', 'store', 'items', 'items.product'],
+      });
+
+      return completeReceipt!;
     });
   }
 
@@ -604,5 +793,66 @@ export class ReceiptService {
       createdAt: receipt.createdAt.toISOString(),
       updatedAt: receipt.updatedAt.toISOString(),
     };
+  }
+
+  /**
+   * Helper method to check if OCR result is enhanced (has normalization data)
+   */
+  private isEnhancedResult(
+    ocrResult: EnhancedOcrResult | OcrResult,
+  ): ocrResult is EnhancedOcrResult {
+    return 'normalization_summary' in ocrResult;
+  }
+
+  /**
+   * Type guard to check if an item has enhanced normalization data
+   */
+  private isEnhancedItem(item: unknown): item is EnhancedReceiptItem {
+    return (
+      item !== null &&
+      typeof item === 'object' &&
+      item !== undefined &&
+      'name' in item &&
+      ('normalized_name' in item ||
+        'brand' in item ||
+        'category' in item ||
+        'confidence_score' in item)
+    );
+  }
+
+  /**
+   * Type guard to check if an item is at least a base OCR item
+   */
+  private isBaseOcrItem(item: unknown): item is BaseOcrItem {
+    return (
+      item !== null &&
+      typeof item === 'object' &&
+      item !== undefined &&
+      'name' in item &&
+      'price' in item &&
+      'quantity' in item
+    );
+  }
+
+  /**
+   * Helper method to get category ID from category name
+   * This is a simplified implementation - in production you might want more sophisticated mapping
+   */
+  private getCategoryId(categoryName: string): number | undefined {
+    // Simple mapping for common categories
+    const categoryMap: Record<string, number> = {
+      Produce: 101001,
+      Dairy: 101002,
+      Meat: 101003,
+      Bakery: 101004,
+      Beverages: 101005,
+      Snacks: 101006,
+      Frozen: 101007,
+      Household: 102001,
+      'Personal Care': 102002,
+      Health: 102003,
+    };
+
+    return categoryMap[categoryName];
   }
 }

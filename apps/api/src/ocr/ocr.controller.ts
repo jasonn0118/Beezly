@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { OcrService, OcrResult, EnhancedOcrResult } from './ocr.service';
+import { ReceiptService } from '../receipt/receipt.service';
 import { upload_receipt } from '../utils/storage.util';
 import {
   ProcessReceiptDto,
@@ -29,6 +30,7 @@ import {
 export class OcrController {
   constructor(
     private readonly ocrService: OcrService,
+    private readonly receiptService: ReceiptService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -441,27 +443,52 @@ export class OcrController {
 
       console.log(`Starting async upload for user ${userId}, store ${storeId}`);
 
-      // Fire-and-forget upload - don't await to avoid blocking response
-      upload_receipt(userId, storeId, file.buffer, file.mimetype)
-        .then((uploadedFilePath) => {
-          if (uploadedFilePath) {
-            console.log(
-              `Receipt uploaded successfully to: ${uploadedFilePath}`,
-            );
-          } else {
-            console.warn('Failed to upload receipt to storage');
-          }
-        })
-        .catch((error) => {
-          console.error('Error uploading receipt to storage:', error);
-        });
+      let uploadedFilePath: string | undefined;
 
-      // TODO: If create_receipt flag is true, create receipt record in database
-      // This would require implementing receipt creation service integration
+      try {
+        // Upload file to storage
+        const uploadResult = await upload_receipt(
+          userId,
+          storeId,
+          file.buffer,
+          file.mimetype,
+        );
+        uploadedFilePath = uploadResult || undefined;
+        if (uploadedFilePath) {
+          console.log(`Receipt uploaded successfully to: ${uploadedFilePath}`);
+        }
+      } catch (error) {
+        console.error('Error uploading receipt to storage:', error);
+        // Continue without file path - not critical for OCR processing
+      }
+
+      // Create receipt record in database if requested
+      let receiptId: string | undefined;
+
+      if (body.create_receipt) {
+        try {
+          const receipt = await this.receiptService.createReceiptFromOcrResult(
+            result,
+            body.user_id, // Pass actual user_id, not default
+            uploadedFilePath,
+          );
+          receiptId = receipt.receiptSk;
+          console.log(`Receipt created in database with ID: ${receiptId}`);
+        } catch (error) {
+          console.error('Error creating receipt in database:', error);
+          // Continue without receipt creation - OCR result still valid
+        }
+      }
 
       return {
         success: true,
-        data: result,
+        data: {
+          ...result,
+          // Add receipt_id to response if created
+          ...(receiptId && { receipt_id: receiptId }),
+          // Add uploaded file path to response if available
+          ...(uploadedFilePath && { uploaded_file_path: uploadedFilePath }),
+        },
       };
     } catch (error) {
       throw new HttpException(
