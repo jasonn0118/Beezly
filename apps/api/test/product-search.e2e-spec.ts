@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import { Server } from 'http';
 import { ProductController } from '../src/product/product.controller';
 import { ProductService } from '../src/product/product.service';
+import { VectorEmbeddingService } from '../src/product/vector-embedding.service';
 
 describe('Product Search (e2e)', () => {
   let app: INestApplication;
@@ -55,6 +56,21 @@ describe('Product Search (e2e)', () => {
           provide: ProductService,
           useValue: mockProductService,
         },
+        {
+          provide: VectorEmbeddingService,
+          useValue: {
+            findSimilarProductsEnhanced: jest.fn(),
+            batchFindSimilarProducts: jest.fn(),
+            generateEmbedding: jest.fn(),
+            updateProductEmbedding: jest.fn(),
+            getEmbeddingStats: jest.fn().mockResolvedValue({
+              totalProducts: 0,
+              productsWithEmbeddings: 0,
+              productsWithoutEmbeddings: 0,
+              averageEmbeddingLength: 0,
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -63,7 +79,9 @@ describe('Product Search (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   describe('/products/search (GET)', () => {

@@ -74,6 +74,36 @@ export class ProductService {
     return product ? this.mapProductToDTO(product) : null;
   }
 
+  /**
+   * Find or create a product by barcode with race condition handling
+   */
+  async findOrCreateProduct(
+    productData: Partial<NormalizedProductDTO>,
+  ): Promise<NormalizedProductDTO> {
+    // First, try to find existing product by barcode
+    if (productData.barcode) {
+      const existing = await this.getProductByBarcode(productData.barcode);
+      if (existing) {
+        return existing;
+      }
+    }
+
+    // If not found, try to create a new one with race condition handling
+    try {
+      return await this.createProduct(productData);
+    } catch (error: unknown) {
+      // Check if it's a duplicate key error (race condition)
+      if (this.isDuplicateKeyError(error) && productData.barcode) {
+        // Another process created the product, try to find it again
+        const existing = await this.getProductByBarcode(productData.barcode);
+        if (existing) {
+          return existing;
+        }
+      }
+      throw error;
+    }
+  }
+
   async createProduct(
     productData: Partial<NormalizedProductDTO>,
   ): Promise<NormalizedProductDTO> {
@@ -498,6 +528,18 @@ export class ProductService {
     };
   }
 
+  /**
+   * Type guard to check if error is a PostgreSQL duplicate key error
+   */
+  private isDuplicateKeyError(error: unknown): boolean {
+    return (
+      error !== null &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code: string }).code === '23505'
+    );
+  }
+
   // Mobile-specific method for creating product with store and price
   async createProductWithPriceAndStore(
     productData: MobileProductCreateDto,
@@ -597,7 +639,7 @@ export class ProductService {
       store: {
         store_sk: store.storeSk,
         name: store.name,
-        address: store.address || '',
+        address: store.fullAddress || '',
         city: store.city,
         province: store.province,
       },
@@ -619,7 +661,7 @@ export class ProductService {
   ): Promise<Store> {
     // Try to find existing store by name and address (exact match first)
     let store = await this.storeRepository.findOne({
-      where: { name, address },
+      where: { name, fullAddress: address },
     });
 
     // If not found with exact match, try case-insensitive search
@@ -627,7 +669,7 @@ export class ProductService {
       store = await this.storeRepository
         .createQueryBuilder('store')
         .where('LOWER(store.name) = LOWER(:name)', { name })
-        .andWhere('LOWER(store.address) = LOWER(:address)', { address })
+        .andWhere('LOWER(store.fullAddress) = LOWER(:address)', { address })
         .getOne();
     }
 
@@ -635,13 +677,13 @@ export class ProductService {
     if (!store) {
       store = this.storeRepository.create({
         name: name.trim(), // Trim whitespace
-        address: address.trim(),
+        fullAddress: address.trim(),
         city,
         province,
         postalCode,
       });
       store = await this.storeRepository.save(store);
-      console.log(`Created new store: ${store.name} at ${store.address}`);
+      console.log(`Created new store: ${store.name} at ${store.fullAddress}`);
     } else {
       console.log(`Found existing store: ${store.name} (ID: ${store.storeSk})`);
     }

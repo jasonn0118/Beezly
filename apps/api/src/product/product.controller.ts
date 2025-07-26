@@ -28,11 +28,23 @@ import {
   MobileProductResponseDto,
 } from './dto/mobile-product-create.dto';
 import { ProductSearchResponseDto } from './dto/product-search-response.dto';
+import {
+  EmbeddingSearchRequestDto,
+  EmbeddingSearchResponseDto,
+  EmbeddingSearchResultDto,
+  BatchEmbeddingSearchRequestDto,
+  BatchEmbeddingSearchResponseDto,
+  BatchEmbeddingSearchResultDto,
+} from './dto/embedding-search.dto';
+import { VectorEmbeddingService } from './vector-embedding.service';
 
 @ApiTags('Products')
 @Controller('products')
 export class ProductController {
-  constructor(private readonly productService: ProductService) {}
+  constructor(
+    private readonly productService: ProductService,
+    private readonly vectorEmbeddingService: VectorEmbeddingService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Get all products' })
@@ -242,5 +254,209 @@ export class ProductController {
   async deleteProduct(@Param('id') id: string): Promise<{ message: string }> {
     await this.productService.deleteProduct(id);
     return { message: 'Product deleted successfully' };
+  }
+
+  @Post('search/embedding')
+  @ApiOperation({
+    summary: 'Search for similar products using embedding-based similarity',
+    description:
+      'Uses vector embeddings to find products with similar names within a specific store. This is particularly useful for matching receipt items to normalized product names.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Similar products found',
+    type: EmbeddingSearchResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request parameters',
+  })
+  async searchByEmbedding(
+    @Body() searchRequest: EmbeddingSearchRequestDto,
+  ): Promise<EmbeddingSearchResponseDto> {
+    const startTime = Date.now();
+
+    const results =
+      await this.vectorEmbeddingService.findSimilarProductsEnhanced({
+        queryText: searchRequest.query,
+        merchant: searchRequest.merchant,
+        similarityThreshold: searchRequest.similarityThreshold || 0.85,
+        limit: searchRequest.limit || 5,
+        includeDiscounts: searchRequest.includeDiscounts || false,
+        includeAdjustments: searchRequest.includeAdjustments || false,
+      });
+
+    const searchResults = results.map((result) => ({
+      productId: result.productId,
+      similarity: result.similarity,
+      rawName: result.normalizedProduct.rawName,
+      normalizedName: result.normalizedProduct.normalizedName,
+      brand: result.normalizedProduct.brand,
+      category: result.normalizedProduct.category,
+      confidenceScore: result.normalizedProduct.confidenceScore,
+      matchCount: result.normalizedProduct.matchCount,
+      lastMatchedAt: result.normalizedProduct.lastMatchedAt,
+    }));
+
+    const searchTimeMs = Date.now() - startTime;
+
+    return {
+      results: searchResults,
+      totalCount: searchResults.length,
+      query: searchRequest.query,
+      merchant: searchRequest.merchant,
+      searchTimeMs,
+    };
+  }
+
+  @Post('search/embedding/batch')
+  @ApiOperation({
+    summary: 'Batch search for similar products using embeddings',
+    description:
+      'Search for multiple products at once using vector embeddings. Useful for processing entire receipts.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Batch search results',
+    type: BatchEmbeddingSearchResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request parameters',
+  })
+  async batchSearchByEmbedding(
+    @Body() batchRequest: BatchEmbeddingSearchRequestDto,
+  ): Promise<BatchEmbeddingSearchResponseDto> {
+    const startTime = Date.now();
+    const results = [] as BatchEmbeddingSearchResultDto[];
+    let queriesWithMatches = 0;
+
+    // Process each query
+    for (const query of batchRequest.queries) {
+      const matches =
+        await this.vectorEmbeddingService.findSimilarProductsEnhanced({
+          queryText: query,
+          merchant: batchRequest.merchant,
+          similarityThreshold: batchRequest.similarityThreshold || 0.85,
+          limit: batchRequest.limitPerQuery || 3,
+          includeDiscounts: false,
+          includeAdjustments: false,
+        });
+
+      const searchResults: EmbeddingSearchResultDto[] = matches.map(
+        (result) => ({
+          productId: result.productId,
+          similarity: result.similarity,
+          rawName: result.normalizedProduct.rawName,
+          normalizedName: result.normalizedProduct.normalizedName,
+          brand: result.normalizedProduct.brand,
+          category: result.normalizedProduct.category,
+          confidenceScore: result.normalizedProduct.confidenceScore,
+          matchCount: result.normalizedProduct.matchCount,
+          lastMatchedAt: result.normalizedProduct.lastMatchedAt,
+        }),
+      );
+
+      const hasMatches = searchResults.length > 0;
+      if (hasMatches) {
+        queriesWithMatches++;
+      }
+
+      const batchResult: BatchEmbeddingSearchResultDto = {
+        query,
+        matches: searchResults,
+        hasMatches,
+      };
+      results.push(batchResult);
+    }
+
+    const totalSearchTimeMs = Date.now() - startTime;
+
+    return {
+      results: results,
+      totalQueries: batchRequest.queries.length,
+      queriesWithMatches,
+      merchant: batchRequest.merchant,
+      totalSearchTimeMs,
+    };
+  }
+
+  @Post('embeddings/update')
+  @ApiOperation({
+    summary: 'Update embeddings for products without them',
+    description:
+      "Batch process to generate and store embeddings for normalized products that don't have them yet.",
+  })
+  @ApiQuery({
+    name: 'batchSize',
+    description: 'Number of products to process in this batch',
+    required: false,
+    type: Number,
+    example: 50,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Embedding update results',
+    schema: {
+      properties: {
+        updatedCount: { type: 'number', example: 45 },
+        batchSize: { type: 'number', example: 50 },
+        message: {
+          type: 'string',
+          example: 'Successfully updated 45 product embeddings',
+        },
+      },
+    },
+  })
+  async updateProductEmbeddings(
+    @Query('batchSize') batchSize?: number,
+  ): Promise<{ updatedCount: number; batchSize: number; message: string }> {
+    const size = batchSize && batchSize > 0 ? Math.min(batchSize, 100) : 50;
+    const updatedCount =
+      await this.vectorEmbeddingService.batchUpdateEmbeddings(size);
+
+    return {
+      updatedCount,
+      batchSize: size,
+      message: `Successfully updated ${updatedCount} product embeddings`,
+    };
+  }
+
+  @Get('embeddings/stats')
+  @ApiOperation({
+    summary: 'Get embedding statistics',
+    description:
+      'Get statistics about product embeddings including coverage and dimensions.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Embedding statistics',
+    schema: {
+      properties: {
+        totalProducts: { type: 'number', example: 1000 },
+        productsWithEmbeddings: { type: 'number', example: 850 },
+        productsWithoutEmbeddings: { type: 'number', example: 150 },
+        averageEmbeddingLength: { type: 'number', example: 1536 },
+        coveragePercentage: { type: 'number', example: 85.0 },
+      },
+    },
+  })
+  async getEmbeddingStats(): Promise<{
+    totalProducts: number;
+    productsWithEmbeddings: number;
+    productsWithoutEmbeddings: number;
+    averageEmbeddingLength: number;
+    coveragePercentage: number;
+  }> {
+    const stats = await this.vectorEmbeddingService.getEmbeddingStats();
+    const coveragePercentage =
+      stats.totalProducts > 0
+        ? (stats.productsWithEmbeddings / stats.totalProducts) * 100
+        : 0;
+
+    return {
+      ...stats,
+      coveragePercentage: Math.round(coveragePercentage * 100) / 100,
+    };
   }
 }

@@ -11,11 +11,39 @@ import { ProductService } from '../product/product.service';
 import { StoreService } from '../store/store.service';
 import { UserService } from '../user/user.service';
 import { ProductNormalizationService } from '../product/product-normalization.service';
+import { EnhancedOcrResult, OcrResult } from '../ocr/ocr.service';
 import {
   NormalizationTestResultDto,
   TestNormalizationRequestDto,
   TestNormalizationResponseDto,
 } from './dto/test-normalization-response.dto';
+
+// Base OCR item interface
+interface BaseOcrItem {
+  name: string;
+  price: string | number;
+  quantity: string | number;
+  item_number?: string;
+}
+
+// Enhanced item interface for type safety
+interface EnhancedReceiptItem extends BaseOcrItem {
+  normalized_name?: string;
+  brand?: string;
+  category?: string;
+  confidence_score?: number;
+  is_discount?: boolean;
+  is_adjustment?: boolean;
+  normalization_method?: string;
+  embedding_lookup?: unknown;
+  linked_discounts?: unknown;
+  original_price_numeric?: number;
+  final_price?: number;
+  price_format_info?: {
+    was_negative?: boolean;
+    original_format?: string;
+  };
+}
 
 export interface CreateReceiptRequest {
   userId?: string;
@@ -222,6 +250,186 @@ export class ReceiptService {
       });
 
       return this.mapReceiptToDTO(completeReceipt!);
+    });
+  }
+
+  /**
+   * Create a receipt from OCR processing result
+   * Handles both enhanced and regular OCR results with store linking
+   */
+  async createReceiptFromOcrResult(
+    ocrResult: EnhancedOcrResult | OcrResult,
+    userId?: string,
+    uploadedFilePath?: string,
+  ): Promise<Receipt> {
+    return this.receiptRepository.manager.transaction(async (manager) => {
+      // Sanitize userId: convert empty string to undefined and validate UUID format
+      let sanitizedUserId: string | undefined;
+
+      if (userId && typeof userId === 'string' && userId.trim() !== '') {
+        const trimmedUserId = userId.trim();
+        // Reject common invalid values
+        if (
+          trimmedUserId === 'string' ||
+          trimmedUserId === 'undefined' ||
+          trimmedUserId === 'null'
+        ) {
+          console.warn(`⚠️ Rejected invalid userId value: ${trimmedUserId}`);
+          sanitizedUserId = undefined;
+        } else {
+          // Check if it's a valid UUID format (basic check)
+          const uuidRegex =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (uuidRegex.test(trimmedUserId)) {
+            sanitizedUserId = trimmedUserId;
+          } else {
+            console.warn(`⚠️ Invalid UUID format for userId: ${trimmedUserId}`);
+            sanitizedUserId = undefined;
+          }
+        }
+      } else {
+        sanitizedUserId = undefined;
+      }
+
+      // Step 1: Find or create the store from merchant data
+      const store = await this.storeService.findOrCreateStoreFromOcr({
+        merchant: ocrResult.merchant,
+        store_address: ocrResult.store_address,
+      });
+
+      // Validate store UUID
+      if (
+        !store.storeSk ||
+        typeof store.storeSk !== 'string' ||
+        store.storeSk === 'string'
+      ) {
+        throw new Error(
+          `Invalid store UUID received: ${JSON.stringify(store.storeSk)}`,
+        );
+      }
+
+      // Step 2: Parse receipt date
+      let receiptDate: Date | undefined;
+      let receiptTime: string | undefined;
+
+      if (ocrResult.date) {
+        try {
+          receiptDate = new Date(ocrResult.date);
+          receiptTime = ocrResult.time;
+        } catch {
+          console.warn('Failed to parse receipt date:', ocrResult.date);
+        }
+      }
+
+      // Step 3: Create the receipt record
+      const receipt = manager.create(Receipt, {
+        userSk: sanitizedUserId,
+        storeSk: store.storeSk,
+        imageUrl: uploadedFilePath,
+        status: 'processing',
+
+        // OCR metadata
+        rawText: ocrResult.raw_text,
+        ocrConfidence: ocrResult.azure_confidence,
+        engineUsed: ocrResult.engine_used,
+        ocrData: ocrResult,
+
+        // Enhanced normalization data (if available)
+        normalizationSummary: this.isEnhancedResult(ocrResult)
+          ? ocrResult.normalization_summary
+          : undefined,
+
+        // Receipt financial data
+        receiptDate,
+        receiptTime,
+        subtotal: ocrResult.subtotal,
+        tax: ocrResult.tax,
+        total: ocrResult.total,
+        purchaseDate: receiptDate || new Date(),
+      });
+
+      const savedReceipt = await manager.save(receipt);
+
+      // Step 4: Create receipt items
+      await Promise.all(
+        ocrResult.items.map(async (item) => {
+          // Validate item structure first
+          if (!this.isBaseOcrItem(item)) {
+            console.warn('Invalid item structure, skipping:', item);
+            return;
+          }
+
+          // Use type guard to safely check for enhanced properties
+          const enhancedItem = this.isEnhancedItem(item) ? item : null;
+
+          // Try to find or create the product
+          let productSk: string | undefined;
+
+          try {
+            // Find or create product with race condition handling
+            const itemCode = enhancedItem?.item_number || item.item_number;
+            const productName = enhancedItem?.normalized_name || item.name;
+
+            if (itemCode || productName) {
+              const product = await this.productService.findOrCreateProduct({
+                name: productName,
+                barcode: itemCode,
+                // Add category if available from normalization
+                category: enhancedItem?.category
+                  ? this.getCategoryId(enhancedItem.category)
+                  : undefined,
+              });
+              productSk = product.product_sk;
+            }
+          } catch (productError) {
+            console.warn(
+              'Failed to create/find product, creating receipt item without product link:',
+              productError,
+            );
+          }
+
+          // Parse price (handle string prices from OCR)
+          const price =
+            typeof item.price === 'string'
+              ? parseFloat(item.price.replace(/[^0-9.-]/g, '')) || 0
+              : Number(item.price) || 0;
+
+          const quantity =
+            typeof item.quantity === 'string'
+              ? parseInt(item.quantity, 10) || 1
+              : Number(item.quantity) || 1;
+
+          // Create the receipt item with only OCR data
+          const receiptItem = manager.create(ReceiptItem, {
+            receiptSk: savedReceipt.receiptSk,
+            productSk,
+            price,
+            quantity,
+
+            // Core OCR data only
+            rawName: item.name || 'Unknown Item', // Ensure rawName is never undefined
+            itemCode: enhancedItem?.item_number || item.item_number,
+
+            // OCR flags (determined from raw text, not from normalization)
+            isDiscountLine: enhancedItem?.is_discount || false,
+            isAdjustmentLine: enhancedItem?.is_adjustment || false,
+          });
+
+          return manager.save(receiptItem);
+        }),
+      );
+
+      // Step 5: Update receipt status to done
+      savedReceipt.status = 'done';
+      await manager.save(savedReceipt);
+
+      // Step 6: Load complete receipt with relationships
+      const completeReceipt = await manager.findOne(Receipt, {
+        where: { id: savedReceipt.id },
+        relations: ['user', 'store', 'items', 'items.product'],
+      });
+
+      return completeReceipt!;
     });
   }
 
@@ -604,5 +812,66 @@ export class ReceiptService {
       createdAt: receipt.createdAt.toISOString(),
       updatedAt: receipt.updatedAt.toISOString(),
     };
+  }
+
+  /**
+   * Helper method to check if OCR result is enhanced (has normalization data)
+   */
+  private isEnhancedResult(
+    ocrResult: EnhancedOcrResult | OcrResult,
+  ): ocrResult is EnhancedOcrResult {
+    return 'normalization_summary' in ocrResult;
+  }
+
+  /**
+   * Type guard to check if an item has enhanced normalization data
+   */
+  private isEnhancedItem(item: unknown): item is EnhancedReceiptItem {
+    return (
+      item !== null &&
+      typeof item === 'object' &&
+      item !== undefined &&
+      'name' in item &&
+      ('normalized_name' in item ||
+        'brand' in item ||
+        'category' in item ||
+        'confidence_score' in item)
+    );
+  }
+
+  /**
+   * Type guard to check if an item is at least a base OCR item
+   */
+  private isBaseOcrItem(item: unknown): item is BaseOcrItem {
+    return (
+      item !== null &&
+      typeof item === 'object' &&
+      item !== undefined &&
+      'name' in item &&
+      'price' in item &&
+      'quantity' in item
+    );
+  }
+
+  /**
+   * Helper method to get category ID from category name
+   * This is a simplified implementation - in production you might want more sophisticated mapping
+   */
+  private getCategoryId(categoryName: string): number | undefined {
+    // Simple mapping for common categories
+    const categoryMap: Record<string, number> = {
+      Produce: 101001,
+      Dairy: 101002,
+      Meat: 101003,
+      Bakery: 101004,
+      Beverages: 101005,
+      Snacks: 101006,
+      Frozen: 101007,
+      Household: 102001,
+      'Personal Care': 102002,
+      Health: 102003,
+    };
+
+    return categoryMap[categoryName];
   }
 }

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ReceiptService, CreateReceiptRequest } from './receipt.service';
+import { ReceiptNormalizationService } from './receipt-normalization.service';
 import { ReceiptDTO } from '../../../packages/types/dto/receipt';
 import { CreateReceiptRequestDto } from './dto/create-receipt-request.dto';
 import {
@@ -19,7 +20,10 @@ import {
 @ApiTags('Receipts')
 @Controller('receipts')
 export class ReceiptController {
-  constructor(private readonly receiptService: ReceiptService) {}
+  constructor(
+    private readonly receiptService: ReceiptService,
+    private readonly normalizationService: ReceiptNormalizationService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Get all receipts' })
@@ -121,5 +125,69 @@ export class ReceiptController {
     @Body() request: TestNormalizationRequestDto,
   ): Promise<TestNormalizationResponseDto> {
     return this.receiptService.testNormalization(request);
+  }
+
+  @Post(':id/normalize')
+  @ApiOperation({
+    summary: 'Normalize items in a receipt',
+    description:
+      'Process all items in a receipt to find normalized product matches. This creates relationships between receipt items and normalized products.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt items successfully normalized',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found',
+  })
+  async normalizeReceipt(
+    @Param('id') id: string,
+  ): Promise<{ message: string; itemsNormalized: number }> {
+    await this.normalizationService.normalizeReceiptItems(id);
+    const receipt = await this.receiptService.getReceiptById(id);
+    return {
+      message: 'Receipt items normalized successfully',
+      itemsNormalized: receipt?.items.length || 0,
+    };
+  }
+
+  @Get(':id/normalized')
+  @ApiOperation({
+    summary: 'Get receipt with normalized items',
+    description:
+      'Retrieve a receipt with all normalization data for each item, including multiple candidates and selected normalization.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt with normalized items',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found',
+  })
+  async getReceiptWithNormalizedItems(@Param('id') id: string): Promise<any> {
+    return this.normalizationService.getReceiptWithNormalizedItems(id);
+  }
+
+  @Put('items/:itemId/normalization/:productId')
+  @ApiOperation({
+    summary: 'Update selected normalization for a receipt item',
+    description:
+      'Change which normalized product is selected for a specific receipt item. This allows manual correction of normalization results.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Normalization selection updated',
+  })
+  async updateSelectedNormalization(
+    @Param('itemId') itemId: string,
+    @Param('productId') productId: string,
+  ): Promise<{ message: string }> {
+    await this.normalizationService.updateSelectedNormalization(
+      itemId,
+      productId,
+    );
+    return { message: 'Normalization selection updated successfully' };
   }
 }
