@@ -36,12 +36,12 @@ const DB_PORT = process.env.DB_PORT || '5432';
 
 async function checkDatabaseExists(): Promise<boolean> {
   try {
-    // Use psql to check if database exists
+    // Use psql to check if database exists - more Windows-compatible approach
     const { stdout } = await execAsync(
-      `psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USERNAME} -lqt | cut -d \\| -f 1 | grep -qw ${DB_NAME}`,
+      `psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USERNAME} -d postgres -t -c "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'"`,
       { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } }
     );
-    return true;
+    return stdout.trim() === '1';
   } catch {
     return false;
   }
@@ -67,7 +67,12 @@ async function createDatabase(): Promise<void> {
       { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } }
     );
     console.log('✅ Database created successfully');
-  } catch (error) {
+  } catch (error: any) {
+    // Check if error is because database already exists
+    if (error.message && error.message.includes('already exists')) {
+      console.log('ℹ️  Database already exists, continuing...');
+      return;
+    }
     console.error('❌ Failed to create database:', error);
     throw error;
   }
