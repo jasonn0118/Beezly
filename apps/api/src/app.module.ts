@@ -22,8 +22,11 @@ import {
   UserBadges,
   UserScore,
   VerificationLogs,
+  NormalizedProduct,
+  ReceiptItemNormalization,
 } from './entities';
 import { OcrModule } from './ocr/ocr.module';
+import { PriceModule } from './price/price.module';
 import { ProductModule } from './product/product.module';
 import { ReceiptModule } from './receipt/receipt.module';
 import { ReceiptItemModule } from './receiptItem/receiptItem.module';
@@ -79,9 +82,16 @@ import { UserModule } from './user/user.module';
           UserScore,
           Price,
           VerificationLogs,
+          NormalizedProduct,
+          ReceiptItemNormalization,
         ],
         synchronize: process.env.NODE_ENV === 'test', // Only synchronize for tests, use migrations for dev/prod
-        logging: process.env.DB_LOGGING === 'true',
+        logging:
+          process.env.DB_LOGGING === 'verbose'
+            ? true
+            : process.env.DB_LOGGING === 'minimal'
+              ? ['error', 'warn', 'migration']
+              : false,
         ssl:
           process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
         dropSchema: process.env.NODE_ENV === 'test',
@@ -91,6 +101,7 @@ import { UserModule } from './user/user.module';
     BarcodeModule,
     CategoryModule,
     OcrModule,
+    PriceModule,
     ProductModule,
     ReceiptModule,
     ReceiptItemModule,

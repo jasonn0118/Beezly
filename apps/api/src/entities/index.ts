@@ -11,3 +11,5 @@ export { UserBadges } from './user-badges.entity';
 export { UserScore } from './user-score.entity';
 export { Price } from './price.entity';
 export { VerificationLogs } from './verification-logs.entity';
+export { NormalizedProduct } from './normalized-product.entity';
+export { ReceiptItemNormalization } from './receipt-item-normalization.entity';

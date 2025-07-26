@@ -15,10 +15,21 @@ import {
   VerificationLogs,
 } from '../entities';
 
-// Load environment variables only if not in CI environment
+// Load environment variables based on NODE_ENV
 // CI environments should have environment variables already set
 if (process.env.CI !== 'true') {
-  config();
+  // Determine which env file to load based on NODE_ENV
+  const envFile =
+    process.env.NODE_ENV === 'production'
+      ? '.env.production'
+      : process.env.NODE_ENV === 'staging'
+        ? '.env.staging'
+        : process.env.NODE_ENV === 'test'
+          ? '.env.test'
+          : '.env.local'; // Default to local for development
+
+  config({ path: envFile });
+  console.log(`📁 Loaded environment from: ${envFile}`);
 }
 
 // Build migrations path based on environment
@@ -64,6 +75,13 @@ export const getDataSourceConfig = (): DataSourceOptions => {
     logging: process.env.DB_LOGGING === 'true',
     migrationsRun: false, // Don't auto-run migrations
     migrationsTableName: 'migrations',
+    // Force IPv4 if running in CI to avoid IPv6 connectivity issues
+    ...(process.env.CI === 'true' && {
+      extra: {
+        options:
+          '-c tcp_keepalives_idle=20 -c tcp_keepalives_interval=20 -c tcp_keepalives_count=3',
+      },
+    }),
   };
 };
 

@@ -36,11 +36,25 @@ export class ProductResponseDto {
   brand?: string;
 
   @ApiProperty({
-    description: 'Product category',
+    description: 'Product category name',
     example: 'Produce',
     required: false,
   })
-  category?: string;
+  categoryName?: string;
+
+  @ApiProperty({
+    description: 'Product category ID',
+    example: 12,
+    required: false,
+  })
+  category?: number;
+
+  @ApiProperty({
+    description: 'Image URL of the product',
+    example: 'https://example.com/images/banana.jpg',
+    required: false,
+  })
+  image_url?: string;
 
   @ApiProperty({
     description:

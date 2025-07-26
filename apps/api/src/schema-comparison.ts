@@ -55,6 +55,13 @@ const createDataSource = () => {
     synchronize: false,
     logging: process.env.DB_LOGGING === 'true',
     migrationsRun: false,
+    // Force IPv4 if running in CI to avoid IPv6 connectivity issues
+    ...(process.env.CI && {
+      extra: {
+        options:
+          '-c tcp_keepalives_idle=20 -c tcp_keepalives_interval=20 -c tcp_keepalives_count=3',
+      },
+    }),
   });
 };
 

@@ -13,8 +13,16 @@ CLAUDE.md
 .mcp.json
 
 # Environment variables
-.env.*
-!.env.example
+.env
+.env.local
+.env.staging
+.env.production
+.env.development.local
+.env.test
+.env.test.local
+.env.production.local
+# Allow example files for templates
+!.env.*.example
 
 # Logs
 logs

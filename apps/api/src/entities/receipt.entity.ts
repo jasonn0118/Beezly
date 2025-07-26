@@ -46,6 +46,61 @@ export class Receipt extends BaseEntity {
   @Column({ name: 'purchase_date', type: 'date', nullable: true })
   purchaseDate?: Date;
 
+  // OCR-specific fields
+  @Column({ name: 'raw_text', type: 'jsonb', nullable: true })
+  rawText?: any;
+
+  @Column({
+    name: 'ocr_confidence',
+    type: 'decimal',
+    precision: 5,
+    scale: 4,
+    nullable: true,
+  })
+  ocrConfidence?: number;
+
+  @Column({ name: 'engine_used', type: 'varchar', length: 50, nullable: true })
+  engineUsed?: string;
+
+  @Column({ name: 'ocr_data', type: 'jsonb', nullable: true })
+  ocrData?: any;
+
+  @Column({ name: 'normalization_summary', type: 'jsonb', nullable: true })
+  normalizationSummary?: any;
+
+  @Column({ name: 'receipt_date', type: 'timestamp', nullable: true })
+  receiptDate?: Date;
+
+  @Column({ name: 'receipt_time', type: 'varchar', length: 10, nullable: true })
+  receiptTime?: string;
+
+  @Column({
+    name: 'subtotal',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  subtotal?: number;
+
+  @Column({
+    name: 'tax',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  tax?: number;
+
+  @Column({
+    name: 'total',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  total?: number;
+
   // Relationships
   @OneToMany(() => ReceiptItem, (item) => item.receipt)
   items: ReceiptItem[];

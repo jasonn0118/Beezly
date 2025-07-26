@@ -1,4 +1,63 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { BarcodeType } from "./barcode";
+
+export enum DiscountType {
+  PERCENTAGE = 'percentage',
+  FIXED_AMOUNT = 'fixed_amount',
+  COUPON = 'coupon',
+  ADJUSTMENT = 'adjustment',
+}
+
+export interface NormalizationResult {
+  normalizedName: string;
+  brand?: string;
+  category?: string;
+  confidenceScore: number;
+  isDiscount: boolean;
+  isAdjustment: boolean;
+  itemCode?: string;
+}
+
+export interface ProductNormalizationOptions {
+  merchant: string;
+  rawName: string;
+  itemCode?: string;
+  useAI?: boolean;
+  similarityThreshold?: number;
+}
+
+export interface NormalizedProductData {
+  normalizedProductSk: string;
+  rawName: string;
+  merchant: string;
+  itemCode?: string;
+  normalizedName: string;
+  brand?: string;
+  category?: string;
+  confidenceScore: number;
+  embedding?: number[];
+  isDiscount: boolean;
+  isAdjustment: boolean;
+  matchCount: number;
+  lastMatchedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface NormalizationStats {
+  totalNormalizedProducts: number;
+  discountLines: number;
+  adjustmentLines: number;
+  averageConfidence: number;
+  lowConfidenceProducts: number;
+  merchant?: string;
+}
+
+export interface EmbeddingResult {
+  productId: string;
+  similarity: number;
+  normalizedProduct: NormalizedProductData;
+}
 
 export class NormalizedProductDTO {
   @ApiProperty({
@@ -20,10 +79,23 @@ export class NormalizedProductDTO {
   barcode?: string;
 
   @ApiPropertyOptional({
+    example: BarcodeType.EAN13,
+    description: "Type of barcode",
+    enum: BarcodeType,
+  })
+  barcode_type?: BarcodeType;
+
+  @ApiPropertyOptional({
     example: "https://example.com/images/product.jpg",
     description: "Optional product image URL",
   })
   image_url?: string;
+
+  @ApiPropertyOptional({
+    example: "Cheil Jedang",
+    description: "Optional product brand name",
+  })
+  brand_name?: string;
 
   @ApiPropertyOptional({
     example: 80.5,

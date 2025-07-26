@@ -21,6 +21,9 @@ export class Product extends BaseEntity {
   name: string;
 
   @Column({ nullable: true })
+  brandName?: string;
+
+  @Column({ nullable: true })
   barcode?: string;
 
   @Column({
