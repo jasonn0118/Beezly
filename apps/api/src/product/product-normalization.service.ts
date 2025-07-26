@@ -946,42 +946,56 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
   }
 
   /**
-   * Find comprehensive duplicate based on raw_name, merchant, item_code,
-   * and normalization results (normalized_name, brand, category, confidence_score)
+   * Find comprehensive duplicate based on normalized_name, merchant, item_code,
+   * brand, category, and confidence_score (instead of just raw_name + merchant)
    */
   private async findComprehensiveDuplicate(
     merchant: string,
     rawName: string,
     result: NormalizationResult,
   ): Promise<NormalizedProduct | null> {
-    // Build query conditions with proper typing
-    const whereConditions: {
-      rawName: string;
-      merchant: string;
-      itemCode?: string;
-    } = {
-      rawName,
-      merchant,
-    };
-
-    // Include item_code in the search if provided
-    if (result.itemCode) {
-      whereConditions.itemCode = result.itemCode;
-    }
-
-    // Find products that match raw_name, merchant, and optionally item_code
-    const candidates = await this.normalizedProductRepository.find({
-      where: whereConditions,
+    // Strategy 1: Search by normalized results first (most likely duplicates)
+    const normalizedCandidates = await this.normalizedProductRepository.find({
+      where: {
+        merchant,
+        normalizedName: result.normalizedName,
+        // Include optional fields in search to narrow down candidates
+        ...(result.itemCode && { itemCode: result.itemCode }),
+        ...(result.brand && { brand: result.brand }),
+        ...(result.category && { category: result.category }),
+        isDiscount: result.isDiscount,
+        isAdjustment: result.isAdjustment,
+      },
     });
 
-    if (candidates.length === 0) {
-      return null;
-    }
-
-    // Check each candidate for comprehensive duplicate criteria
-    for (const candidate of candidates) {
+    // Check normalized candidates first (highest chance of being duplicates)
+    for (const candidate of normalizedCandidates) {
       const isDuplicate = this.isComprehensiveDuplicate(candidate, result);
       if (isDuplicate) {
+        this.logger.debug(
+          `Found duplicate via normalized search: ${candidate.normalizedName}`,
+        );
+        return candidate;
+      }
+    }
+
+    // Strategy 2: Search by raw_name + merchant (original logic for fallback)
+    const rawNameCandidates = await this.normalizedProductRepository.find({
+      where: {
+        rawName,
+        merchant,
+        // Include item_code in the search if provided
+        ...(result.itemCode && { itemCode: result.itemCode }),
+      },
+    });
+
+    // Check raw name candidates
+    for (const candidate of rawNameCandidates) {
+      const isDuplicate = this.isComprehensiveDuplicate(candidate, result);
+      if (isDuplicate) {
+        this.logger.debug(
+          `Found duplicate via raw name search: ${candidate.normalizedName}`,
+        );
         return candidate;
       }
     }
@@ -991,26 +1005,30 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
   /**
    * Check if a candidate product is a comprehensive duplicate
-   * based on normalization results or confidence score
+   * based on ALL normalization results matching
    */
   private isComprehensiveDuplicate(
     candidate: NormalizedProduct,
     result: NormalizationResult,
   ): boolean {
-    // Check if normalized results are the same
-    const sameNormalizedResults =
-      candidate.normalizedName === result.normalizedName &&
-      candidate.brand === result.brand &&
-      candidate.category === result.category &&
-      candidate.isDiscount === result.isDiscount &&
-      candidate.isAdjustment === result.isAdjustment;
+    // Helper function to normalize null/undefined values for comparison
+    const normalizeValue = (
+      value: string | undefined | null,
+    ): string | null => {
+      return value === undefined ? null : value;
+    };
 
-    if (sameNormalizedResults) {
-      this.logger.debug(
-        `Found duplicate with same normalized results: ${candidate.normalizedName}`,
-      );
-      return true;
-    }
+    // Check if ALL normalized results are the same
+    const sameNormalizedName =
+      candidate.normalizedName === result.normalizedName;
+    const sameBrand =
+      normalizeValue(candidate.brand) === normalizeValue(result.brand);
+    const sameCategory =
+      normalizeValue(candidate.category) === normalizeValue(result.category);
+    const sameItemCode =
+      normalizeValue(candidate.itemCode) === normalizeValue(result.itemCode);
+    const sameIsDiscount = candidate.isDiscount === result.isDiscount;
+    const sameIsAdjustment = candidate.isAdjustment === result.isAdjustment;
 
     // Check if confidence scores are the same (within a small tolerance)
     const confidenceThreshold = 0.001; // Allow small floating point differences
@@ -1018,11 +1036,62 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       Math.abs(candidate.confidenceScore - result.confidenceScore) <
       confidenceThreshold;
 
-    if (sameConfidenceScore) {
+    // ALL fields must match for it to be considered a duplicate
+    const isCompleteDuplicate =
+      sameNormalizedName &&
+      sameBrand &&
+      sameCategory &&
+      sameItemCode &&
+      sameIsDiscount &&
+      sameIsAdjustment &&
+      sameConfidenceScore;
+
+    if (isCompleteDuplicate) {
       this.logger.debug(
-        `Found duplicate with same confidence score: ${candidate.confidenceScore}`,
+        `Found comprehensive duplicate: ${candidate.normalizedName} (all fields match)`,
       );
       return true;
+    }
+
+    // Log detailed comparison for debugging
+    if (!isCompleteDuplicate) {
+      this.logger.debug(`Not a duplicate - differences found:`, {
+        normalizedName: {
+          candidate: candidate.normalizedName,
+          result: result.normalizedName,
+          match: sameNormalizedName,
+        },
+        brand: {
+          candidate: candidate.brand,
+          result: result.brand,
+          match: sameBrand,
+        },
+        category: {
+          candidate: candidate.category,
+          result: result.category,
+          match: sameCategory,
+        },
+        itemCode: {
+          candidate: candidate.itemCode,
+          result: result.itemCode,
+          match: sameItemCode,
+        },
+        isDiscount: {
+          candidate: candidate.isDiscount,
+          result: result.isDiscount,
+          match: sameIsDiscount,
+        },
+        isAdjustment: {
+          candidate: candidate.isAdjustment,
+          result: result.isAdjustment,
+          match: sameIsAdjustment,
+        },
+        confidenceScore: {
+          candidate: candidate.confidenceScore,
+          result: result.confidenceScore,
+          match: sameConfidenceScore,
+        },
+      });
     }
 
     return false;
@@ -1214,7 +1283,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     }
 
     // Step 2: Link discounts to products
-    return this.linkDiscountsToProducts(normalizedItems);
+    return this.linkDiscountsToProducts(normalizedItems, merchant);
   }
 
   /**
@@ -1222,12 +1291,18 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
    */
   private linkDiscountsToProducts(
     items: NormalizationResult[],
+    merchant?: string,
   ): NormalizationResult[] {
     const products = items.filter(
       (item) => !item.isDiscount && !item.isAdjustment && !item.isFee,
     );
     const discounts = items.filter((item) => item.isDiscount);
     const fees = items.filter((item) => item.isFee);
+
+    // For Costco, use sequential linking (fees/deposits follow products)
+    if (merchant && merchant.toUpperCase().includes('COSTCO')) {
+      return this.linkDiscountsSequentially(items);
+    }
 
     // For each discount, try to find the product it applies to
     for (const discount of discounts) {
@@ -1298,6 +1373,53 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         // Mark fee as applied to this product
         fee.appliedToProductId = isExtendedNormalizationResult(linkedProduct)
           ? linkedProduct.originalIndex.toString()
+          : 'unknown';
+      }
+    }
+
+    return items;
+  }
+
+  /**
+   * Link discounts and fees sequentially for Costco receipts
+   * In Costco receipts, fees and deposits immediately follow the product they apply to
+   */
+  private linkDiscountsSequentially(
+    items: NormalizationResult[],
+  ): NormalizationResult[] {
+    let lastProduct: NormalizationResult | null = null;
+
+    for (const item of items) {
+      if (!item.isDiscount && !item.isAdjustment && !item.isFee) {
+        // This is a product, update lastProduct
+        lastProduct = item;
+      } else if ((item.isDiscount || item.isFee) && lastProduct) {
+        // This is a discount/fee that follows a product
+        if (!lastProduct.linkedDiscounts) {
+          lastProduct.linkedDiscounts = [];
+        }
+
+        const amount = isExtendedNormalizationResult(item)
+          ? item.isFee
+            ? item.originalPrice
+            : Math.abs(item.originalPrice)
+          : 0;
+
+        const link: DiscountLink = {
+          discountId: isExtendedNormalizationResult(item)
+            ? item.originalIndex.toString()
+            : 'unknown',
+          discountAmount: amount,
+          discountType: this.determineDiscountType(item.normalizedName, amount),
+          discountDescription: item.normalizedName,
+          confidence: 1.0, // High confidence for sequential linking
+        };
+
+        lastProduct.linkedDiscounts.push(link);
+
+        // Mark as applied
+        item.appliedToProductId = isExtendedNormalizationResult(lastProduct)
+          ? lastProduct.originalIndex.toString()
           : 'unknown';
       }
     }
@@ -1476,8 +1598,82 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     products: NormalizationResult[],
   ): NormalizationResult | null {
     const feeIndex = isExtendedNormalizationResult(fee) ? fee.originalIndex : 0;
+    const feeName = fee.normalizedName.toUpperCase();
 
-    // Strategy 1: ECO FEE pattern handling (e.g., "ECO FEE BAT" links to battery products)
+    // Strategy 1: Handle beverage-specific fees (DEPOSIT, ENVIRO FEE for bottles/cans)
+    if (feeName.includes('DEPOSIT') || feeName.includes('ENVIRO FEE')) {
+      // These fees only apply to beverages
+      const beverageKeywords = [
+        'WATER',
+        'COKE',
+        'COLA',
+        'PEPSI',
+        'SPRITE',
+        'FANTA',
+        '7UP',
+        'BUBLY',
+        'PERRIER',
+        'SODA',
+        'POP',
+        'JUICE',
+        'DRINK',
+        'BEVERAGE',
+        'BEER',
+        'WINE',
+        'LIQUOR',
+        'ALCOHOL',
+      ];
+
+      // First, check the immediately preceding product (most common pattern)
+      for (let i = 1; i <= 2; i++) {
+        const adjacentIndex = feeIndex - i;
+        const adjacentProduct = products.find(
+          (p) =>
+            isExtendedNormalizationResult(p) &&
+            p.originalIndex === adjacentIndex,
+        );
+
+        if (adjacentProduct) {
+          const productName = adjacentProduct.normalizedName.toUpperCase();
+          const isBeverage = beverageKeywords.some((keyword) =>
+            productName.includes(keyword),
+          );
+
+          if (isBeverage) {
+            return adjacentProduct;
+          }
+        }
+      }
+
+      // If no adjacent beverage found, look for any beverage product before this fee
+      const beverageProducts = products
+        .filter((p) => {
+          if (
+            !isExtendedNormalizationResult(p) ||
+            p.originalIndex >= feeIndex
+          ) {
+            return false;
+          }
+          const productName = p.normalizedName.toUpperCase();
+          return beverageKeywords.some((keyword) =>
+            productName.includes(keyword),
+          );
+        })
+        .sort((a, b) => {
+          const aIndex = isExtendedNormalizationResult(a) ? a.originalIndex : 0;
+          const bIndex = isExtendedNormalizationResult(b) ? b.originalIndex : 0;
+          return bIndex - aIndex; // Most recent first
+        });
+
+      if (beverageProducts.length > 0) {
+        return beverageProducts[0];
+      }
+
+      // Don't link beverage fees to non-beverage products
+      return null;
+    }
+
+    // Strategy 2: ECO FEE pattern handling (e.g., "ECO FEE BAT" links to battery products)
     const ecoFeeMatch = fee.normalizedName.match(/^ECO\s*FEE\s*(.+)$/i);
     if (ecoFeeMatch) {
       const feeType = ecoFeeMatch[1].trim().toUpperCase();
@@ -1510,9 +1706,9 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       }
     }
 
-    // Strategy 2: Look for adjacent products (most common for fees)
-    // Check items immediately before the fee
-    for (let i = 1; i <= 3; i++) {
+    // Strategy 3: Look for adjacent products (for other non-specific fees)
+    // Only check immediately adjacent items to avoid incorrect long-distance linking
+    for (let i = 1; i <= 2; i++) {
       const adjacentIndex = feeIndex - i;
       const adjacentProduct = products.find(
         (p) =>
@@ -1528,26 +1724,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       }
     }
 
-    // Strategy 3: Look for the most recent product before this fee
-    const recentProducts = products
-      .filter(
-        (p) =>
-          isExtendedNormalizationResult(p) &&
-          p.originalIndex < feeIndex &&
-          !p.isDiscount &&
-          !p.isAdjustment &&
-          !p.isFee,
-      )
-      .sort((a, b) => {
-        const aIndex = isExtendedNormalizationResult(a) ? a.originalIndex : 0;
-        const bIndex = isExtendedNormalizationResult(b) ? b.originalIndex : 0;
-        return bIndex - aIndex;
-      });
-
-    if (recentProducts.length > 0) {
-      return recentProducts[0];
-    }
-
+    // Don't link fees to distant products - return null if no clear match
     return null;
   }
 

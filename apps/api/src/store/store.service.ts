@@ -396,44 +396,49 @@ export class StoreService {
     // Step 1: Normalize the merchant name
     const normalizedName = this.normalizeStoreName(merchant);
 
-    // Step 2: Try exact match first
-    const store = await this.storeRepository.findOne({
-      where: { name: normalizedName },
-    });
-
-    if (store) {
-      return store;
-    }
-
-    // Step 3: Try fuzzy match (case-insensitive, partial match)
-    const fuzzyMatches = await this.storeRepository
-      .createQueryBuilder('store')
-      .where('store.name ILIKE :name', { name: `%${normalizedName}%` })
-      .orderBy('LENGTH(store.name)', 'ASC') // Prefer shorter matches (more exact)
-      .limit(5)
-      .getMany();
-
-    // Find best fuzzy match using similarity scoring
-    if (fuzzyMatches.length > 0) {
-      const bestMatch = this.findBestNameMatch(normalizedName, fuzzyMatches);
-      if (bestMatch.score > 0.8) {
-        // 80% similarity threshold
-        return bestMatch.store;
-      }
-    }
-
-    // Step 4: If address provided, try to find nearby stores with similar names
+    // Step 2: If address provided, prioritize address-based matching for chain stores
     if (store_address) {
-      // Parse address components (basic implementation)
+      // Parse address components first
       const addressComponents = this.parseStoreAddress(store_address);
 
-      if (addressComponents.city || addressComponents.province) {
-        const nearbyStores = await this.storeRepository
+      // Step 2a: Try exact address match first (most specific)
+      if (addressComponents.fullAddress) {
+        const exactAddressMatch = await this.storeRepository.findOne({
+          where: { fullAddress: store_address },
+        });
+        if (exactAddressMatch) {
+          return exactAddressMatch;
+        }
+      }
+
+      // Step 2b: Try postal code + name match (very specific for chain stores)
+      if (addressComponents.postalCode) {
+        const postalCodeMatches = await this.storeRepository
           .createQueryBuilder('store')
-          .where('store.name ILIKE :name', {
-            name: `%${normalizedName.split(' ')[0]}%`,
+          .where('store.name ILIKE :name', { name: `%${normalizedName}%` })
+          .andWhere('store.postalCode = :postalCode', {
+            postalCode: addressComponents.postalCode,
           })
-          .andWhere(addressComponents.city ? 'store.city ILIKE :city' : '1=1', {
+          .getMany();
+
+        if (postalCodeMatches.length > 0) {
+          const bestMatch = this.findBestNameMatch(
+            normalizedName,
+            postalCodeMatches,
+          );
+          if (bestMatch.score > 0.7) {
+            return bestMatch.store;
+          }
+        }
+      }
+
+      // Step 2c: Try street address match for chain stores in same city
+      if (addressComponents.city) {
+        // First, get candidates from same city with same store name
+        const cityMatches = await this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.name ILIKE :name', { name: `%${normalizedName}%` })
+          .andWhere('store.city ILIKE :city', {
             city: `%${addressComponents.city}%`,
           })
           .andWhere(
@@ -442,18 +447,103 @@ export class StoreService {
               : '1=1',
             { province: `%${addressComponents.province}%` },
           )
-          .limit(3)
           .getMany();
 
-        if (nearbyStores.length > 0) {
-          const bestMatch = this.findBestNameMatch(
-            normalizedName,
-            nearbyStores,
-          );
-          if (bestMatch.score > 0.7) {
-            // Lower threshold for location matches
-            return bestMatch.store;
+        if (cityMatches.length > 0) {
+          // If we have street address info, try to match it precisely
+          const parsedStreetAddress = this.parseStreetAddress(store_address);
+
+          if (
+            parsedStreetAddress.streetNumber ||
+            parsedStreetAddress.streetName
+          ) {
+            // Find stores with matching street components
+            const streetMatches = cityMatches.filter((store) => {
+              const storeStreetAddress = this.parseStreetAddress(
+                store.fullAddress || '',
+              );
+
+              // Match street number if available
+              if (
+                parsedStreetAddress.streetNumber &&
+                storeStreetAddress.streetNumber
+              ) {
+                if (
+                  parsedStreetAddress.streetNumber !==
+                  storeStreetAddress.streetNumber
+                ) {
+                  return false;
+                }
+              }
+
+              // Match street name if available
+              if (
+                parsedStreetAddress.streetName &&
+                storeStreetAddress.streetName
+              ) {
+                const similarity = this.calculateStreetNameSimilarity(
+                  parsedStreetAddress.streetName,
+                  storeStreetAddress.streetName,
+                );
+                return similarity > 0.8; // High threshold for street name matching
+              }
+
+              return true; // If no street info to compare, include in candidates
+            });
+
+            if (streetMatches.length === 1) {
+              // Exact street match found
+              return streetMatches[0];
+            } else if (streetMatches.length > 1) {
+              // Multiple street matches, use name similarity as tiebreaker
+              const bestMatch = this.findBestNameMatch(
+                normalizedName,
+                streetMatches,
+              );
+              if (bestMatch.score > 0.7) {
+                return bestMatch.store;
+              }
+            }
           }
+
+          // Fallback: use best name match from city matches if no street-level match
+          const bestCityMatch = this.findBestNameMatch(
+            normalizedName,
+            cityMatches,
+          );
+          if (bestCityMatch.score > 0.8) {
+            // Higher threshold when no street matching
+            return bestCityMatch.store;
+          }
+        }
+      }
+    }
+
+    // Step 3: Try exact name match only if no address provided or no address-based match found
+    const exactNameStore = await this.storeRepository.findOne({
+      where: { name: normalizedName },
+    });
+
+    if (exactNameStore && !store_address) {
+      // Only return exact name match if no address to verify against
+      return exactNameStore;
+    }
+
+    // Step 4: Try fuzzy name match only for independent stores (when no address provided)
+    if (!store_address) {
+      const fuzzyMatches = await this.storeRepository
+        .createQueryBuilder('store')
+        .where('store.name ILIKE :name', { name: `%${normalizedName}%` })
+        .orderBy('LENGTH(store.name)', 'ASC') // Prefer shorter matches (more exact)
+        .limit(5)
+        .getMany();
+
+      // Find best fuzzy match using similarity scoring
+      if (fuzzyMatches.length > 0) {
+        const bestMatch = this.findBestNameMatch(normalizedName, fuzzyMatches);
+        if (bestMatch.score > 0.8) {
+          // High threshold for name-only matching
+          return bestMatch.store;
         }
       }
     }
@@ -574,6 +664,78 @@ export class StoreService {
     const totalChars = Math.max(clean1.length, clean2.length);
 
     return commonChars / totalChars;
+  }
+
+  /**
+   * Parse street address to extract street number and name
+   */
+  private parseStreetAddress(address: string): {
+    streetNumber?: string;
+    streetName?: string;
+  } {
+    if (!address) return {};
+
+    // Clean up address
+    const cleanAddress = address.replace(/\s+/g, ' ').trim();
+
+    // Extract the first line (street address)
+    const firstLine = cleanAddress.split(/[,\n\r]/)[0].trim();
+
+    // Pattern to match street number + street name
+    // Examples: "3550 Brighton Ave", "4500 Still Creek Dr", "2929 BARNET HWY"
+    const streetMatch = firstLine.match(
+      /^(\d+)\s+(.+?)(?:\s+(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Blvd|Boulevard|Way|Hwy|Highway|Pl|Place|Ln|Lane|Ct|Court)\.?)?$/i,
+    );
+
+    if (streetMatch) {
+      return {
+        streetNumber: streetMatch[1],
+        streetName: streetMatch[2].trim(),
+      };
+    }
+
+    // Fallback: try to extract just the number from the beginning
+    const numberMatch = firstLine.match(/^(\d+)/);
+    if (numberMatch) {
+      return {
+        streetNumber: numberMatch[1],
+        streetName: firstLine.replace(/^\d+\s*/, '').trim(),
+      };
+    }
+
+    return { streetName: firstLine };
+  }
+
+  /**
+   * Calculate similarity between street names
+   */
+  private calculateStreetNameSimilarity(name1: string, name2: string): number {
+    const normalize = (name: string) => {
+      return name
+        .toLowerCase()
+        .replace(
+          /\b(st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|way|hwy|highway|pl|place|ln|lane|ct|court)\.?\b/g,
+          '',
+        )
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    const clean1 = normalize(name1);
+    const clean2 = normalize(name2);
+
+    if (clean1 === clean2) return 1.0;
+    if (clean1.includes(clean2) || clean2.includes(clean1)) return 0.9;
+
+    // Word-based similarity for street names
+    const words1 = clean1.split(' ');
+    const words2 = clean2.split(' ');
+
+    const commonWords = words1.filter((word) => words2.includes(word)).length;
+    const totalWords = Math.max(words1.length, words2.length);
+
+    return commonWords / totalWords;
   }
 
   /**

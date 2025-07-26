@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
-import { Injectable } from '@nestjs/common';
 import DocumentIntelligence from '@azure-rest/ai-document-intelligence';
 import { AzureKeyCredential } from '@azure/core-auth';
-import { OcrResult, OcrItem } from './ocr.service';
+import { Injectable } from '@nestjs/common';
+import { OcrItem, OcrResult } from './ocr.service';
 
 @Injectable()
 export class OcrAzureService {
@@ -150,19 +150,32 @@ export class OcrAzureService {
       const rawText = allTextLines.join('\n');
 
       // Primary extraction from structured fields
-      let items = this.extractItemsField(fields.Items);
+      let items: OcrItem[] = [];
 
-      // Fallback: If structured extraction fails or produces incorrect results,
-      // try to extract from raw text
-      if (
-        items.length === 0 ||
-        this.shouldUseFallbackExtraction(items, rawText)
-      ) {
-        const fallbackItems = this.extractItemsFromRawText(rawText, merchant);
-        if (fallbackItems.length > 0) {
-          items = fallbackItems;
-        }
+      // For Costco, always use custom parser for accurate sequential order
+      if (merchant && merchant.toUpperCase().includes('COSTCO')) {
+        console.log(
+          '🏪 Using Costco-specific parser for accurate sequential order',
+        );
+        items = this.parseCostcoReceipt(rawText);
       } else {
+        // For other merchants, use Azure's structured extraction
+        items = this.extractItemsField(fields.Items);
+
+        // Fallback: If structured extraction fails or produces incorrect results,
+        // try to extract from raw text
+        if (
+          items.length === 0 ||
+          this.shouldUseFallbackExtraction(items, rawText)
+        ) {
+          const fallbackItems = this.extractItemsFromRawText(rawText, merchant);
+          if (fallbackItems.length > 0) {
+            items = fallbackItems;
+          }
+        }
+      }
+
+      if (merchant && !merchant.toUpperCase().includes('COSTCO')) {
         // Use structured extraction results and process any marked fee items
         console.log(
           `✅ Using structured extraction with ${items.length} items`,
@@ -223,6 +236,152 @@ export class OcrAzureService {
   }
 
   /**
+   * Parse Costco receipt from raw text with exact sequential order
+   */
+  private parseCostcoReceipt(rawText: string): OcrItem[] {
+    const lines = rawText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const items: OcrItem[] = [];
+
+    // Patterns for identifying different line types
+    const itemWithNumberPattern = /^(\d{4,7})\s+(.+)$/; // "555107 BLK FRST HAM"
+    const pricePattern = /^(\d+\.\d{2})(?:\s+[A-Z]+)?$/; // "143.91" or "16.99 GP"
+    const negPricePattern = /^(\d+\.\d{2})-$/; // "2.00-"
+    const quantityPattern = /^(\d+)\s*@\s*(\d+\.\d{2})$/; // "9 @ 15.99"
+    const feePattern = /^(ENVIRO FEE|DEPOSIT|ECO FEE|TPD\/\d+)/i;
+    const skipPattern =
+      /^(COSTCO|WHOLESALE|Bottom of Basket|\*{3,}|SUBTOTAL|TAX|TOTAL|Member|WN Member)/i;
+
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Skip header/footer lines
+      if (skipPattern.test(line)) {
+        i++;
+        continue;
+      }
+
+      // Check if this is a quantity line (e.g., "9 @ 15.99")
+      const quantityMatch = line.match(quantityPattern);
+      if (quantityMatch) {
+        // Next line should be the item
+        i++;
+        if (i < lines.length) {
+          const itemLine = lines[i];
+          const itemMatch = itemLine.match(itemWithNumberPattern);
+          if (itemMatch) {
+            // Next line should be the total price
+            i++;
+            if (i < lines.length && pricePattern.test(lines[i])) {
+              const priceMatch = lines[i].match(pricePattern);
+              if (priceMatch) {
+                items.push({
+                  name: itemMatch[2].trim(),
+                  price: priceMatch[1],
+                  quantity: quantityMatch[1],
+                  unit_price: quantityMatch[2],
+                  item_number: itemMatch[1],
+                });
+                i++;
+                continue;
+              }
+            }
+          }
+        }
+      }
+
+      // Check if this is an item with number (e.g., "555107 BLK FRST HAM")
+      const itemMatch = line.match(itemWithNumberPattern);
+      if (itemMatch) {
+        // Next line should be the price
+        i++;
+        if (i < lines.length) {
+          const priceLine = lines[i];
+          const priceMatch =
+            priceLine.match(pricePattern) || priceLine.match(negPricePattern);
+          if (priceMatch) {
+            const itemName = itemMatch[2].trim();
+            const itemNumber = itemMatch[1];
+            const price = priceMatch[1] + (priceLine.includes('-') ? '-' : '');
+
+            items.push({
+              name: itemName,
+              price: price,
+              quantity: '1',
+              unit_price: '',
+              item_number: itemNumber,
+            });
+            i++;
+            continue;
+          }
+        }
+      }
+
+      // Check if this is a fee line without item number
+      if (feePattern.test(line)) {
+        // Next line should be the price
+        i++;
+        if (i < lines.length) {
+          const priceLine = lines[i];
+          const priceMatch =
+            priceLine.match(pricePattern) || priceLine.match(negPricePattern);
+          if (priceMatch) {
+            const price = priceMatch[1] + (priceLine.includes('-') ? '-' : '');
+
+            items.push({
+              name: line,
+              price: price,
+              quantity: '1',
+              unit_price: price,
+            });
+            i++;
+            continue;
+          }
+        }
+      }
+
+      // Check if this is a standalone product name (no item number)
+      // This handles edge cases where item number might be missing
+      const isProductName =
+        line.length >= 3 &&
+        !pricePattern.test(line) &&
+        !skipPattern.test(line) &&
+        line.match(/[A-Z]/);
+
+      if (isProductName) {
+        // Check if next line is a price
+        if (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          const priceMatch =
+            nextLine.match(pricePattern) || nextLine.match(negPricePattern);
+          if (priceMatch) {
+            const price = priceMatch[1] + (nextLine.includes('-') ? '-' : '');
+
+            items.push({
+              name: line,
+              price: price,
+              quantity: '1',
+              unit_price: '',
+            });
+            i += 2;
+            continue;
+          }
+        }
+      }
+
+      i++;
+    }
+
+    console.log(
+      `✅ Costco parser extracted ${items.length} items in sequential order`,
+    );
+    return items;
+  }
+
+  /**
    * Extract field value from Azure field object
    */
   private extractFieldValue(field: Record<string, any>): string {
@@ -250,7 +409,7 @@ export class OcrAzureService {
       const amount = field.value_currency_amount || field.valueCurrencyAmount;
       const currency = amount.currency_code || amount.currencyCode || 'USD';
       const value = amount.amount || 0;
-      return currency === 'USD'
+      return currency === 'CAD'
         ? `$${value.toFixed(2)}`
         : `${value.toFixed(2)} ${currency}`;
     }
