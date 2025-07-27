@@ -5,16 +5,18 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 
 // Import your components
 import BarcodeScanResult from '../../../src/components/BarcodeScanResult';
+import ReceiptScanResult from '../../../src/components/ReceiptScanResult';
 
 const { width, height } = Dimensions.get('window');
 
 
 export default function ScanPage() {
-    // This state now controls everything: 'barcodeScan', 'receiptScan', 'barcodeResult'
-    const [currentView, setCurrentView] = useState('barcodeScan');
+    // This state now controls everything: 'barcodeScan', 'receiptScan', 'barcodeResult', 'receiptResult'
+    const [currentView, setCurrentView] = useState<'barcodeScan' | 'receiptScan' | 'barcodeResult' | 'receiptResult'>('barcodeScan');
     const [permission, requestPermission] = useCameraPermissions();
     const [scanStatus, setScanStatus] = useState('Searching for barcode...');
     const [scannedData, setScannedData] = useState<{ type: string; data: string } | null>(null);
+    const [photoUri, setPhotoUri] = useState<string | null>(null);
     const cameraRef = useRef<CameraView>(null);
     const scanAnimation = useRef(new Animated.Value(0)).current;
 
@@ -24,6 +26,7 @@ export default function ScanPage() {
             // Reset state
             setCurrentView('barcodeScan');
             setScannedData(null);
+            setPhotoUri(null);
             setScanStatus('Searching for barcode...');
 
             // Reset and start animation
@@ -57,8 +60,8 @@ export default function ScanPage() {
             try {
                 const photo = await cameraRef.current.takePictureAsync();
                 console.log("Receipt captured!", photo.uri);
-                // Here you would navigate to a ReceiptResultScreen
-                // For now, we'll just log it.
+                setPhotoUri(photo.uri);
+                setCurrentView('receiptResult');
             } catch (error) {
                 console.error("Failed to capture receipt:", error);
             }
@@ -67,7 +70,9 @@ export default function ScanPage() {
 
     // Called from the result screen to go back to scanning
     const handleScanAgain = () => {
-        //resetScanner();
+        setCurrentView('barcodeScan');
+        setScannedData(null);
+        setPhotoUri(null);
     };
 
     if (!permission) {
@@ -97,6 +102,10 @@ export default function ScanPage() {
     // If the view is a result screen, we don't need the camera.
     if (currentView === 'barcodeResult') {
         return <BarcodeScanResult scannedData={scannedData} onScanAgain={handleScanAgain} />;
+    }
+
+    if (currentView === 'receiptResult') {
+        return <ReceiptScanResult pictureData={photoUri} onScanAgain={handleScanAgain} />;
     }
 
     // Otherwise, show the camera and the scanner UI
