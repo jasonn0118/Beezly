@@ -33,8 +33,10 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const [editingItem, setEditingItem] = useState<ReceiptItem | null>(null);
     const [editedName, setEditedName] = useState('');
     const [editedPrice, setEditedPrice] = useState('');
+    const [editedBrand, setEditedBrand] = useState('');
     const [isNameFocused, setIsNameFocused] = useState(false);
     const [isPriceFocused, setIsPriceFocused] = useState(false);
+    const [isBrandFocused, setIsBrandFocused] = useState(false);
 
     const handleDeleteItem = (itemId: string) => {
         setProductInfo((prev) => prev.filter((item) => item.id !== itemId));
@@ -44,6 +46,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         setEditingItem(item);
         setEditedName(item.normalized_name || item.name);
         setEditedPrice(item.price.toString());
+        setEditedBrand(item.brand || '');
         setIsModalVisible(true);
     };
 
@@ -51,7 +54,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         if (!editingItem) return;
         setProductInfo(productInfo.map(item =>
             item.id === editingItem.id
-                ? { ...item, normalized_name: editedName, price: parseFloat(editedPrice) || 0 }
+                ? { ...item, normalized_name: editedName, price: parseFloat(editedPrice) || 0, brand: editedBrand }
                 : item
         ));
         setIsModalVisible(false);
@@ -157,7 +160,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                         <TouchableOpacity style={styles.productCard} activeOpacity={0.8} onPress={() => handleOpenModal(item)}>
                             <View style={[styles.statusDot, { backgroundColor: getConfidenceColor(item.confidence_score) }]} />
                             <View style={styles.productDetails}>
-                                <Text style={styles.productName}>{item.normalized_name || item.name}</Text>
+                                <Text style={styles.productName}>{item.brand && <Text>{item.brand} - </Text>}{item.normalized_name || item.name}</Text>
                                 <Text style={styles.productOriginalName}>{item.name}</Text>
                             </View>
                             <View style={styles.priceContainer}>
@@ -196,6 +199,17 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                                     keyboardType="numeric"
                                     onFocus={() => setIsPriceFocused(true)}
                                     onBlur={() => setIsPriceFocused(false)}
+                                />
+                            </View>
+
+                            <Text style={styles.inputLabel}>Brand</Text>
+                            <View style={[styles.inputContainer, isBrandFocused && styles.inputContainerFocused]}>
+                                <TextInput
+                                    style={styles.input}
+                                    value={editedBrand}
+                                    onChangeText={setEditedBrand}
+                                    onFocus={() => setIsBrandFocused(true)}
+                                    onBlur={() => setIsBrandFocused(false)}
                                 />
                             </View>
 
@@ -297,6 +311,11 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '500',
         color: COLORS.textPrimary,
+    },
+    productBrand: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        marginTop: 2,
     },
     productOriginalName: {
         fontSize: 13,
