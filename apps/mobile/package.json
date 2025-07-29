@@ -17,7 +17,7 @@
     "@expo/metro-runtime": "~5.0.4",
     "axios": "^1.7.9",
     "dotenv": "^16.0.3",
-    "expo": "~53.0.19",
+    "expo": "~53.0.20",
     "expo-status-bar": "~2.2.3",
     "expo-updates": "~0.28.17",
     "react": "19.0.0",
