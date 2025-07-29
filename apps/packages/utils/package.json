@@ -7,7 +7,7 @@
     ".": "./src"
   },
   "dependencies": {
-    "@napi-rs/image": "^1.11.0",
+    "@napi-rs/image": "^1.11.1",
     "heic-convert": "^2.1.0",
     "sharp": "^0.34.3"
   }
