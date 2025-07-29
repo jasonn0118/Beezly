@@ -53,7 +53,7 @@
     "@nestjs/platform-express": "^11.1.4",
     "@nestjs/swagger": "^11.2.0",
     "@nestjs/typeorm": "^11.0.0",
-    "@supabase/supabase-js": "^2.45.4",
+    "@supabase/supabase-js": "^2.53.0",
     "@types/geojson": "^7946.0.16",
     "@types/multer": "^2.0.0",
     "@types/pg": "^8.15.4",

@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "@nestjs/swagger": "^11.2.0",
-    "@supabase/supabase-js": "^2.50.3",
+    "@supabase/supabase-js": "^2.53.0",
     "sharp": "^0.34.3",
     "uuid": "^11.1.0"
   },
