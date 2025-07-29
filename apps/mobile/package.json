@@ -16,7 +16,7 @@
     "@beezly/types": "workspace:*",
     "@expo/metro-runtime": "~5.0.4",
     "axios": "^1.7.9",
-    "dotenv": "^16.0.3",
+    "dotenv": "^17.2.1",
     "expo": "~53.0.19",
     "expo-status-bar": "~2.2.3",
     "expo-updates": "~0.28.17",
