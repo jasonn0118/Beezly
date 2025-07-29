@@ -24,6 +24,8 @@ export interface ProductMatchCandidate {
   barcode?: string;
   score: number;
   method: string;
+  originalScore?: number;
+  brandCompatibilityScore?: number;
 }
 
 export interface ProductLinkingOptions {
@@ -153,6 +155,7 @@ export class ProductLinkingService {
     const bestMatch = this.selectBestMatch(
       candidates,
       embeddingSimilarityThreshold,
+      normalizedProduct,
     );
 
     if (!bestMatch) {
@@ -411,31 +414,64 @@ export class ProductLinkingService {
   }
 
   /**
-   * Select the best match from candidates using hierarchy
+   * Select the best match from candidates using hierarchy with brand compatibility
    */
   private selectBestMatch(
     candidates: ProductMatchCandidate[],
     embeddingSimilarityThreshold: number,
+    normalizedProduct: NormalizedProduct,
   ): ProductMatchCandidate | null {
     if (candidates.length === 0) return null;
 
-    // Sort by priority: barcode_match > embedding_similarity > others
-    const prioritizedCandidates = candidates.sort((a, b) => {
-      // Barcode matches always win
-      if (a.method === 'barcode_match' && b.method !== 'barcode_match')
-        return -1;
-      if (b.method === 'barcode_match' && a.method !== 'barcode_match')
-        return 1;
+    // Apply brand compatibility scoring to all candidates
+    const scoredCandidates = candidates.map((candidate) => {
+      const brandCompatibilityScore = this.calculateBrandCompatibility(
+        normalizedProduct.brand,
+        candidate.brand,
+      );
 
-      // Then by score
+      // Adjust the candidate's score based on brand compatibility
+      const adjustedScore = candidate.score * brandCompatibilityScore;
+
+      this.logger.debug(
+        `Candidate ${candidate.name} (${candidate.brand}): original=${candidate.score}, brand_compatibility=${brandCompatibilityScore}, adjusted=${adjustedScore}`,
+      );
+
+      return {
+        ...candidate,
+        score: adjustedScore,
+        originalScore: candidate.score,
+        brandCompatibilityScore,
+      };
+    });
+
+    // Sort by priority: barcode_match > embedding_similarity > others, then by adjusted score
+    const prioritizedCandidates = scoredCandidates.sort((a, b) => {
+      // Barcode matches always win (unless brand is completely incompatible)
+      if (a.method === 'barcode_match' && b.method !== 'barcode_match') {
+        return a.brandCompatibilityScore > 0 ? -1 : 1;
+      }
+      if (b.method === 'barcode_match' && a.method !== 'barcode_match') {
+        return b.brandCompatibilityScore > 0 ? 1 : -1;
+      }
+
+      // Then by adjusted score (which includes brand compatibility)
       return b.score - a.score;
     });
 
     const bestCandidate = prioritizedCandidates[0];
 
-    // Apply thresholds
+    // Apply thresholds with brand compatibility consideration
     if (bestCandidate.method === 'barcode_match') {
-      return bestCandidate; // Barcode matches are always accepted
+      // Even barcode matches need some brand compatibility (> 0)
+      if (bestCandidate.brandCompatibilityScore > 0) {
+        return bestCandidate;
+      } else {
+        this.logger.warn(
+          `Barcode match rejected due to brand incompatibility: normalized=${normalizedProduct.brand} vs product=${bestCandidate.brand}`,
+        );
+        return null;
+      }
     }
 
     if (
@@ -445,12 +481,79 @@ export class ProductLinkingService {
       return bestCandidate;
     }
 
-    // For other methods, require a higher threshold
-    if (bestCandidate.score >= 0.8) {
+    // For other methods, require a higher threshold (adjusted score includes brand compatibility)
+    if (bestCandidate.score >= 0.6) {
       return bestCandidate;
     }
 
+    this.logger.debug(
+      `No suitable match found. Best candidate: ${bestCandidate.name} (score: ${bestCandidate.score}, brand: ${bestCandidate.brand})`,
+    );
+
     return null;
+  }
+
+  /**
+   * Calculate brand compatibility score between normalized and product brands
+   * Returns: 1.0 = perfect match, 0.8 = partial match, 0.1 = no match but acceptable, 0.0 = incompatible
+   */
+  private calculateBrandCompatibility(
+    normalizedBrand?: string,
+    productBrand?: string,
+  ): number {
+    // If either brand is missing, give neutral score
+    if (!normalizedBrand || !productBrand) {
+      return 0.7; // Neutral - neither helps nor hurts
+    }
+
+    const normalizedLower = normalizedBrand.toLowerCase().trim();
+    const productLower = productBrand.toLowerCase().trim();
+
+    // Exact match
+    if (normalizedLower === productLower) {
+      return 1.0;
+    }
+
+    // Partial matches (one contains the other)
+    if (
+      normalizedLower.includes(productLower) ||
+      productLower.includes(normalizedLower)
+    ) {
+      return 0.8;
+    }
+
+    // Check for common brand variations and abbreviations
+    const brandMappings = new Map([
+      ['kirkland signature', ['kirkland', 'ks', 'costco']],
+      ['great value', ['walmart', 'gv']],
+      ['market pantry', ['target', 'mp']],
+      ['365', ['whole foods', 'wf', '365 organic']],
+      ['trader joes', ['tj', 'trader joe']],
+      ['simple truth', ['kroger', 'st']],
+    ]);
+
+    // Check if brands are related through mappings
+    for (const [mainBrand, variations] of brandMappings) {
+      const isNormalizedMain = normalizedLower.includes(mainBrand);
+      const isProductMain = productLower.includes(mainBrand);
+      const isNormalizedVariation = variations.some((v) =>
+        normalizedLower.includes(v),
+      );
+      const isProductVariation = variations.some((v) =>
+        productLower.includes(v),
+      );
+
+      if (
+        (isNormalizedMain && (isProductMain || isProductVariation)) ||
+        (isNormalizedVariation && (isProductMain || isProductVariation))
+      ) {
+        return 0.8;
+      }
+    }
+
+    // If brands are completely different, severely penalize
+    // but don't completely block in case of data issues
+    return 0.1;
   }
 
   /**

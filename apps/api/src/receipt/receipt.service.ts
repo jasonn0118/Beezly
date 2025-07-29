@@ -362,31 +362,9 @@ export class ReceiptService {
           // Use type guard to safely check for enhanced properties
           const enhancedItem = this.isEnhancedItem(item) ? item : null;
 
-          // Try to find or create the product
-          let productSk: string | undefined;
-
-          try {
-            // Find or create product with race condition handling
-            const itemCode = enhancedItem?.item_number || item.item_number;
-            const productName = enhancedItem?.normalized_name || item.name;
-
-            if (itemCode || productName) {
-              const product = await this.productService.findOrCreateProduct({
-                name: productName,
-                barcode: itemCode,
-                // Add category if available from normalization
-                category: enhancedItem?.category
-                  ? this.getCategoryId(enhancedItem.category)
-                  : undefined,
-              });
-              productSk = product.product_sk;
-            }
-          } catch (productError) {
-            console.warn(
-              'Failed to create/find product, creating receipt item without product link:',
-              productError,
-            );
-          }
+          // DO NOT create products during receipt processing
+          // Products should only be linked through the normalization/confirmation flow
+          const productSk: string | undefined = undefined;
 
           // Parse price (handle string prices from OCR)
           const price =
@@ -851,27 +829,5 @@ export class ReceiptService {
       'price' in item &&
       'quantity' in item
     );
-  }
-
-  /**
-   * Helper method to get category ID from category name
-   * This is a simplified implementation - in production you might want more sophisticated mapping
-   */
-  private getCategoryId(categoryName: string): number | undefined {
-    // Simple mapping for common categories
-    const categoryMap: Record<string, number> = {
-      Produce: 101001,
-      Dairy: 101002,
-      Meat: 101003,
-      Bakery: 101004,
-      Beverages: 101005,
-      Snacks: 101006,
-      Frozen: 101007,
-      Household: 102001,
-      'Personal Care': 102002,
-      Health: 102003,
-    };
-
-    return categoryMap[categoryName];
   }
 }

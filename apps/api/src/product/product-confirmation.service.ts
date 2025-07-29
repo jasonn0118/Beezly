@@ -193,6 +193,25 @@ export class ProductConfirmationService {
   }
 
   /**
+   * Validate and fix confidence score if invalid
+   */
+  private validateConfidenceScore(score: number, productSk: string): number {
+    if (
+      isNaN(score) ||
+      score === null ||
+      score === undefined ||
+      score < 0 ||
+      score > 1
+    ) {
+      this.logger.warn(
+        `Invalid confidence score ${score} for product ${productSk}, setting to default 0.5`,
+      );
+      return 0.5;
+    }
+    return score;
+  }
+
+  /**
    * Update normalized product with user edits before linking
    */
   private async updateNormalizedProductWithUserEdits(
@@ -201,6 +220,24 @@ export class ProductConfirmationService {
   ): Promise<NormalizedProduct> {
     let needsUpdate = false;
     let userMadeEdits = false;
+
+    // CRITICAL: Validate confidence score before any operations
+    // This handles cases where the database already contains NaN values
+    this.logger.debug(
+      `Initial confidence score for ${normalizedProduct.normalizedProductSk}: ${normalizedProduct.confidenceScore} (type: ${typeof normalizedProduct.confidenceScore})`,
+    );
+
+    const validatedScore = this.validateConfidenceScore(
+      normalizedProduct.confidenceScore,
+      normalizedProduct.normalizedProductSk,
+    );
+    if (validatedScore !== normalizedProduct.confidenceScore) {
+      this.logger.warn(
+        `Fixing invalid confidence score in database: ${normalizedProduct.confidenceScore} -> ${validatedScore} for product ${normalizedProduct.normalizedProductSk}`,
+      );
+      normalizedProduct.confidenceScore = validatedScore;
+      needsUpdate = true;
+    }
 
     // Apply user edits if provided
     if (
@@ -221,17 +258,48 @@ export class ProductConfirmationService {
     // Boost confidence score by 0.1 if user made edits (capped at 1.0)
     if (userMadeEdits) {
       const originalScore = normalizedProduct.confidenceScore;
-      const boostedScore = Math.min(originalScore + 0.1, 1.0);
-      normalizedProduct.confidenceScore = boostedScore;
+
+      this.logger.debug(
+        `Boosting confidence score for ${normalizedProduct.normalizedProductSk}: original=${originalScore} (type: ${typeof originalScore})`,
+      );
+
+      // Validate that originalScore is a valid number
+      if (
+        isNaN(originalScore) ||
+        originalScore === null ||
+        originalScore === undefined
+      ) {
+        this.logger.warn(
+          `Invalid confidence score ${originalScore} for product ${normalizedProduct.normalizedProductSk}, setting to default 0.5`,
+        );
+        normalizedProduct.confidenceScore = 0.5;
+      } else {
+        const boostedScore = Math.min(originalScore + 0.1, 1.0);
+        normalizedProduct.confidenceScore = boostedScore;
+        this.logger.debug(
+          `Calculated boosted score: ${boostedScore} (type: ${typeof boostedScore})`,
+        );
+      }
       needsUpdate = true;
 
       this.logger.debug(
-        `Boosted confidence score for ${normalizedProduct.normalizedProductSk} from ${originalScore} to ${boostedScore} due to user edits`,
+        `Updated confidence score for ${normalizedProduct.normalizedProductSk} from ${originalScore} to ${normalizedProduct.confidenceScore} due to user edits`,
       );
     }
 
     // Save updates if any
     if (needsUpdate) {
+      // FINAL VALIDATION: Ensure confidence score is valid before save
+      const finalValidatedScore = this.validateConfidenceScore(
+        normalizedProduct.confidenceScore,
+        normalizedProduct.normalizedProductSk,
+      );
+      normalizedProduct.confidenceScore = finalValidatedScore;
+
+      this.logger.debug(
+        `Saving normalized product ${normalizedProduct.normalizedProductSk} with confidence score: ${normalizedProduct.confidenceScore}`,
+      );
+
       await this.normalizedProductRepository.save(normalizedProduct);
       this.logger.debug(
         `Updated normalized product ${normalizedProduct.normalizedProductSk} with user edits`,
@@ -257,13 +325,24 @@ export class ProductConfirmationService {
     if (existing) {
       // Update occurrence count and priority
       existing.occurrenceCount += 1;
+      // Validate confidence score before using it
+      const validatedConfidenceScore = this.validateConfidenceScore(
+        normalizedProduct.confidenceScore,
+        normalizedProduct.normalizedProductSk,
+      );
       existing.priorityScore = this.calculatePriorityScore(
         existing.occurrenceCount,
-        normalizedProduct.confidenceScore,
+        validatedConfidenceScore,
       );
       existing.updatedAt = new Date();
       return this.unprocessedProductRepository.save(existing);
     }
+
+    // Validate confidence score before creating unprocessed product
+    const validatedConfidenceScore = this.validateConfidenceScore(
+      normalizedProduct.confidenceScore,
+      normalizedProduct.normalizedProductSk,
+    );
 
     // Create new unprocessed product entry
     const unprocessedProduct = this.unprocessedProductRepository.create({
@@ -273,16 +352,13 @@ export class ProductConfirmationService {
       brand: normalizedProduct.brand,
       category: normalizedProduct.category,
       merchant: normalizedProduct.merchant,
-      confidenceScore: normalizedProduct.confidenceScore,
+      confidenceScore: validatedConfidenceScore,
       status: UnprocessedProductStatus.PENDING_REVIEW,
       reason,
       itemCode: normalizedProduct.itemCode,
       reviewerId,
       occurrenceCount: 1,
-      priorityScore: this.calculatePriorityScore(
-        1,
-        normalizedProduct.confidenceScore,
-      ),
+      priorityScore: this.calculatePriorityScore(1, validatedConfidenceScore),
     });
 
     return this.unprocessedProductRepository.save(unprocessedProduct);

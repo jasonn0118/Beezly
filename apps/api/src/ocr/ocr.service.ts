@@ -293,7 +293,7 @@ export class OcrService {
   }
 
   /**
-   * Save normalized products to the database
+   * Save normalized products to the database using proper duplicate detection
    */
   private async saveNormalizedProducts(
     normalizedResults: NormalizationResult[],
@@ -307,61 +307,42 @@ export class OcrService {
       const ocrItem = ocrItems[i];
 
       try {
-        // Check if this normalized product already exists
-        const existingProduct = await this.normalizedProductRepository.findOne({
-          where: {
-            rawName: ocrItem.name,
-            merchant: merchant,
-          },
-        });
+        // Use ProductNormalizationService's comprehensive duplicate detection
+        // This handles all duplicate scenarios properly
+        const savedProduct = await this.productNormalizationService.storeResult(
+          merchant,
+          ocrItem.name,
+          normalization,
+        );
 
-        if (existingProduct) {
-          console.log(
-            `Product ${i} already exists: ${existingProduct.normalizedProductSk} (${ocrItem.name})`,
-          );
-          normalizedProductSks.push(existingProduct.normalizedProductSk);
-        } else {
-          // Create NormalizedProduct entity
-          const normalizedProduct = this.normalizedProductRepository.create({
-            rawName: ocrItem.name,
-            merchant: merchant,
-            itemCode: ocrItem.item_number,
-            normalizedName: normalization.normalizedName,
-            brand: normalization.brand,
-            category: normalization.category,
-            confidenceScore: normalization.confidenceScore,
-            isDiscount: normalization.isDiscount,
-            isAdjustment: normalization.isAdjustment,
-          });
+        console.log(
+          `Product ${i} processed: ${savedProduct.normalizedProductSk} (${savedProduct.normalizedName}) - ${savedProduct.matchCount > 1 ? 'existing' : 'new'}`,
+        );
+        normalizedProductSks.push(savedProduct.normalizedProductSk);
 
-          // Save to database
-          const savedProduct =
-            await this.normalizedProductRepository.save(normalizedProduct);
-
-          console.log(
-            `Saved new product ${i}: ${savedProduct.normalizedProductSk} (${savedProduct.normalizedName})`,
-          );
-          normalizedProductSks.push(savedProduct.normalizedProductSk);
-
-          // Generate embedding asynchronously if not a discount/adjustment
-          if (!normalization.isDiscount && !normalization.isAdjustment) {
-            // Fire and forget - don't await
-            this.vectorEmbeddingService
-              .updateProductEmbedding(savedProduct)
-              .catch((error) => {
-                console.warn(
-                  `Failed to generate embedding for ${savedProduct.normalizedProductSk}:`,
-                  error,
-                );
-              });
-          }
+        // Generate embedding asynchronously if not a discount/adjustment and it's a new product
+        if (
+          !normalization.isDiscount &&
+          !normalization.isAdjustment &&
+          savedProduct.matchCount === 1 && // Only for new products
+          !savedProduct.embedding // Only if embedding doesn't exist
+        ) {
+          // Fire and forget - don't await
+          this.vectorEmbeddingService
+            .updateProductEmbedding(savedProduct)
+            .catch((error) => {
+              console.warn(
+                `Failed to generate embedding for ${savedProduct.normalizedProductSk}:`,
+                error,
+              );
+            });
         }
       } catch (error) {
         console.error(
           `Failed to save normalized product for item ${i} (${ocrItem.name}):`,
           error,
         );
-        // Push null to indicate save failure - don't include empty strings
+        // Push empty string to indicate save failure
         normalizedProductSks.push('');
       }
     }

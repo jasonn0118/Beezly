@@ -13,6 +13,9 @@ import {
   UserScore,
   Price,
   VerificationLogs,
+  NormalizedProduct,
+  ReceiptItemNormalization,
+  UnprocessedProduct,
 } from '../entities';
 
 // Load environment variables based on NODE_ENV
@@ -69,6 +72,9 @@ export const getDataSourceConfig = (): DataSourceOptions => {
       UserScore,
       Price,
       VerificationLogs,
+      NormalizedProduct,
+      ReceiptItemNormalization,
+      UnprocessedProduct,
     ],
     migrations: getMigrationsPath(),
     synchronize: false, // Never use synchronize in production

@@ -74,36 +74,6 @@ export class ProductService {
     return product ? this.mapProductToDTO(product) : null;
   }
 
-  /**
-   * Find or create a product by barcode with race condition handling
-   */
-  async findOrCreateProduct(
-    productData: Partial<NormalizedProductDTO>,
-  ): Promise<NormalizedProductDTO> {
-    // First, try to find existing product by barcode
-    if (productData.barcode) {
-      const existing = await this.getProductByBarcode(productData.barcode);
-      if (existing) {
-        return existing;
-      }
-    }
-
-    // If not found, try to create a new one with race condition handling
-    try {
-      return await this.createProduct(productData);
-    } catch (error: unknown) {
-      // Check if it's a duplicate key error (race condition)
-      if (this.isDuplicateKeyError(error) && productData.barcode) {
-        // Another process created the product, try to find it again
-        const existing = await this.getProductByBarcode(productData.barcode);
-        if (existing) {
-          return existing;
-        }
-      }
-      throw error;
-    }
-  }
-
   async createProduct(
     productData: Partial<NormalizedProductDTO>,
   ): Promise<NormalizedProductDTO> {
@@ -190,18 +160,20 @@ export class ProductService {
   // 🔍 SEARCH AND DISCOVERY METHODS
 
   /**
-   * Search products by name (fuzzy search)
+   * Search products by name and brand (fuzzy search)
    */
   async searchProductsByName(
-    name: string,
+    query: string,
     limit: number = 50,
   ): Promise<NormalizedProductDTO[]> {
-    const products = await this.productRepository.find({
-      where: { name: ILike(`%${name}%`) },
-      relations: ['categoryEntity'],
-      take: limit,
-      order: { name: 'ASC' },
-    });
+    const products = await this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.categoryEntity', 'categoryEntity')
+      .where('product.name ILIKE :query', { query: `%${query}%` })
+      .orWhere('product.brandName ILIKE :query', { query: `%${query}%` })
+      .orderBy('product.name', 'ASC')
+      .limit(limit)
+      .getMany();
 
     return products.map((product) => this.mapProductToDTO(product));
   }
@@ -348,9 +320,12 @@ export class ProductService {
       .leftJoinAndSelect('product.categoryEntity', 'category')
       .leftJoinAndSelect('product.receiptItems', 'receiptItem');
 
-    // Add text filters
+    // Add text filters - search both name and brand
     if (name) {
-      query = query.andWhere('product.name ILIKE :name', { name: `%${name}%` });
+      query = query.andWhere(
+        '(product.name ILIKE :name OR product.brandName ILIKE :name)',
+        { name: `%${name}%` },
+      );
     }
 
     if (barcode) {
@@ -526,18 +501,6 @@ export class ProductService {
       brand_name: product.brandName,
       image_url: product.imageUrl,
     };
-  }
-
-  /**
-   * Type guard to check if error is a PostgreSQL duplicate key error
-   */
-  private isDuplicateKeyError(error: unknown): boolean {
-    return (
-      error !== null &&
-      typeof error === 'object' &&
-      'code' in error &&
-      (error as { code: string }).code === '23505'
-    );
   }
 
   // Mobile-specific method for creating product with store and price
