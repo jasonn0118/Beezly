@@ -313,6 +313,7 @@ export class OcrController {
                   is_discount: { type: 'boolean' },
                   is_adjustment: { type: 'boolean' },
                   normalization_method: { type: 'string' },
+                  normalized_product_sk: { type: 'string' },
                   linked_discounts: {
                     type: 'array',
                     items: {

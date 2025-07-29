@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import * as sharp from 'sharp';
 import * as heicConvert from 'heic-convert';
 import { OcrAzureService } from './ocr-azure.service';
@@ -8,6 +10,7 @@ import {
   NormalizationResult,
 } from '../product/product-normalization.service';
 import { VectorEmbeddingService } from '../product/vector-embedding.service';
+import { NormalizedProduct } from '../entities/normalized-product.entity';
 
 export interface OcrItem {
   name: string;
@@ -44,6 +47,7 @@ export interface EnhancedOcrItem extends OcrItem {
   is_discount: boolean;
   is_adjustment: boolean;
   normalization_method: string;
+  normalized_product_sk?: string; // Added to include the database SK
   embedding_lookup?: EmbeddingLookupResult; // Results from embedding search
   linked_discounts?: DiscountInfo[]; // Discounts that apply to this product
   applied_to_product_id?: string; // If this is a discount, which product it applies to
@@ -91,6 +95,8 @@ export class OcrService {
     private readonly ocrAzureService: OcrAzureService,
     private readonly productNormalizationService: ProductNormalizationService,
     private readonly vectorEmbeddingService: VectorEmbeddingService,
+    @InjectRepository(NormalizedProduct)
+    private readonly normalizedProductRepository: Repository<NormalizedProduct>,
   ) {}
 
   /**
@@ -287,6 +293,83 @@ export class OcrService {
   }
 
   /**
+   * Save normalized products to the database
+   */
+  private async saveNormalizedProducts(
+    normalizedResults: NormalizationResult[],
+    ocrItems: OcrItem[],
+    merchant: string,
+  ): Promise<string[]> {
+    const normalizedProductSks: string[] = [];
+
+    for (let i = 0; i < normalizedResults.length; i++) {
+      const normalization = normalizedResults[i];
+      const ocrItem = ocrItems[i];
+
+      try {
+        // Check if this normalized product already exists
+        const existingProduct = await this.normalizedProductRepository.findOne({
+          where: {
+            rawName: ocrItem.name,
+            merchant: merchant,
+          },
+        });
+
+        if (existingProduct) {
+          console.log(
+            `Product ${i} already exists: ${existingProduct.normalizedProductSk} (${ocrItem.name})`,
+          );
+          normalizedProductSks.push(existingProduct.normalizedProductSk);
+        } else {
+          // Create NormalizedProduct entity
+          const normalizedProduct = this.normalizedProductRepository.create({
+            rawName: ocrItem.name,
+            merchant: merchant,
+            itemCode: ocrItem.item_number,
+            normalizedName: normalization.normalizedName,
+            brand: normalization.brand,
+            category: normalization.category,
+            confidenceScore: normalization.confidenceScore,
+            isDiscount: normalization.isDiscount,
+            isAdjustment: normalization.isAdjustment,
+          });
+
+          // Save to database
+          const savedProduct =
+            await this.normalizedProductRepository.save(normalizedProduct);
+
+          console.log(
+            `Saved new product ${i}: ${savedProduct.normalizedProductSk} (${savedProduct.normalizedName})`,
+          );
+          normalizedProductSks.push(savedProduct.normalizedProductSk);
+
+          // Generate embedding asynchronously if not a discount/adjustment
+          if (!normalization.isDiscount && !normalization.isAdjustment) {
+            // Fire and forget - don't await
+            this.vectorEmbeddingService
+              .updateProductEmbedding(savedProduct)
+              .catch((error) => {
+                console.warn(
+                  `Failed to generate embedding for ${savedProduct.normalizedProductSk}:`,
+                  error,
+                );
+              });
+          }
+        }
+      } catch (error) {
+        console.error(
+          `Failed to save normalized product for item ${i} (${ocrItem.name}):`,
+          error,
+        );
+        // Push null to indicate save failure - don't include empty strings
+        normalizedProductSks.push('');
+      }
+    }
+
+    return normalizedProductSks;
+  }
+
+  /**
    * Process receipt with product normalization
    */
   async processReceiptWithNormalization(
@@ -298,14 +381,27 @@ export class OcrService {
       // Step 1: Get OCR results
       const ocrResult = await this.processReceipt(buffer, endpoint, apiKey);
 
-      // Step 2: Perform embedding lookup for all items first
+      // Step 2: Filter out non-product items (tax, rewards, change, etc.)
+      const productItems = ocrResult.items.filter((item, index) => {
+        const shouldExclude = this.shouldExcludeFromNormalization(item.name);
+        if (shouldExclude) {
+          console.log(`Excluding non-product item ${index}: "${item.name}"`);
+        }
+        return !shouldExclude;
+      });
+
+      console.log(
+        `Filtered ${ocrResult.items.length} items to ${productItems.length} products`,
+      );
+
+      // Step 3: Perform embedding lookup for product items only
       const embeddingLookups = await this.performEmbeddingLookupForItems(
-        ocrResult.items,
+        productItems,
         ocrResult.merchant,
       );
 
-      // Step 3: Prepare items for discount linking
-      const itemsWithIndex = ocrResult.items.map((item, index) => ({
+      // Step 4: Prepare items for discount linking
+      const itemsWithIndex = productItems.map((item, index) => ({
         name: item.name,
         price: item.price,
         quantity: item.quantity,
@@ -313,18 +409,36 @@ export class OcrService {
         index: index,
       }));
 
-      // Step 4: Normalize items with discount linking
+      // Step 5: Normalize items with discount linking
       const normalizedResults =
         await this.productNormalizationService.normalizeReceiptWithDiscountLinking(
           itemsWithIndex,
           ocrResult.merchant,
         );
 
-      // Step 5: Convert to EnhancedOcrItem format and filter out linked discounts
-      const enhancedItems: EnhancedOcrItem[] = ocrResult.items
+      // Step 6: Save normalized products to database and get SKs
+      console.log(
+        `Processing ${normalizedResults.length} normalized products for saving...`,
+      );
+      const normalizedProductSks = await this.saveNormalizedProducts(
+        normalizedResults,
+        productItems,
+        ocrResult.merchant,
+      );
+      console.log(
+        `Saved products with SKs:`,
+        normalizedProductSks.filter((sk) => sk && sk !== ''),
+      );
+
+      // Step 7: Convert to EnhancedOcrItem format and filter out linked discounts
+      const enhancedItems: EnhancedOcrItem[] = productItems
         .map((originalItem, index): EnhancedOcrItem | null => {
           const normalization = normalizedResults[index];
           const embeddingLookup = embeddingLookups[index];
+          const normalizedProductSk =
+            normalizedProductSks[index] && normalizedProductSks[index] !== ''
+              ? normalizedProductSks[index]
+              : undefined;
 
           // Use embedding result if found and has high confidence
           let finalNormalization = normalization;
@@ -351,7 +465,8 @@ export class OcrService {
           // For discount/fee items that have been linked to products,
           // we'll filter them out unless they couldn't be linked
           if (
-            (finalNormalization.isDiscount || finalNormalization.isFee) &&
+            (finalNormalization.isDiscount ||
+              finalNormalization.isAdjustment) &&
             finalNormalization.appliedToProductId
           ) {
             // This discount/fee was successfully linked to a product,
@@ -394,6 +509,7 @@ export class OcrService {
             is_discount: finalNormalization.isDiscount,
             is_adjustment: finalNormalization.isAdjustment,
             normalization_method: finalNormalization.method || 'fallback',
+            normalized_product_sk: normalizedProductSk, // Include the database SK
             embedding_lookup: embeddingLookup,
             linked_discounts: finalNormalization.linkedDiscounts?.map(
               (discount) => ({
@@ -415,7 +531,7 @@ export class OcrService {
         })
         .filter((item): item is EnhancedOcrItem => item !== null); // Remove null items (linked discounts)
 
-      // Step 5: Calculate enhanced normalization summary using original results
+      // Step 8: Calculate enhanced normalization summary using original results
       // (before filtering out linked discounts)
       const normalizationSummary =
         this.calculateEnhancedNormalizationSummaryFromResults(
@@ -423,7 +539,8 @@ export class OcrService {
           enhancedItems,
         );
 
-      // Step 6: Return enhanced result
+      // Step 9: Return enhanced result with only actual products
+      // Note: Product linking now happens later when user confirms normalized products
       return {
         ...ocrResult,
         items: enhancedItems,
@@ -712,24 +829,74 @@ export class OcrService {
   }
 
   /**
-   * Quick check if an item name looks like a discount or adjustment
+   * Check if an item should be excluded from normalization
+   * This includes discounts, taxes, rewards, change, and other non-product items
    */
-  private isLikelyDiscountOrAdjustment(itemName: string): boolean {
-    const name = itemName.toLowerCase();
+  private shouldExcludeFromNormalization(itemName: string): boolean {
+    const name = itemName.toLowerCase().trim();
 
-    // Common discount/adjustment patterns
-    const patterns = [
+    // Patterns for items that should not be normalized as products
+    const exclusionPatterns = [
+      // Discounts and adjustments
       /^tpd\//, // TPD/ pattern
       /discount/, // Contains discount
       /coupon/, // Contains coupon
       /adjustment/, // Contains adjustment
       /refund/, // Contains refund
       /credit/, // Contains credit
-      /tax\s*(adj|adjustment)/, // Tax adjustment
       /^-/, // Starts with minus sign
       /-\s*[a-z]*$/, // Ends with dash and letters
+
+      // Tax patterns
+      /tax/, // Any tax reference
+      /gst/, // GST tax
+      /pst/, // PST tax
+      /hst/, // HST tax
+      /vat/, // VAT tax
+      /\d+%/, // Contains percentage (likely tax rate)
+      /^[ghpv]\s*\(.*\)/, // Tax codes like "G ( G)GST 5%"
+
+      // Payment and change
+      /change/, // Change amount
+      /cash/, // Cash payments
+      /card/, // Card payments
+      /mastercard|visa|amex/, // Credit card names
+      /debit/, // Debit payments
+
+      // Rewards and membership
+      /reward/, // Rewards
+      /executive/, // Executive membership
+      /member/, // Membership related
+      /points/, // Loyalty points
+
+      // Receipt metadata
+      /subtotal/, // Subtotal
+      /total/, // Total amounts
+      /invoice/, // Invoice numbers
+      /receipt/, // Receipt references
+      /reference/, // Reference numbers
+      /auth/, // Authorization codes
+      /approved/, // Approval messages
+
+      // Store operations
+      /void/, // Voided items
+      /return/, // Returns
+      /exchange/, // Exchanges
+      /balance/, // Account balance
+
+      // Common non-product patterns
+      /^[a-z]$/, // Single letters
+      /^\d+$/, // Pure numbers
+      /^[\W\d]+$/, // Only symbols and numbers
     ];
 
-    return patterns.some((pattern) => pattern.test(name));
+    return exclusionPatterns.some((pattern) => pattern.test(name));
+  }
+
+  /**
+   * Quick check if an item name looks like a discount or adjustment
+   */
+  private isLikelyDiscountOrAdjustment(itemName: string): boolean {
+    return this.shouldExcludeFromNormalization(itemName);
   }
 }

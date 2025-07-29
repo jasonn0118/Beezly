@@ -7,8 +7,11 @@ import {
   Index,
   Check,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { ReceiptItemNormalization } from './receipt-item-normalization.entity';
+import { Product } from './product.entity';
 
 @Entity('normalized_products')
 @Index(['rawName', 'merchant'], { unique: true })
@@ -86,6 +89,42 @@ export class NormalizedProduct {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp with time zone' })
   updatedAt: Date;
+
+  // Product linking fields
+  @ManyToOne(() => Product, { nullable: true })
+  @JoinColumn({ name: 'linked_product_sk' })
+  linkedProduct?: Product;
+
+  @Column({ name: 'linked_product_sk', type: 'uuid', nullable: true })
+  linkedProductSk?: string;
+
+  @Column({
+    name: 'linking_confidence',
+    type: 'decimal',
+    precision: 5,
+    scale: 4,
+    nullable: true,
+    comment: 'Confidence score for the product link (0-1)',
+  })
+  linkingConfidence?: number;
+
+  @Column({
+    name: 'linking_method',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+    comment:
+      'Method used for linking (barcode_match, embedding_similarity, etc.)',
+  })
+  linkingMethod?: string;
+
+  @Column({
+    name: 'linked_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+    comment: 'When the product was linked',
+  })
+  linkedAt?: Date;
 
   // Relationships
   @OneToMany(

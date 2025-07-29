@@ -20,7 +20,10 @@ export class ReceiptItemNormalization {
   id: string;
 
   @ManyToOne(() => ReceiptItem, { nullable: false, onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'receipt_item_sk' })
+  @JoinColumn({
+    name: 'receipt_item_sk',
+    referencedColumnName: 'receiptitemSk',
+  })
   receiptItem: ReceiptItem;
 
   @Column({ name: 'receipt_item_sk', type: 'uuid' })
