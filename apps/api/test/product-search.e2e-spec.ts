@@ -5,6 +5,10 @@ import { Server } from 'http';
 import { ProductController } from '../src/product/product.controller';
 import { ProductService } from '../src/product/product.service';
 import { VectorEmbeddingService } from '../src/product/vector-embedding.service';
+import { ProductLinkingService } from '../src/product/product-linking.service';
+import { ReceiptPriceIntegrationService } from '../src/product/receipt-price-integration.service';
+import { ProductConfirmationService } from '../src/product/product-confirmation.service';
+import { UnprocessedProductService } from '../src/product/unprocessed-product.service';
 
 describe('Product Search (e2e)', () => {
   let app: INestApplication;
@@ -63,12 +67,51 @@ describe('Product Search (e2e)', () => {
             batchFindSimilarProducts: jest.fn(),
             generateEmbedding: jest.fn(),
             updateProductEmbedding: jest.fn(),
+            batchUpdateEmbeddings: jest.fn(),
             getEmbeddingStats: jest.fn().mockResolvedValue({
               totalProducts: 0,
               productsWithEmbeddings: 0,
               productsWithoutEmbeddings: 0,
               averageEmbeddingLength: 0,
             }),
+          },
+        },
+        {
+          provide: ProductLinkingService,
+          useValue: {
+            linkSingleProduct: jest.fn(),
+            linkNormalizedProducts: jest.fn(),
+            getLinkingStatistics: jest.fn(),
+            getUnlinkedHighConfidenceProducts: jest.fn(),
+          },
+        },
+        {
+          provide: ReceiptPriceIntegrationService,
+          useValue: {
+            syncReceiptPrices: jest.fn(),
+            getPriceSyncStatistics: jest.fn(),
+          },
+        },
+        {
+          provide: ProductConfirmationService,
+          useValue: {
+            getConfirmationCandidates: jest.fn(),
+            confirmNormalizedProducts: jest.fn(),
+            getConfirmationStats: jest.fn(),
+            getReceiptPendingSelectionsByReceiptId: jest.fn(),
+            processReceiptSelections: jest.fn(),
+          },
+        },
+        {
+          provide: UnprocessedProductService,
+          useValue: {
+            getUnprocessedProductsForReview: jest.fn(),
+            getUnprocessedProductStats: jest.fn(),
+            getHighPriorityUnprocessedProducts: jest.fn(),
+            updateUnprocessedProductStatus: jest.fn(),
+            createProductFromUnprocessedProduct: jest.fn(),
+            performBulkReviewAction: jest.fn(),
+            cleanupProcessedUnprocessedProducts: jest.fn(),
           },
         },
       ],
