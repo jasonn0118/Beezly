@@ -1,7 +1,7 @@
 {
   "name": "mobile",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "expo-router/entry",
   "scripts": {
     "dev": "expo start",
     "android": "expo run:android",
@@ -13,15 +13,32 @@
     "start": "expo start --dev-client"
   },
   "dependencies": {
+    "@beezly/types": "workspace:*",
     "@expo/metro-runtime": "~5.0.4",
+    "@expo/vector-icons": "^14.1.0",
+    "@react-navigation/native": "^7.1.14",
+    "axios": "^1.7.9",
     "dotenv": "^16.0.3",
-    "expo": "~53.0.19",
+    "expo": "53.0.19",
+    "expo-camera": "~16.1.11",
+    "expo-constants": "~17.1.7",
+    "expo-image-picker": "~16.1.4",
+    "expo-linking": "~7.1.7",
+    "expo-location": "~18.1.6",
+    "expo-router": "5.1.3",
     "expo-status-bar": "~2.2.3",
     "expo-updates": "~0.28.17",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-native": "0.79.5",
-    "react-native-web": "^0.20.0"
+    "react-native-dotenv": "^3.4.11",
+    "react-native-gesture-handler": "^2.27.2",
+    "react-native-get-random-values": "~1.11.0",
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-screens": "~4.11.1",
+    "react-native-svg": "15.11.2",
+    "react-native-web": "^0.20.0",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
