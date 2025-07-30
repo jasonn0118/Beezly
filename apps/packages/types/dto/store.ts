@@ -14,10 +14,28 @@ export class StoreDTO {
   name: string;
 
   @ApiPropertyOptional({
-    example: "123 Main St",
-    description: "Street address of the store",
+    example: "2929",
+    description: "Street number/house number from Azure OCR",
   })
-  address?: string;
+  streetNumber?: string;
+
+  @ApiPropertyOptional({
+    example: "BARNET HWY",
+    description: "Road/street name from Azure OCR",
+  })
+  road?: string;
+
+  @ApiPropertyOptional({
+    example: "2929 BARNET HWY",
+    description: "Street address (street number + road) from Azure OCR",
+  })
+  streetAddress?: string;
+
+  @ApiPropertyOptional({
+    example: "2929 BARNET HWY, COQUITLAM, BC V3B 5R9",
+    description: "Complete formatted address",
+  })
+  fullAddress?: string;
 
   @ApiPropertyOptional({
     example: "Toronto",
@@ -36,6 +54,12 @@ export class StoreDTO {
     description: "Postal code of the store location",
   })
   postalCode?: string;
+
+  @ApiPropertyOptional({
+    example: "CAN",
+    description: "Country/region from Azure OCR (ISO country code)",
+  })
+  countryRegion?: string;
 
   @ApiPropertyOptional({
     example: 43.6532,

@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import * as sharp from 'sharp';
 import * as heicConvert from 'heic-convert';
 import { OcrAzureService } from './ocr-azure.service';
@@ -7,6 +9,8 @@ import {
   ProductNormalizationService,
   NormalizationResult,
 } from '../product/product-normalization.service';
+import { VectorEmbeddingService } from '../product/vector-embedding.service';
+import { NormalizedProduct } from '../entities/normalized-product.entity';
 
 export interface OcrItem {
   name: string;
@@ -24,6 +28,17 @@ export interface DiscountInfo {
   link_confidence: number;
 }
 
+export interface EmbeddingLookupResult {
+  found: boolean;
+  normalized_name?: string;
+  brand?: string;
+  category?: string;
+  confidence_score?: number;
+  similarity_score?: number;
+  method: 'embedding_match' | 'no_match';
+  raw_name?: string;
+}
+
 export interface EnhancedOcrItem extends OcrItem {
   normalized_name: string;
   brand?: string;
@@ -32,6 +47,8 @@ export interface EnhancedOcrItem extends OcrItem {
   is_discount: boolean;
   is_adjustment: boolean;
   normalization_method: string;
+  normalized_product_sk?: string; // Added to include the database SK
+  embedding_lookup?: EmbeddingLookupResult; // Results from embedding search
   linked_discounts?: DiscountInfo[]; // Discounts that apply to this product
   applied_to_product_id?: string; // If this is a discount, which product it applies to
   original_price_numeric?: number; // For calculation purposes
@@ -40,6 +57,22 @@ export interface EnhancedOcrItem extends OcrItem {
     was_negative: boolean;
     original_format: string;
   }; // Information about the original price format
+}
+
+export interface CleanOcrItem {
+  name: string;
+  quantity: string;
+  unit_price?: string;
+  item_number?: string;
+  normalized_name: string;
+  brand?: string;
+  category?: string;
+  confidence_score: number;
+  normalized_product_sk?: string;
+  linked_discounts?: DiscountInfo[];
+  applied_to_product_id?: string;
+  original_price: number;
+  final_price: number;
 }
 
 export interface OcrResult {
@@ -72,11 +105,30 @@ export interface EnhancedOcrResult extends Omit<OcrResult, 'items'> {
   };
 }
 
+export interface CleanOcrResult extends Omit<OcrResult, 'items'> {
+  items: CleanOcrItem[];
+  normalization_summary: {
+    total_items: number;
+    product_items: number;
+    discount_items: number;
+    adjustment_items: number;
+    average_confidence: number;
+    linked_discounts: number;
+    total_discount_amount: number;
+    products_with_discounts: number;
+  };
+  receipt_id?: string; // Receipt ID if stored in database
+  session_id?: string; // Temporary session ID for tracking
+}
+
 @Injectable()
 export class OcrService {
   constructor(
     private readonly ocrAzureService: OcrAzureService,
     private readonly productNormalizationService: ProductNormalizationService,
+    private readonly vectorEmbeddingService: VectorEmbeddingService,
+    @InjectRepository(NormalizedProduct)
+    private readonly normalizedProductRepository: Repository<NormalizedProduct>,
   ) {}
 
   /**
@@ -273,6 +325,64 @@ export class OcrService {
   }
 
   /**
+   * Save normalized products to the database using proper duplicate detection
+   */
+  private async saveNormalizedProducts(
+    normalizedResults: NormalizationResult[],
+    ocrItems: OcrItem[],
+    merchant: string,
+  ): Promise<string[]> {
+    const normalizedProductSks: string[] = [];
+
+    for (let i = 0; i < normalizedResults.length; i++) {
+      const normalization = normalizedResults[i];
+      const ocrItem = ocrItems[i];
+
+      try {
+        // Use ProductNormalizationService's comprehensive duplicate detection
+        // This handles all duplicate scenarios properly
+        const savedProduct = await this.productNormalizationService.storeResult(
+          merchant,
+          ocrItem.name,
+          normalization,
+        );
+
+        console.log(
+          `Product ${i} processed: ${savedProduct.normalizedProductSk} (${savedProduct.normalizedName}) - ${savedProduct.matchCount > 1 ? 'existing' : 'new'}`,
+        );
+        normalizedProductSks.push(savedProduct.normalizedProductSk);
+
+        // Generate embedding asynchronously if not a discount/adjustment and it's a new product
+        if (
+          !normalization.isDiscount &&
+          !normalization.isAdjustment &&
+          savedProduct.matchCount === 1 && // Only for new products
+          !savedProduct.embedding // Only if embedding doesn't exist
+        ) {
+          // Fire and forget - don't await
+          this.vectorEmbeddingService
+            .updateProductEmbedding(savedProduct)
+            .catch((error) => {
+              console.warn(
+                `Failed to generate embedding for ${savedProduct.normalizedProductSk}:`,
+                error,
+              );
+            });
+        }
+      } catch (error) {
+        console.error(
+          `Failed to save normalized product for item ${i} (${ocrItem.name}):`,
+          error,
+        );
+        // Push empty string to indicate save failure
+        normalizedProductSks.push('');
+      }
+    }
+
+    return normalizedProductSks;
+  }
+
+  /**
    * Process receipt with product normalization
    */
   async processReceiptWithNormalization(
@@ -284,8 +394,40 @@ export class OcrService {
       // Step 1: Get OCR results
       const ocrResult = await this.processReceipt(buffer, endpoint, apiKey);
 
-      // Step 2: Prepare items for discount linking
-      const itemsWithIndex = ocrResult.items.map((item, index) => ({
+      // Step 2: Filter out non-product items and clean product names
+      const productItems = ocrResult.items
+        .filter((item, index) => {
+          const shouldExclude = this.shouldExcludeFromNormalization(item.name);
+          if (shouldExclude) {
+            console.log(`Excluding non-product item ${index}: "${item.name}"`);
+          }
+          return !shouldExclude;
+        })
+        .map((item) => {
+          // Clean product name and extract item code
+          const { cleanedName, extractedItemCode } =
+            this.cleanProductNameAndExtractCode(item.name);
+
+          return {
+            ...item,
+            name: cleanedName,
+            // Preserve original item_number if it exists, otherwise use extracted code
+            item_number: item.item_number || extractedItemCode || undefined,
+          };
+        });
+
+      console.log(
+        `Filtered ${ocrResult.items.length} items to ${productItems.length} products`,
+      );
+
+      // Step 3: Perform embedding lookup for product items only
+      const embeddingLookups = await this.performEmbeddingLookupForItems(
+        productItems,
+        ocrResult.merchant,
+      );
+
+      // Step 4: Prepare items for discount linking
+      const itemsWithIndex = productItems.map((item, index) => ({
         name: item.name,
         price: item.price,
         quantity: item.quantity,
@@ -293,17 +435,52 @@ export class OcrService {
         index: index,
       }));
 
-      // Step 3: Normalize items with discount linking
+      // Step 5: Normalize items with discount linking
       const normalizedResults =
         await this.productNormalizationService.normalizeReceiptWithDiscountLinking(
           itemsWithIndex,
           ocrResult.merchant,
         );
 
-      // Step 4: Convert to EnhancedOcrItem format and filter out linked discounts
-      const enhancedItems: EnhancedOcrItem[] = ocrResult.items
+      // Step 6: Save normalized products to database and get SKs
+      console.log(
+        `Processing ${normalizedResults.length} normalized products for saving...`,
+      );
+      const normalizedProductSks = await this.saveNormalizedProducts(
+        normalizedResults,
+        productItems,
+        ocrResult.merchant,
+      );
+      console.log(
+        `Saved products with SKs:`,
+        normalizedProductSks.filter((sk) => sk && sk !== ''),
+      );
+
+      // Step 7: Convert to EnhancedOcrItem format and filter out linked discounts
+      const enhancedItems: EnhancedOcrItem[] = productItems
         .map((originalItem, index): EnhancedOcrItem | null => {
           const normalization = normalizedResults[index];
+          const embeddingLookup = embeddingLookups[index];
+          const normalizedProductSk =
+            normalizedProductSks[index] && normalizedProductSks[index] !== ''
+              ? normalizedProductSks[index]
+              : undefined;
+
+          // Use embedding result if found and has high confidence
+          let finalNormalization = normalization;
+          if (
+            embeddingLookup.found &&
+            this.shouldUseEmbeddingResult(embeddingLookup, normalization)
+          ) {
+            finalNormalization = {
+              ...normalization,
+              normalizedName: embeddingLookup.normalized_name!,
+              brand: embeddingLookup.brand,
+              category: embeddingLookup.category,
+              confidenceScore: embeddingLookup.confidence_score!, // Use original normalization confidence, not similarity
+              method: 'embedding_lookup',
+            };
+          }
           // Use improved price parsing that handles discount formats
           const parsedPrice = this.productNormalizationService.parsePrice(
             originalItem.price,
@@ -314,8 +491,9 @@ export class OcrService {
           // For discount/fee items that have been linked to products,
           // we'll filter them out unless they couldn't be linked
           if (
-            (normalization.isDiscount || normalization.isFee) &&
-            normalization.appliedToProductId
+            (finalNormalization.isDiscount ||
+              finalNormalization.isAdjustment) &&
+            finalNormalization.appliedToProductId
           ) {
             // This discount/fee was successfully linked to a product,
             // so we don't show it as a separate item
@@ -325,14 +503,14 @@ export class OcrService {
           // Calculate final price after discounts and fees
           let finalPrice = originalPrice;
           if (
-            normalization.linkedDiscounts &&
-            normalization.linkedDiscounts.length > 0
+            finalNormalization.linkedDiscounts &&
+            finalNormalization.linkedDiscounts.length > 0
           ) {
             // Separate discounts (negative) from fees (positive)
             let totalDiscount = 0;
             let totalFees = 0;
 
-            normalization.linkedDiscounts.forEach((discount) => {
+            finalNormalization.linkedDiscounts.forEach((discount) => {
               // Check if this is a fee by looking at the description
               if (
                 discount.discountDescription.match(
@@ -350,14 +528,16 @@ export class OcrService {
 
           return {
             ...originalItem,
-            normalized_name: normalization.normalizedName,
-            brand: normalization.brand,
-            category: normalization.category,
-            confidence_score: normalization.confidenceScore,
-            is_discount: normalization.isDiscount,
-            is_adjustment: normalization.isAdjustment,
-            normalization_method: normalization.method || 'fallback',
-            linked_discounts: normalization.linkedDiscounts?.map(
+            normalized_name: finalNormalization.normalizedName,
+            brand: finalNormalization.brand,
+            category: finalNormalization.category,
+            confidence_score: finalNormalization.confidenceScore,
+            is_discount: finalNormalization.isDiscount,
+            is_adjustment: finalNormalization.isAdjustment,
+            normalization_method: finalNormalization.method || 'fallback',
+            normalized_product_sk: normalizedProductSk, // Include the database SK
+            embedding_lookup: embeddingLookup,
+            linked_discounts: finalNormalization.linkedDiscounts?.map(
               (discount) => ({
                 discount_id: discount.discountId,
                 discount_amount: discount.discountAmount,
@@ -366,7 +546,7 @@ export class OcrService {
                 link_confidence: discount.confidence,
               }),
             ),
-            applied_to_product_id: normalization.appliedToProductId,
+            applied_to_product_id: finalNormalization.appliedToProductId,
             original_price_numeric: originalPrice,
             final_price: finalPrice,
             price_format_info: {
@@ -377,7 +557,7 @@ export class OcrService {
         })
         .filter((item): item is EnhancedOcrItem => item !== null); // Remove null items (linked discounts)
 
-      // Step 5: Calculate enhanced normalization summary using original results
+      // Step 8: Calculate enhanced normalization summary using original results
       // (before filtering out linked discounts)
       const normalizationSummary =
         this.calculateEnhancedNormalizationSummaryFromResults(
@@ -385,7 +565,8 @@ export class OcrService {
           enhancedItems,
         );
 
-      // Step 6: Return enhanced result
+      // Step 9: Return enhanced result with only actual products
+      // Note: Product linking now happens later when user confirms normalized products
       return {
         ...ocrResult,
         items: enhancedItems,
@@ -548,5 +729,335 @@ export class OcrService {
       total_discount_amount: Math.round(totalDiscountAmount * 100) / 100, // Round to 2 decimal places
       products_with_discounts: productsWithDiscounts,
     };
+  }
+
+  /**
+   * Perform embedding lookup for all receipt items before normalization
+   * Uses batch processing for maximum performance
+   */
+  private async performEmbeddingLookupForItems(
+    items: OcrItem[],
+    merchant: string,
+  ): Promise<EmbeddingLookupResult[]> {
+    // Prepare batch queries - filter out discount/adjustment items
+    const queries: { index: number; queryText: string; options: any }[] = [];
+    const results: EmbeddingLookupResult[] = new Array(items.length);
+
+    // First pass: identify non-discount items for batch processing
+    items.forEach((item, index) => {
+      if (this.isLikelyDiscountOrAdjustment(item.name)) {
+        results[index] = {
+          found: false,
+          method: 'no_match',
+        };
+      } else {
+        queries.push({
+          index,
+          queryText: item.name,
+          options: {
+            queryText: item.name,
+            merchant,
+            similarityThreshold: 0.85,
+            limit: 1,
+            includeDiscounts: false,
+            includeAdjustments: false,
+          },
+        });
+      }
+    });
+
+    // If no items need embedding lookup, return early
+    if (queries.length === 0) {
+      return results;
+    }
+
+    try {
+      // Use batch processing for all embedding lookups
+      const batchResults =
+        await this.vectorEmbeddingService.batchFindSimilarProducts(
+          queries.map((q) => ({ queryText: q.queryText, options: q.options })),
+        );
+
+      // Process batch results and fill in the results array
+      queries.forEach((query, batchIndex) => {
+        const similarProducts = batchResults[batchIndex];
+
+        if (similarProducts && similarProducts.length > 0) {
+          const bestMatch = similarProducts[0];
+          results[query.index] = {
+            found: true,
+            normalized_name: bestMatch.normalizedProduct.normalizedName,
+            brand: bestMatch.normalizedProduct.brand,
+            category: bestMatch.normalizedProduct.category,
+            confidence_score: bestMatch.normalizedProduct.confidenceScore,
+            similarity_score: bestMatch.similarity,
+            method: 'embedding_match',
+            raw_name: bestMatch.normalizedProduct.rawName,
+          };
+        } else {
+          results[query.index] = {
+            found: false,
+            method: 'no_match',
+          };
+        }
+      });
+    } catch (error) {
+      // Log error and mark all remaining items as no_match
+      console.warn('Batch embedding lookup failed:', error);
+      queries.forEach((query) => {
+        results[query.index] = {
+          found: false,
+          method: 'no_match',
+        };
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Determine if we should use the embedding result over the normalization result
+   */
+  private shouldUseEmbeddingResult(
+    embeddingResult: EmbeddingLookupResult,
+    normalizationResult: NormalizationResult,
+  ): boolean {
+    // Don't use embedding for discount/adjustment items
+    if (normalizationResult.isDiscount || normalizationResult.isAdjustment) {
+      return false;
+    }
+
+    // Use embedding result if:
+    // 1. Similarity score is very high (>= 0.9)
+    // 2. OR similarity score is high (>= 0.85) AND normalization confidence is low (< 0.7)
+    // 3. OR normalization method is fallback and similarity is decent (>= 0.8)
+
+    const similarityScore = embeddingResult.similarity_score || 0;
+    const normalizationConfidence = normalizationResult.confidenceScore;
+    const normalizationMethod = normalizationResult.method;
+
+    // Very high similarity - always use embedding
+    if (similarityScore >= 0.9) {
+      return true;
+    }
+
+    // High similarity with low normalization confidence
+    if (similarityScore >= 0.85 && normalizationConfidence < 0.7) {
+      return true;
+    }
+
+    // Fallback method with decent similarity
+    if (normalizationMethod === 'fallback' && similarityScore >= 0.8) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if an item should be excluded from normalization
+   * This includes discounts, taxes, rewards, change, fees, and other non-product items
+   */
+  private shouldExcludeFromNormalization(itemName: string): boolean {
+    const name = itemName.toLowerCase().trim();
+
+    // Patterns for items that should not be normalized as products
+    // Note: Be careful not to exclude discount items that should be linked to products
+    const exclusionPatterns = [
+      // Administrative discounts (not product-specific)
+      /coupon/, // Contains coupon
+      /adjustment/, // Contains adjustment
+      /refund/, // Contains refund
+      /credit/, // Contains credit
+
+      // Note: TPD/, ECO FEE, and negative price patterns are now processed as discounts/fees
+      // instead of being excluded, so they can be linked to products
+
+      // Tax patterns
+      /tax/, // Any tax reference
+      /gst/, // GST tax
+      /pst/, // PST tax
+      /hst/, // HST tax
+      /vat/, // VAT tax
+      /\d+%/, // Contains percentage (likely tax rate)
+      /^[ghpv]\s*\(.*\)/, // Tax codes like "G ( G)GST 5%"
+
+      // Payment and change
+      /change/, // Change amount
+      /cash/, // Cash payments
+      /card/, // Card payments
+      /mastercard|visa|amex/, // Credit card names
+      /debit/, // Debit payments
+
+      // Rewards and membership
+      /reward/, // Rewards
+      /executive/, // Executive membership
+      /member/, // Membership related
+      /points/, // Loyalty points
+
+      // Receipt metadata
+      /subtotal/, // Subtotal
+      /total/, // Total amounts
+      /invoice/, // Invoice numbers
+      /receipt/, // Receipt references
+      /reference/, // Reference numbers
+      /auth/, // Authorization codes
+      /approved/, // Approval messages
+
+      // Store operations
+      /void/, // Voided items
+      /return/, // Returns
+      /exchange/, // Exchanges
+      /balance/, // Account balance
+
+      // Common non-product patterns
+      /^[a-z]$/, // Single letters
+      /^\d+$/, // Pure numbers
+      /^[\W\d]+$/, // Only symbols and numbers
+    ];
+
+    return exclusionPatterns.some((pattern) => pattern.test(name));
+  }
+
+  /**
+   * Quick check if an item name looks like a discount or adjustment
+   */
+  private isLikelyDiscountOrAdjustment(itemName: string): boolean {
+    return this.shouldExcludeFromNormalization(itemName);
+  }
+
+  /**
+   * Clean product name by removing item numbers and other non-product identifiers
+   * Also extracts the item code if found
+   * Handles patterns like "1628802 OPTIMUM" -> { cleanedName: "OPTIMUM", extractedItemCode: "1628802" }
+   */
+  private cleanProductNameAndExtractCode(itemName: string): {
+    cleanedName: string;
+    extractedItemCode: string | null;
+  } {
+    let cleanedName = itemName.trim();
+    let extractedItemCode: string | null = null;
+
+    // Extract leading item numbers (6-8 digits followed by space)
+    // Common patterns: "1628802 OPTIMUM", "123456 PRODUCT NAME"
+    let match = cleanedName.match(/^(\d{6,8})\s+(.+)$/);
+    if (match) {
+      extractedItemCode = match[1];
+      cleanedName = match[2];
+    } else {
+      // Extract leading shorter item numbers (4-5 digits followed by space)
+      // But be more conservative to avoid removing quantities
+      match = cleanedName.match(/^(\d{4,5})\s+([A-Za-z].*)$/);
+      if (match) {
+        extractedItemCode = match[1];
+        cleanedName = match[2];
+      } else {
+        // Extract leading item codes with letters (like "ABC123 PRODUCT")
+        match = cleanedName.match(/^([A-Z]{2,4}\d{3,6})\s+(.+)$/);
+        if (match) {
+          extractedItemCode = match[1];
+          cleanedName = match[2];
+        }
+      }
+    }
+
+    // Extract trailing item numbers or codes in parentheses
+    if (!extractedItemCode) {
+      match = cleanedName.match(/^(.+?)\s*\((\d+)\)$/);
+      if (match) {
+        extractedItemCode = match[2];
+        cleanedName = match[1];
+      } else {
+        match = cleanedName.match(/^(.+?)\s*\(([A-Z0-9]+)\)$/);
+        if (match) {
+          extractedItemCode = match[2];
+          cleanedName = match[1];
+        }
+      }
+    }
+
+    // Extract SKU patterns at the end
+    if (!extractedItemCode) {
+      match = cleanedName.match(/^(.+?)\s+SKU\s*(\d+)$/i);
+      if (match) {
+        extractedItemCode = match[2];
+        cleanedName = match[1];
+      } else {
+        match = cleanedName.match(/^(.+?)\s+#(\d+)$/);
+        if (match) {
+          extractedItemCode = match[2];
+          cleanedName = match[1];
+        }
+      }
+    }
+
+    // Remove extra whitespace
+    cleanedName = cleanedName.replace(/\s+/g, ' ').trim();
+
+    // If cleaning removed everything, return the original
+    if (!cleanedName || cleanedName.length < 2) {
+      return {
+        cleanedName: itemName.trim(),
+        extractedItemCode: null,
+      };
+    }
+
+    return {
+      cleanedName,
+      extractedItemCode,
+    };
+  }
+
+  /**
+   * Clean product name by removing item numbers and other non-product identifiers
+   * Handles patterns like "1628802 OPTIMUM" -> "OPTIMUM"
+   * @deprecated Use cleanProductNameAndExtractCode instead
+   */
+  private cleanProductName(itemName: string): string {
+    return this.cleanProductNameAndExtractCode(itemName).cleanedName;
+  }
+
+  /**
+   * Convert EnhancedOcrResult to CleanOcrResult by removing unnecessary fields
+   */
+  private convertToCleanResult(
+    enhancedResult: EnhancedOcrResult,
+  ): CleanOcrResult {
+    const cleanItems: CleanOcrItem[] = enhancedResult.items.map((item) => ({
+      name: item.name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      item_number: item.item_number,
+      normalized_name: item.normalized_name,
+      brand: item.brand,
+      category: item.category,
+      confidence_score: item.confidence_score,
+      normalized_product_sk: item.normalized_product_sk,
+      linked_discounts: item.linked_discounts,
+      applied_to_product_id: item.applied_to_product_id,
+      original_price: item.original_price_numeric || 0,
+      final_price: item.final_price || 0,
+    }));
+
+    return {
+      ...enhancedResult,
+      items: cleanItems,
+    };
+  }
+
+  /**
+   * Process receipt with product normalization and return clean response
+   */
+  async processReceiptEnhanced(
+    buffer: Buffer,
+    endpoint?: string,
+    apiKey?: string,
+  ): Promise<CleanOcrResult> {
+    const enhancedResult = await this.processReceiptWithNormalization(
+      buffer,
+      endpoint,
+      apiKey,
+    );
+    return this.convertToCleanResult(enhancedResult);
   }
 }

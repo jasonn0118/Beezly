@@ -4,6 +4,11 @@ import * as request from 'supertest';
 import { Server } from 'http';
 import { ProductController } from '../src/product/product.controller';
 import { ProductService } from '../src/product/product.service';
+import { VectorEmbeddingService } from '../src/product/vector-embedding.service';
+import { ProductLinkingService } from '../src/product/product-linking.service';
+import { ReceiptPriceIntegrationService } from '../src/product/receipt-price-integration.service';
+import { ProductConfirmationService } from '../src/product/product-confirmation.service';
+import { UnprocessedProductService } from '../src/product/unprocessed-product.service';
 
 describe('Product Search (e2e)', () => {
   let app: INestApplication;
@@ -24,6 +29,7 @@ describe('Product Search (e2e)', () => {
         if (query.toLowerCase().includes('apple')) {
           return Promise.resolve([
             {
+              product_sk: '550e8400-e29b-41d4-a716-446655440001',
               name: 'Organic Apple',
               brand_name: 'Cheil Jedang',
               image_url: 'https://example.com/apple.jpg',
@@ -34,6 +40,7 @@ describe('Product Search (e2e)', () => {
         if (query.toLowerCase().includes('cheil')) {
           return Promise.resolve([
             {
+              product_sk: '550e8400-e29b-41d4-a716-446655440002',
               name: 'Rice Cake',
               brand_name: 'Cheil Jedang',
               image_url: 'https://example.com/rice-cake.jpg',
@@ -53,6 +60,60 @@ describe('Product Search (e2e)', () => {
           provide: ProductService,
           useValue: mockProductService,
         },
+        {
+          provide: VectorEmbeddingService,
+          useValue: {
+            findSimilarProductsEnhanced: jest.fn(),
+            batchFindSimilarProducts: jest.fn(),
+            generateEmbedding: jest.fn(),
+            updateProductEmbedding: jest.fn(),
+            batchUpdateEmbeddings: jest.fn(),
+            getEmbeddingStats: jest.fn().mockResolvedValue({
+              totalProducts: 0,
+              productsWithEmbeddings: 0,
+              productsWithoutEmbeddings: 0,
+              averageEmbeddingLength: 0,
+            }),
+          },
+        },
+        {
+          provide: ProductLinkingService,
+          useValue: {
+            linkSingleProduct: jest.fn(),
+            linkNormalizedProducts: jest.fn(),
+            getLinkingStatistics: jest.fn(),
+            getUnlinkedHighConfidenceProducts: jest.fn(),
+          },
+        },
+        {
+          provide: ReceiptPriceIntegrationService,
+          useValue: {
+            syncReceiptPrices: jest.fn(),
+            getPriceSyncStatistics: jest.fn(),
+          },
+        },
+        {
+          provide: ProductConfirmationService,
+          useValue: {
+            getConfirmationCandidates: jest.fn(),
+            confirmNormalizedProducts: jest.fn(),
+            getConfirmationStats: jest.fn(),
+            getReceiptPendingSelectionsByReceiptId: jest.fn(),
+            processReceiptSelections: jest.fn(),
+          },
+        },
+        {
+          provide: UnprocessedProductService,
+          useValue: {
+            getUnprocessedProductsForReview: jest.fn(),
+            getUnprocessedProductStats: jest.fn(),
+            getHighPriorityUnprocessedProducts: jest.fn(),
+            updateUnprocessedProductStatus: jest.fn(),
+            createProductFromUnprocessedProduct: jest.fn(),
+            performBulkReviewAction: jest.fn(),
+            cleanupProcessedUnprocessedProducts: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -61,7 +122,9 @@ describe('Product Search (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   describe('/products/search (GET)', () => {
@@ -75,6 +138,7 @@ describe('Product Search (e2e)', () => {
       expect(response.body).toHaveLength(1);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body[0]).toMatchObject({
+        product_sk: '550e8400-e29b-41d4-a716-446655440001',
         name: 'Organic Apple',
         brand_name: 'Cheil Jedang',
         image_url: 'https://example.com/apple.jpg',
@@ -91,6 +155,7 @@ describe('Product Search (e2e)', () => {
       expect(response.body).toHaveLength(1);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body[0]).toMatchObject({
+        product_sk: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Rice Cake',
         brand_name: 'Cheil Jedang',
         image_url: 'https://example.com/rice-cake.jpg',

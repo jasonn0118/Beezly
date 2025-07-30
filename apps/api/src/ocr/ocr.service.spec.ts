@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { OcrService } from './ocr.service';
 import { OcrAzureService } from './ocr-azure.service';
 import { ProductNormalizationService } from '../product/product-normalization.service';
+import { VectorEmbeddingService } from '../product/vector-embedding.service';
+import { NormalizedProduct } from '../entities/normalized-product.entity';
 
 describe('OcrService', () => {
   let service: OcrService;
@@ -20,6 +23,25 @@ describe('OcrService', () => {
           provide: ProductNormalizationService,
           useValue: {
             normalizeProduct: jest.fn(),
+          },
+        },
+        {
+          provide: VectorEmbeddingService,
+          useValue: {
+            findSimilarProductsEnhanced: jest.fn(),
+            batchFindSimilarProducts: jest.fn(),
+            generateEmbedding: jest.fn(),
+            updateProductEmbedding: jest.fn(),
+          },
+        },
+        {
+          provide: getRepositoryToken(NormalizedProduct),
+          useValue: {
+            find: jest.fn(),
+            findOne: jest.fn(),
+            save: jest.fn(),
+            create: jest.fn(),
+            createQueryBuilder: jest.fn(),
           },
         },
       ],

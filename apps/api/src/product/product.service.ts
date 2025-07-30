@@ -160,18 +160,20 @@ export class ProductService {
   // 🔍 SEARCH AND DISCOVERY METHODS
 
   /**
-   * Search products by name (fuzzy search)
+   * Search products by name and brand (fuzzy search)
    */
   async searchProductsByName(
-    name: string,
+    query: string,
     limit: number = 50,
   ): Promise<NormalizedProductDTO[]> {
-    const products = await this.productRepository.find({
-      where: { name: ILike(`%${name}%`) },
-      relations: ['categoryEntity'],
-      take: limit,
-      order: { name: 'ASC' },
-    });
+    const products = await this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.categoryEntity', 'categoryEntity')
+      .where('product.name ILIKE :query', { query: `%${query}%` })
+      .orWhere('product.brandName ILIKE :query', { query: `%${query}%` })
+      .orderBy('product.name', 'ASC')
+      .limit(limit)
+      .getMany();
 
     return products.map((product) => this.mapProductToDTO(product));
   }
@@ -318,9 +320,12 @@ export class ProductService {
       .leftJoinAndSelect('product.categoryEntity', 'category')
       .leftJoinAndSelect('product.receiptItems', 'receiptItem');
 
-    // Add text filters
+    // Add text filters - search both name and brand
     if (name) {
-      query = query.andWhere('product.name ILIKE :name', { name: `%${name}%` });
+      query = query.andWhere(
+        '(product.name ILIKE :name OR product.brandName ILIKE :name)',
+        { name: `%${name}%` },
+      );
     }
 
     if (barcode) {
@@ -491,6 +496,7 @@ export class ProductService {
     product: Product,
   ): ProductSearchResponseDto {
     return {
+      product_sk: product.productSk,
       name: product.name,
       brand_name: product.brandName,
       image_url: product.imageUrl,
@@ -596,7 +602,7 @@ export class ProductService {
       store: {
         store_sk: store.storeSk,
         name: store.name,
-        address: store.address || '',
+        address: store.fullAddress || '',
         city: store.city,
         province: store.province,
       },
@@ -618,7 +624,7 @@ export class ProductService {
   ): Promise<Store> {
     // Try to find existing store by name and address (exact match first)
     let store = await this.storeRepository.findOne({
-      where: { name, address },
+      where: { name, fullAddress: address },
     });
 
     // If not found with exact match, try case-insensitive search
@@ -626,7 +632,7 @@ export class ProductService {
       store = await this.storeRepository
         .createQueryBuilder('store')
         .where('LOWER(store.name) = LOWER(:name)', { name })
-        .andWhere('LOWER(store.address) = LOWER(:address)', { address })
+        .andWhere('LOWER(store.fullAddress) = LOWER(:address)', { address })
         .getOne();
     }
 
@@ -634,13 +640,13 @@ export class ProductService {
     if (!store) {
       store = this.storeRepository.create({
         name: name.trim(), // Trim whitespace
-        address: address.trim(),
+        fullAddress: address.trim(),
         city,
         province,
         postalCode,
       });
       store = await this.storeRepository.save(store);
-      console.log(`Created new store: ${store.name} at ${store.address}`);
+      console.log(`Created new store: ${store.name} at ${store.fullAddress}`);
     } else {
       console.log(`Found existing store: ${store.name} (ID: ${store.storeSk})`);
     }

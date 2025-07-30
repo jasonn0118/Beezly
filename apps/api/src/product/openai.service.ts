@@ -17,6 +17,20 @@ export interface LLMNormalizationResponse {
   reasoning?: string;
 }
 
+export interface EmbeddingGenerationRequest {
+  text: string;
+  model?:
+    | 'text-embedding-3-small'
+    | 'text-embedding-3-large'
+    | 'text-embedding-ada-002';
+}
+
+export interface EmbeddingGenerationResponse {
+  embedding: number[];
+  model: string;
+  dimensions: number;
+}
+
 @Injectable()
 export class OpenAIService {
   private readonly logger = new Logger(OpenAIService.name);
@@ -194,6 +208,83 @@ Store context for ${merchant}:`;
     }
 
     return prompt;
+  }
+
+  /**
+   * Generate vector embedding for text using OpenAI
+   */
+  async generateEmbedding(
+    request: EmbeddingGenerationRequest,
+  ): Promise<EmbeddingGenerationResponse> {
+    if (!this.isConfigured()) {
+      throw new Error('OpenAI service is not properly configured');
+    }
+
+    const { text, model = 'text-embedding-3-small' } = request;
+
+    this.logger.debug(
+      `Generating embedding for text: ${text.substring(0, 50)}...`,
+    );
+
+    try {
+      const response = await this.openai!.embeddings.create({
+        input: text,
+        model: model,
+      });
+
+      const embedding = response.data[0].embedding;
+
+      this.logger.debug(
+        `Generated embedding with ${embedding.length} dimensions using model ${model}`,
+      );
+
+      return {
+        embedding,
+        model: model,
+        dimensions: embedding.length,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate embedding: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Generate embeddings for multiple texts in batch
+   */
+  async generateBatchEmbeddings(
+    texts: string[],
+    model:
+      | 'text-embedding-3-small'
+      | 'text-embedding-3-large'
+      | 'text-embedding-ada-002' = 'text-embedding-3-small',
+  ): Promise<EmbeddingGenerationResponse[]> {
+    if (!this.isConfigured()) {
+      throw new Error('OpenAI service is not properly configured');
+    }
+
+    this.logger.debug(`Generating embeddings for ${texts.length} texts`);
+
+    try {
+      // OpenAI supports batch embedding generation
+      const response = await this.openai!.embeddings.create({
+        input: texts,
+        model: model,
+      });
+
+      return response.data.map((data) => ({
+        embedding: data.embedding,
+        model: model,
+        dimensions: data.embedding.length,
+      }));
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate batch embeddings: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      throw error;
+    }
   }
 
   /**

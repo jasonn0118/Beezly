@@ -4,6 +4,11 @@ import { Repository } from 'typeorm';
 import { NormalizedProduct } from '../entities/normalized-product.entity';
 import { OpenAIService } from './openai.service';
 import { StorePatternMatcher } from './store-patterns.config';
+import { VectorEmbeddingService } from './vector-embedding.service';
+import {
+  findGroceryChainByName,
+  getStoreNormalizationCriteria,
+} from '../constants';
 
 export interface ParsedPrice {
   amount: number;
@@ -247,6 +252,7 @@ export class ProductNormalizationService {
     @InjectRepository(NormalizedProduct)
     private readonly normalizedProductRepository: Repository<NormalizedProduct>,
     private readonly openAIService: OpenAIService,
+    private readonly vectorEmbeddingService: VectorEmbeddingService,
   ) {}
 
   /**
@@ -255,15 +261,24 @@ export class ProductNormalizationService {
   async normalizeProduct(
     options: ProductNormalizationOptions,
   ): Promise<NormalizationResult> {
-    const { merchant, rawName, itemCode, useAI = true } = options;
+    const {
+      merchant: originalMerchant,
+      rawName,
+      itemCode,
+      useAI = true,
+      similarityThreshold = 0.85,
+    } = options;
+
+    // Normalize merchant name for consistency
+    const merchant = this.normalizeMerchantName(originalMerchant);
 
     this.logger.debug(`Normalizing product: ${rawName} from ${merchant}`);
 
     // Step 1: Clean the raw name (with store context)
     const cleanedName = this.cleanRawName(rawName, merchant);
 
-    // Step 2: Check if it's a discount, adjustment, or fee line
-    const isDiscount = this.isDiscountLine(cleanedName);
+    // Step 2: Check if it's a discount, adjustment, or fee line (with store-specific patterns)
+    const isDiscount = this.isDiscountLine(cleanedName, merchant);
     const isAdjustment = this.isAdjustmentLine(cleanedName);
     const isFee = this.isFee(cleanedName);
 
@@ -282,43 +297,66 @@ export class ProductNormalizationService {
             : 'fee_detected',
       };
 
-      // Store the discount/adjustment mapping
-      // TODO: Enable when entity is properly loaded
-      // await this.storeNormalizationResult(merchant, rawName, result);
-      return Promise.resolve(result);
+      // Store the discount/adjustment mapping with embedding
+      await this.storeNormalizationResult(merchant, rawName, result);
+      return result;
     }
 
     // Step 3: Check for exact match
-    // TODO: Enable when entity is properly loaded
-    // const exactMatch = await this.findExactMatch(rawName, merchant);
-    // if (exactMatch) {
-    //   await this.updateMatchingStatistics(exactMatch);
-    //   const result = this.convertEntityToResult(exactMatch);
-    //   result.method = 'exact_match';
-    //   return result;
-    // }
+    const exactMatch = await this.findExactMatch(rawName, merchant);
+    if (exactMatch) {
+      await this.updateMatchingStatistics(exactMatch);
+      const result = this.convertEntityToResult(exactMatch);
+      result.method = 'exact_match';
+      return result;
+    }
 
-    // Step 4: Check for similar products (semantic similarity)
-    // TODO: Enable when entity is properly loaded
-    // const similarProducts = await this.findSimilarProducts(
-    //   cleanedName,
-    //   merchant,
-    //   similarityThreshold,
-    // );
-    // if (similarProducts.length > 0) {
-    //   const bestMatch = similarProducts[0];
-    //   await this.updateMatchingStatistics(bestMatch);
-    //   const result = this.convertEntityToResult(bestMatch);
-    //   result.method = 'similarity_match';
-    //   // Add similar products info for test endpoint
-    //   result.similarProducts = similarProducts.slice(0, 5).map((product) => ({
-    //     productId: product.normalizedProductSk,
-    //     similarity: 0.8, // Placeholder, would be calculated in real implementation
-    //     normalizedName: product.normalizedName,
-    //     merchant: product.merchant,
-    //   }));
-    //   return result;
-    // }
+    // Step 4: Check for similar products using embeddings
+    try {
+      const embeddingSimilarProducts =
+        await this.vectorEmbeddingService.findSimilarProductsEnhanced({
+          queryText: cleanedName,
+          merchant,
+          similarityThreshold,
+          limit: 5,
+          includeDiscounts: false,
+          includeAdjustments: false,
+        });
+
+      if (embeddingSimilarProducts.length > 0) {
+        const bestMatch = embeddingSimilarProducts[0];
+
+        // Only use embedding match if similarity is very high
+        if (bestMatch.similarity >= similarityThreshold) {
+          await this.updateMatchingStatistics(bestMatch.normalizedProduct);
+          const result = this.convertEntityToResult(
+            bestMatch.normalizedProduct,
+          );
+          result.method = 'embedding_match';
+          result.confidenceScore = bestMatch.similarity; // Use similarity as confidence
+
+          // Add similar products info
+          result.similarProducts = embeddingSimilarProducts.map(
+            (embedResult) => ({
+              productId: embedResult.productId,
+              similarity: embedResult.similarity,
+              normalizedName: embedResult.normalizedProduct.normalizedName,
+              merchant: embedResult.normalizedProduct.merchant,
+            }),
+          );
+
+          this.logger.debug(
+            `Found embedding match with similarity ${bestMatch.similarity}`,
+          );
+          return result;
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Embedding search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      // Continue with other methods if embedding search fails
+    }
 
     // Step 5: Use AI normalization if enabled
     if (useAI) {
@@ -328,8 +366,7 @@ export class ProductNormalizationService {
         itemCode,
       );
       aiResult.method = 'ai_generated';
-      // TODO: Enable when entity is properly loaded
-      // await this.storeNormalizationResult(merchant, rawName, aiResult);
+      await this.storeNormalizationResult(merchant, rawName, aiResult);
       return aiResult;
     }
 
@@ -343,9 +380,8 @@ export class ProductNormalizationService {
       method: 'fallback',
     };
 
-    // TODO: Enable when entity is properly loaded
-    // await this.storeNormalizationResult(merchant, rawName, fallbackResult);
-    return Promise.resolve(fallbackResult);
+    await this.storeNormalizationResult(merchant, rawName, fallbackResult);
+    return fallbackResult;
   }
 
   /**
@@ -360,10 +396,7 @@ export class ProductNormalizationService {
 
     // Expand store-specific abbreviated brand names if merchant is known
     if (merchant) {
-      const storePattern = StorePatternMatcher.identifyStore(merchant);
-      if (storePattern?.storeId === 'WALMART') {
-        cleaned = this.expandWalmartAbbreviations(cleaned);
-      }
+      cleaned = this.expandStoreBrandAbbreviations(cleaned, merchant);
     }
 
     return cleaned;
@@ -407,10 +440,82 @@ export class ProductNormalizationService {
   }
 
   /**
-   * Check if the line represents a discount
+   * Expand store-specific brand abbreviations using grocery store constants
    */
-  isDiscountLine(cleanedName: string): boolean {
-    return this.discountPatterns.some((pattern) => pattern.test(cleanedName));
+  private expandStoreBrandAbbreviations(
+    name: string,
+    merchant: string,
+  ): string {
+    const storeNormalizationCriteria = getStoreNormalizationCriteria(merchant);
+
+    if (!storeNormalizationCriteria.commonPatterns) {
+      // Fallback to Walmart-specific logic for backward compatibility
+      const groceryChain = findGroceryChainByName(merchant);
+      if (groceryChain?.normalizedName === 'Walmart') {
+        return this.expandWalmartAbbreviations(name);
+      }
+      return name;
+    }
+
+    // Apply store-specific pattern expansions
+    let expandedName = name;
+
+    for (const pattern of storeNormalizationCriteria.commonPatterns) {
+      // Handle common abbreviation patterns
+      if (pattern.includes(' ')) {
+        // Full brand name pattern - expand common abbreviations
+        const brandWords = pattern.trim().split(' ');
+        const abbreviation = brandWords.map((word) => word.charAt(0)).join('');
+
+        // Create regex patterns for abbreviation matching
+        const patterns = [
+          new RegExp(`^${abbreviation}\\s+`, 'i'), // "GV " -> "GREAT VALUE "
+          new RegExp(`^${abbreviation}([A-Z])`, 'i'), // "GV" followed by uppercase -> "GREAT VALUE $1"
+        ];
+
+        for (const regex of patterns) {
+          if (regex.test(expandedName)) {
+            const replacement = regex.source.includes('\\s+')
+              ? `${pattern.toUpperCase()} `
+              : `${pattern.toUpperCase()} $1`;
+            expandedName = expandedName.replace(regex, replacement);
+            break;
+          }
+        }
+      }
+    }
+
+    return expandedName;
+  }
+
+  /**
+   * Check if the line represents a discount
+   * Enhanced with store-specific discount indicators
+   */
+  isDiscountLine(cleanedName: string, merchant?: string): boolean {
+    // First check general discount patterns
+    const hasGeneralDiscountPattern = this.discountPatterns.some((pattern) =>
+      pattern.test(cleanedName),
+    );
+
+    if (hasGeneralDiscountPattern) {
+      return true;
+    }
+
+    // If merchant is provided, check store-specific discount indicators
+    if (merchant) {
+      const storeNormalizationCriteria =
+        getStoreNormalizationCriteria(merchant);
+
+      if (storeNormalizationCriteria.discountIndicators) {
+        const upperCleanedName = cleanedName.toUpperCase();
+        return storeNormalizationCriteria.discountIndicators.some((indicator) =>
+          upperCleanedName.includes(indicator.toUpperCase()),
+        );
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -767,13 +872,97 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
   }
 
   /**
-   * Store normalization result in the database
+   * Public method to store normalization result (used by OCR service)
+   */
+  async storeResult(
+    merchant: string,
+    rawName: string,
+    result: NormalizationResult,
+  ): Promise<NormalizedProduct> {
+    // Normalize merchant name to prevent duplicates
+    const normalizedMerchant = this.normalizeMerchantName(merchant);
+    return await this.storeNormalizationResult(
+      normalizedMerchant,
+      rawName,
+      result,
+    );
+  }
+
+  /**
+   * Normalize merchant names to prevent duplicates from inconsistent naming
+   */
+  private normalizeMerchantName(merchant: string): string {
+    const normalized = merchant.trim().toLowerCase();
+
+    // Define merchant name mappings for common variations
+    const merchantMappings: Record<string, string> = {
+      costco: 'Costco Wholesale',
+      'costco wholesale': 'Costco Wholesale',
+      walmart: 'Walmart',
+      'walmart supercenter': 'Walmart',
+      target: 'Target',
+      'whole foods': 'Whole Foods Market',
+      'whole foods market': 'Whole Foods Market',
+      'trader joes': "Trader Joe's",
+      "trader joe's": "Trader Joe's",
+      kroger: 'Kroger',
+      safeway: 'Safeway',
+      albertsons: 'Albertsons',
+      publix: 'Publix',
+      'harris teeter': 'Harris Teeter',
+      wegmans: 'Wegmans',
+      'stop & shop': 'Stop & Shop',
+      giant: 'Giant',
+      'food lion': 'Food Lion',
+      'king soopers': 'King Soopers',
+      'fred meyer': 'Fred Meyer',
+      qfc: 'QFC',
+      "ralph's": "Ralph's",
+      ralphs: "Ralph's",
+    };
+
+    // Return mapped value or properly capitalized original
+    return (
+      merchantMappings[normalized] || this.capitalizeWords(merchant.trim())
+    );
+  }
+
+  /**
+   * Capitalize each word in a string (for unknown merchants)
+   */
+  private capitalizeWords(str: string): string {
+    return str
+      .toLowerCase()
+      .split(' ')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  /**
+   * Store normalization result in the database with embedding
    */
   private async storeNormalizationResult(
     merchant: string,
     rawName: string,
     result: NormalizationResult,
   ): Promise<NormalizedProduct> {
+    // Check for comprehensive duplicates before attempting to save
+    const existingProduct = await this.findComprehensiveDuplicate(
+      merchant,
+      rawName,
+      result,
+    );
+
+    if (existingProduct) {
+      this.logger.debug(
+        `Comprehensive duplicate found for ${rawName} from ${merchant}. Using existing record.`,
+      );
+      // Update match statistics and return existing product
+      await this.updateMatchingStatistics(existingProduct);
+      return existingProduct;
+    }
+
+    // Create product without embedding first for faster response
     const normalizedProduct = this.normalizedProductRepository.create({
       rawName,
       merchant,
@@ -782,14 +971,290 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       brand: result.brand,
       category: result.category,
       confidenceScore: result.confidenceScore,
-      embedding: undefined as number[] | undefined, // Will be set by VectorEmbeddingService
+      embedding: undefined, // Will be generated asynchronously
       isDiscount: result.isDiscount,
       isAdjustment: result.isAdjustment,
       matchCount: 1,
       lastMatchedAt: new Date(),
     });
 
-    return await this.normalizedProductRepository.save(normalizedProduct);
+    try {
+      const savedProduct =
+        await this.normalizedProductRepository.save(normalizedProduct);
+
+      // Generate embedding asynchronously in the background
+      this.generateAndUpdateEmbeddingAsync(savedProduct);
+
+      return savedProduct;
+    } catch (error: any) {
+      // Handle duplicate key constraint violation as fallback
+      /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+      if (
+        error.code === '23505' &&
+        error.constraint === 'UQ_raw_name_merchant'
+      ) {
+        /* eslint-enable @typescript-eslint/no-unsafe-member-access */
+        this.logger.debug(
+          `Product already exists: ${rawName} from ${merchant}. Retrieving existing record.`,
+        );
+
+        // Another request created this product concurrently, retrieve the existing one
+        const concurrentExistingProduct = await this.findExactMatch(
+          rawName,
+          merchant,
+        );
+        if (concurrentExistingProduct) {
+          // Update the existing product's match statistics and return it
+          await this.updateMatchingStatistics(concurrentExistingProduct);
+          return concurrentExistingProduct;
+        }
+      }
+
+      // Re-throw other errors
+      throw error;
+    }
+  }
+
+  /**
+   * Find comprehensive duplicate based on core criteria: normalized_name, brand, confidence_score
+   * Falls back to full field matching if needed
+   */
+  private async findComprehensiveDuplicate(
+    merchant: string,
+    rawName: string,
+    result: NormalizationResult,
+  ): Promise<NormalizedProduct | null> {
+    // Strategy 1: Search by core product information (normalized_name + brand + merchant)
+    const coreSearchConditions: {
+      merchant: string;
+      normalizedName: string;
+      brand?: string;
+    } = {
+      merchant,
+      normalizedName: result.normalizedName,
+    };
+
+    // Add brand to core search if available
+    if (result.brand) {
+      coreSearchConditions.brand = result.brand;
+    }
+
+    const coreCandidates = await this.normalizedProductRepository.find({
+      where: coreSearchConditions,
+    });
+
+    // Check core candidates first (highest chance of being duplicates)
+    for (const candidate of coreCandidates) {
+      const isDuplicate = this.isComprehensiveDuplicate(candidate, result);
+      if (isDuplicate) {
+        this.logger.debug(
+          `Found duplicate via core search: ${candidate.normalizedName} (brand: ${candidate.brand})`,
+        );
+        return candidate;
+      }
+    }
+
+    // Strategy 2: Search by full normalized results (legacy comprehensive search)
+    const normalizedCandidates = await this.normalizedProductRepository.find({
+      where: {
+        merchant,
+        normalizedName: result.normalizedName,
+        // Include optional fields in search to narrow down candidates
+        ...(result.itemCode && { itemCode: result.itemCode }),
+        ...(result.brand && { brand: result.brand }),
+        ...(result.category && { category: result.category }),
+        isDiscount: result.isDiscount,
+        isAdjustment: result.isAdjustment,
+      },
+    });
+
+    // Check normalized candidates first (highest chance of being duplicates)
+    for (const candidate of normalizedCandidates) {
+      const isDuplicate = this.isComprehensiveDuplicate(candidate, result);
+      if (isDuplicate) {
+        this.logger.debug(
+          `Found duplicate via normalized search: ${candidate.normalizedName}`,
+        );
+        return candidate;
+      }
+    }
+
+    // Strategy 2: Search by raw_name + merchant (original logic for fallback)
+    const rawNameCandidates = await this.normalizedProductRepository.find({
+      where: {
+        rawName,
+        merchant,
+        // Include item_code in the search if provided
+        ...(result.itemCode && { itemCode: result.itemCode }),
+      },
+    });
+
+    // Check raw name candidates
+    for (const candidate of rawNameCandidates) {
+      const isDuplicate = this.isComprehensiveDuplicate(candidate, result);
+      if (isDuplicate) {
+        this.logger.debug(
+          `Found duplicate via raw name search: ${candidate.normalizedName}`,
+        );
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Check if a candidate product is a comprehensive duplicate
+   * Primary check: normalized_name, brand, and confidence_score must match
+   * Secondary check: ALL fields must match for complete duplicate
+   */
+  private isComprehensiveDuplicate(
+    candidate: NormalizedProduct,
+    result: NormalizationResult,
+  ): boolean {
+    // Helper function to normalize null/undefined values for comparison
+    const normalizeValue = (
+      value: string | undefined | null,
+    ): string | null => {
+      return value === undefined ? null : value;
+    };
+
+    // PRIMARY DUPLICATE CHECK: Core product information
+    const sameNormalizedName =
+      candidate.normalizedName === result.normalizedName;
+    const sameBrand =
+      normalizeValue(candidate.brand) === normalizeValue(result.brand);
+
+    // Check if confidence scores are the same (within a small tolerance)
+    const confidenceThreshold = 0.001; // Allow small floating point differences
+    const sameConfidenceScore =
+      Math.abs(candidate.confidenceScore - result.confidenceScore) <
+      confidenceThreshold;
+
+    // If core product info matches, consider it a duplicate
+    const isCoreProductDuplicate =
+      sameNormalizedName && sameBrand && sameConfidenceScore;
+
+    if (isCoreProductDuplicate) {
+      this.logger.debug(
+        `Found core duplicate: ${candidate.normalizedName} with brand ${candidate.brand} and confidence ${candidate.confidenceScore}`,
+      );
+      return true;
+    }
+
+    // SECONDARY CHECK: All fields must match for complete duplicate (legacy logic)
+    const sameCategory =
+      normalizeValue(candidate.category) === normalizeValue(result.category);
+    const sameItemCode =
+      normalizeValue(candidate.itemCode) === normalizeValue(result.itemCode);
+    const sameIsDiscount = candidate.isDiscount === result.isDiscount;
+    const sameIsAdjustment = candidate.isAdjustment === result.isAdjustment;
+
+    const isCompleteDuplicate =
+      sameNormalizedName &&
+      sameBrand &&
+      sameCategory &&
+      sameItemCode &&
+      sameIsDiscount &&
+      sameIsAdjustment &&
+      sameConfidenceScore;
+
+    if (isCompleteDuplicate) {
+      this.logger.debug(
+        `Found comprehensive duplicate: ${candidate.normalizedName} (all fields match)`,
+      );
+      return true;
+    }
+
+    // Log detailed comparison for debugging
+    if (!isCompleteDuplicate) {
+      this.logger.debug(`Not a duplicate - differences found:`, {
+        normalizedName: {
+          candidate: candidate.normalizedName,
+          result: result.normalizedName,
+          match: sameNormalizedName,
+        },
+        brand: {
+          candidate: candidate.brand,
+          result: result.brand,
+          match: sameBrand,
+        },
+        category: {
+          candidate: candidate.category,
+          result: result.category,
+          match: sameCategory,
+        },
+        itemCode: {
+          candidate: candidate.itemCode,
+          result: result.itemCode,
+          match: sameItemCode,
+        },
+        isDiscount: {
+          candidate: candidate.isDiscount,
+          result: result.isDiscount,
+          match: sameIsDiscount,
+        },
+        isAdjustment: {
+          candidate: candidate.isAdjustment,
+          result: result.isAdjustment,
+          match: sameIsAdjustment,
+        },
+        confidenceScore: {
+          candidate: candidate.confidenceScore,
+          result: result.confidenceScore,
+          match: sameConfidenceScore,
+        },
+      });
+    }
+
+    return false;
+  }
+
+  /**
+   * Generate embedding asynchronously and update the product in the background
+   */
+  private generateAndUpdateEmbeddingAsync(product: NormalizedProduct): void {
+    // Use setImmediate to make this truly asynchronous and non-blocking
+    setImmediate(() => {
+      this.performEmbeddingGeneration(product).catch((error) => {
+        this.logger.warn(
+          `Background embedding generation failed for ${product.normalizedName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      });
+    });
+  }
+
+  /**
+   * Perform the actual embedding generation and update
+   */
+  private async performEmbeddingGeneration(
+    product: NormalizedProduct,
+  ): Promise<void> {
+    try {
+      this.logger.debug(
+        `Generating embedding asynchronously for product: ${product.normalizedName}`,
+      );
+
+      const embedding = await this.vectorEmbeddingService.generateEmbedding(
+        product.normalizedName,
+      );
+
+      // Update the product with the generated embedding
+      await this.normalizedProductRepository.update(
+        { normalizedProductSk: product.normalizedProductSk },
+        { embedding },
+      );
+
+      this.logger.debug(
+        `Successfully updated embedding for product: ${product.normalizedName}`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to generate/update embedding for ${product.normalizedName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      // Re-throw so the caller can handle it
+      throw error;
+    }
   }
 
   /**
@@ -893,19 +1358,21 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     }>,
     merchant: string,
   ): Promise<NormalizationResult[]> {
+    // Normalize merchant name for consistency
+    const normalizedMerchant = this.normalizeMerchantName(merchant);
     // Step 1: Normalize all items first
     const normalizedItems: NormalizationResult[] = [];
 
     for (const item of items) {
       // Parse the price to detect negative/discount amounts
-      const parsedPrice = this.parsePrice(item.price, merchant);
+      const parsedPrice = this.parsePrice(item.price, normalizedMerchant);
 
       // Check if price format indicates this is a discount
       const isPriceBasedDiscount = parsedPrice.isNegative;
 
       const result = await this.normalizeProduct({
         rawName: item.name,
-        merchant,
+        merchant: normalizedMerchant,
         itemCode: item.itemCode,
         useAI: true,
       });
@@ -931,7 +1398,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     }
 
     // Step 2: Link discounts to products
-    return this.linkDiscountsToProducts(normalizedItems);
+    return this.linkDiscountsToProducts(normalizedItems, merchant);
   }
 
   /**
@@ -939,12 +1406,18 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
    */
   private linkDiscountsToProducts(
     items: NormalizationResult[],
+    merchant?: string,
   ): NormalizationResult[] {
     const products = items.filter(
       (item) => !item.isDiscount && !item.isAdjustment && !item.isFee,
     );
     const discounts = items.filter((item) => item.isDiscount);
     const fees = items.filter((item) => item.isFee);
+
+    // For Costco, use sequential linking (fees/deposits follow products)
+    if (merchant && merchant.toUpperCase().includes('COSTCO')) {
+      return this.linkDiscountsSequentially(items);
+    }
 
     // For each discount, try to find the product it applies to
     for (const discount of discounts) {
@@ -1015,6 +1488,53 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         // Mark fee as applied to this product
         fee.appliedToProductId = isExtendedNormalizationResult(linkedProduct)
           ? linkedProduct.originalIndex.toString()
+          : 'unknown';
+      }
+    }
+
+    return items;
+  }
+
+  /**
+   * Link discounts and fees sequentially for Costco receipts
+   * In Costco receipts, fees and deposits immediately follow the product they apply to
+   */
+  private linkDiscountsSequentially(
+    items: NormalizationResult[],
+  ): NormalizationResult[] {
+    let lastProduct: NormalizationResult | null = null;
+
+    for (const item of items) {
+      if (!item.isDiscount && !item.isAdjustment && !item.isFee) {
+        // This is a product, update lastProduct
+        lastProduct = item;
+      } else if ((item.isDiscount || item.isFee) && lastProduct) {
+        // This is a discount/fee that follows a product
+        if (!lastProduct.linkedDiscounts) {
+          lastProduct.linkedDiscounts = [];
+        }
+
+        const amount = isExtendedNormalizationResult(item)
+          ? item.isFee
+            ? item.originalPrice
+            : Math.abs(item.originalPrice)
+          : 0;
+
+        const link: DiscountLink = {
+          discountId: isExtendedNormalizationResult(item)
+            ? item.originalIndex.toString()
+            : 'unknown',
+          discountAmount: amount,
+          discountType: this.determineDiscountType(item.normalizedName, amount),
+          discountDescription: item.normalizedName,
+          confidence: 1.0, // High confidence for sequential linking
+        };
+
+        lastProduct.linkedDiscounts.push(link);
+
+        // Mark as applied
+        item.appliedToProductId = isExtendedNormalizationResult(lastProduct)
+          ? lastProduct.originalIndex.toString()
           : 'unknown';
       }
     }
@@ -1193,8 +1713,82 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     products: NormalizationResult[],
   ): NormalizationResult | null {
     const feeIndex = isExtendedNormalizationResult(fee) ? fee.originalIndex : 0;
+    const feeName = fee.normalizedName.toUpperCase();
 
-    // Strategy 1: ECO FEE pattern handling (e.g., "ECO FEE BAT" links to battery products)
+    // Strategy 1: Handle beverage-specific fees (DEPOSIT, ENVIRO FEE for bottles/cans)
+    if (feeName.includes('DEPOSIT') || feeName.includes('ENVIRO FEE')) {
+      // These fees only apply to beverages
+      const beverageKeywords = [
+        'WATER',
+        'COKE',
+        'COLA',
+        'PEPSI',
+        'SPRITE',
+        'FANTA',
+        '7UP',
+        'BUBLY',
+        'PERRIER',
+        'SODA',
+        'POP',
+        'JUICE',
+        'DRINK',
+        'BEVERAGE',
+        'BEER',
+        'WINE',
+        'LIQUOR',
+        'ALCOHOL',
+      ];
+
+      // First, check the immediately preceding product (most common pattern)
+      for (let i = 1; i <= 2; i++) {
+        const adjacentIndex = feeIndex - i;
+        const adjacentProduct = products.find(
+          (p) =>
+            isExtendedNormalizationResult(p) &&
+            p.originalIndex === adjacentIndex,
+        );
+
+        if (adjacentProduct) {
+          const productName = adjacentProduct.normalizedName.toUpperCase();
+          const isBeverage = beverageKeywords.some((keyword) =>
+            productName.includes(keyword),
+          );
+
+          if (isBeverage) {
+            return adjacentProduct;
+          }
+        }
+      }
+
+      // If no adjacent beverage found, look for any beverage product before this fee
+      const beverageProducts = products
+        .filter((p) => {
+          if (
+            !isExtendedNormalizationResult(p) ||
+            p.originalIndex >= feeIndex
+          ) {
+            return false;
+          }
+          const productName = p.normalizedName.toUpperCase();
+          return beverageKeywords.some((keyword) =>
+            productName.includes(keyword),
+          );
+        })
+        .sort((a, b) => {
+          const aIndex = isExtendedNormalizationResult(a) ? a.originalIndex : 0;
+          const bIndex = isExtendedNormalizationResult(b) ? b.originalIndex : 0;
+          return bIndex - aIndex; // Most recent first
+        });
+
+      if (beverageProducts.length > 0) {
+        return beverageProducts[0];
+      }
+
+      // Don't link beverage fees to non-beverage products
+      return null;
+    }
+
+    // Strategy 2: ECO FEE pattern handling (e.g., "ECO FEE BAT" links to battery products)
     const ecoFeeMatch = fee.normalizedName.match(/^ECO\s*FEE\s*(.+)$/i);
     if (ecoFeeMatch) {
       const feeType = ecoFeeMatch[1].trim().toUpperCase();
@@ -1227,9 +1821,9 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       }
     }
 
-    // Strategy 2: Look for adjacent products (most common for fees)
-    // Check items immediately before the fee
-    for (let i = 1; i <= 3; i++) {
+    // Strategy 3: Look for adjacent products (for other non-specific fees)
+    // Only check immediately adjacent items to avoid incorrect long-distance linking
+    for (let i = 1; i <= 2; i++) {
       const adjacentIndex = feeIndex - i;
       const adjacentProduct = products.find(
         (p) =>
@@ -1245,26 +1839,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       }
     }
 
-    // Strategy 3: Look for the most recent product before this fee
-    const recentProducts = products
-      .filter(
-        (p) =>
-          isExtendedNormalizationResult(p) &&
-          p.originalIndex < feeIndex &&
-          !p.isDiscount &&
-          !p.isAdjustment &&
-          !p.isFee,
-      )
-      .sort((a, b) => {
-        const aIndex = isExtendedNormalizationResult(a) ? a.originalIndex : 0;
-        const bIndex = isExtendedNormalizationResult(b) ? b.originalIndex : 0;
-        return bIndex - aIndex;
-      });
-
-    if (recentProducts.length > 0) {
-      return recentProducts[0];
-    }
-
+    // Don't link fees to distant products - return null if no clear match
     return null;
   }
 

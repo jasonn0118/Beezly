@@ -17,7 +17,9 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { OcrService, OcrResult, EnhancedOcrResult } from './ocr.service';
+import { OcrService, OcrResult, CleanOcrResult } from './ocr.service';
+import { ReceiptService } from '../receipt/receipt.service';
+import { ReceiptNormalizationService } from '../receipt/receipt-normalization.service';
 import { upload_receipt } from '../utils/storage.util';
 import {
   ProcessReceiptDto,
@@ -29,6 +31,8 @@ import {
 export class OcrController {
   constructor(
     private readonly ocrService: OcrService,
+    private readonly receiptService: ReceiptService,
+    private readonly normalizationService: ReceiptNormalizationService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -303,12 +307,11 @@ export class OcrController {
                   normalized_name: { type: 'string' },
                   brand: { type: 'string' },
                   category: { type: 'string' },
-                  price: { type: 'string' },
                   quantity: { type: 'string' },
+                  unit_price: { type: 'string' },
+                  item_number: { type: 'string' },
                   confidence_score: { type: 'number' },
-                  is_discount: { type: 'boolean' },
-                  is_adjustment: { type: 'boolean' },
-                  normalization_method: { type: 'string' },
+                  normalized_product_sk: { type: 'string' },
                   linked_discounts: {
                     type: 'array',
                     items: {
@@ -326,15 +329,8 @@ export class OcrController {
                     },
                   },
                   applied_to_product_id: { type: 'string' },
-                  original_price_numeric: { type: 'number' },
+                  original_price: { type: 'number' },
                   final_price: { type: 'number' },
-                  price_format_info: {
-                    type: 'object',
-                    properties: {
-                      was_negative: { type: 'boolean' },
-                      original_format: { type: 'string' },
-                    },
-                  },
                 },
               },
             },
@@ -372,7 +368,7 @@ export class OcrController {
   async processReceiptEnhanced(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: ProcessReceiptEnhancedDto,
-  ): Promise<{ success: boolean; data: EnhancedOcrResult | OcrResult }> {
+  ): Promise<{ success: boolean; data: CleanOcrResult | OcrResult }> {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
@@ -418,11 +414,11 @@ export class OcrController {
         );
       }
 
-      let result: EnhancedOcrResult | OcrResult;
+      let result: CleanOcrResult | OcrResult;
 
       // Process with or without normalization based on the flag
       if (body.include_normalization !== false) {
-        result = await this.ocrService.processReceiptWithNormalization(
+        result = await this.ocrService.processReceiptEnhanced(
           file.buffer,
           azureEndpoint,
           azureApiKey,
@@ -441,27 +437,74 @@ export class OcrController {
 
       console.log(`Starting async upload for user ${userId}, store ${storeId}`);
 
-      // Fire-and-forget upload - don't await to avoid blocking response
-      upload_receipt(userId, storeId, file.buffer, file.mimetype)
-        .then((uploadedFilePath) => {
-          if (uploadedFilePath) {
-            console.log(
-              `Receipt uploaded successfully to: ${uploadedFilePath}`,
-            );
-          } else {
-            console.warn('Failed to upload receipt to storage');
-          }
-        })
-        .catch((error) => {
-          console.error('Error uploading receipt to storage:', error);
-        });
+      let uploadedFilePath: string | undefined;
 
-      // TODO: If create_receipt flag is true, create receipt record in database
-      // This would require implementing receipt creation service integration
+      try {
+        // Upload file to storage
+        const uploadResult = await upload_receipt(
+          userId,
+          storeId,
+          file.buffer,
+          file.mimetype,
+        );
+        uploadedFilePath = uploadResult || undefined;
+        if (uploadedFilePath) {
+          console.log(`Receipt uploaded successfully to: ${uploadedFilePath}`);
+        }
+      } catch (error) {
+        console.error('Error uploading receipt to storage:', error);
+        // Continue without file path - not critical for OCR processing
+      }
+
+      // Create receipt record in database if requested
+      let receiptId: string | undefined;
+
+      if (body.create_receipt) {
+        try {
+          // For receipt creation, we need to use the enhanced result if normalization was enabled
+          const receiptData =
+            body.include_normalization !== false
+              ? await this.ocrService.processReceiptWithNormalization(
+                  file.buffer,
+                  azureEndpoint,
+                  azureApiKey,
+                )
+              : (result as OcrResult); // Cast CleanOcrResult to OcrResult since it only contains base OcrResult when normalization is false
+
+          const receipt = await this.receiptService.createReceiptFromOcrResult(
+            receiptData,
+            body.user_id, // Pass actual user_id, not default
+            uploadedFilePath,
+          );
+          receiptId = receipt.receiptSk;
+          console.log(`Receipt created in database with ID: ${receiptId}`);
+
+          // Trigger normalization as a background process (fire-and-forget)
+          if (body.include_normalization !== false) {
+            this.normalizationService
+              .normalizeReceiptItems(receiptId)
+              .then(() => {
+                console.log(`Receipt ${receiptId} normalization completed`);
+              })
+              .catch((error) => {
+                console.error(`Error normalizing receipt ${receiptId}:`, error);
+              });
+          }
+        } catch (error) {
+          console.error('Error creating receipt in database:', error);
+          // Continue without receipt creation - OCR result still valid
+        }
+      }
 
       return {
         success: true,
-        data: result,
+        data: {
+          ...result,
+          // Add receipt_id to response if created
+          ...(receiptId && { receipt_id: receiptId }),
+          // Add uploaded file path to response if available
+          ...(uploadedFilePath && { uploaded_file_path: uploadedFilePath }),
+        },
       };
     } catch (error) {
       throw new HttpException(

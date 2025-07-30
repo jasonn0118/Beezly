@@ -28,11 +28,49 @@ import {
   MobileProductResponseDto,
 } from './dto/mobile-product-create.dto';
 import { ProductSearchResponseDto } from './dto/product-search-response.dto';
+import {
+  EmbeddingSearchRequestDto,
+  EmbeddingSearchResponseDto,
+  EmbeddingSearchResultDto,
+  BatchEmbeddingSearchRequestDto,
+  BatchEmbeddingSearchResponseDto,
+  BatchEmbeddingSearchResultDto,
+} from './dto/embedding-search.dto';
+import { VectorEmbeddingService } from './vector-embedding.service';
+import { ProductLinkingService } from './product-linking.service';
+import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
+import { ProductConfirmationService } from './product-confirmation.service';
+import {
+  ProcessReceiptConfirmationDto,
+  ReceiptConfirmationResponseDto,
+  GetConfirmationCandidatesResponseDto,
+  ConfirmationStatsResponseDto,
+  ReceiptPendingSelectionsResponseDto,
+  ProcessReceiptSelectionsDto,
+  ReceiptSelectionsResponseDto,
+} from './dto/receipt-confirmation.dto';
+import {
+  UnprocessedProductService,
+  BulkReviewAction,
+} from './unprocessed-product.service';
+import {
+  UnprocessedProductStatus,
+  UnprocessedProductReason,
+} from '../entities/unprocessed-product.entity';
+import { Product } from '../entities/product.entity';
 
 @ApiTags('Products')
 @Controller('products')
 export class ProductController {
-  constructor(private readonly productService: ProductService) {}
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.8;
+  constructor(
+    private readonly productService: ProductService,
+    private readonly vectorEmbeddingService: VectorEmbeddingService,
+    private readonly productLinkingService: ProductLinkingService,
+    private readonly receiptPriceIntegrationService: ReceiptPriceIntegrationService,
+    private readonly productConfirmationService: ProductConfirmationService,
+    private readonly unprocessedProductService: UnprocessedProductService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Get all products' })
@@ -242,5 +280,792 @@ export class ProductController {
   async deleteProduct(@Param('id') id: string): Promise<{ message: string }> {
     await this.productService.deleteProduct(id);
     return { message: 'Product deleted successfully' };
+  }
+
+  @Post('search/embedding')
+  @ApiOperation({
+    summary: 'Search for similar products using embedding-based similarity',
+    description:
+      'Uses vector embeddings to find products with similar names within a specific store. This is particularly useful for matching receipt items to normalized product names.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Similar products found',
+    type: EmbeddingSearchResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request parameters',
+  })
+  async searchByEmbedding(
+    @Body() searchRequest: EmbeddingSearchRequestDto,
+  ): Promise<EmbeddingSearchResponseDto> {
+    const startTime = Date.now();
+
+    const results =
+      await this.vectorEmbeddingService.findSimilarProductsEnhanced({
+        queryText: searchRequest.query,
+        merchant: searchRequest.merchant,
+        similarityThreshold: searchRequest.similarityThreshold || 0.85,
+        limit: searchRequest.limit || 5,
+        includeDiscounts: searchRequest.includeDiscounts || false,
+        includeAdjustments: searchRequest.includeAdjustments || false,
+      });
+
+    const searchResults = results.map((result) => ({
+      productId: result.productId,
+      similarity: result.similarity,
+      rawName: result.normalizedProduct.rawName,
+      normalizedName: result.normalizedProduct.normalizedName,
+      brand: result.normalizedProduct.brand,
+      category: result.normalizedProduct.category,
+      confidenceScore: result.normalizedProduct.confidenceScore,
+      matchCount: result.normalizedProduct.matchCount,
+      lastMatchedAt: result.normalizedProduct.lastMatchedAt,
+    }));
+
+    const searchTimeMs = Date.now() - startTime;
+
+    return {
+      results: searchResults,
+      totalCount: searchResults.length,
+      query: searchRequest.query,
+      merchant: searchRequest.merchant,
+      searchTimeMs,
+    };
+  }
+
+  @Post('search/embedding/batch')
+  @ApiOperation({
+    summary: 'Batch search for similar products using embeddings',
+    description:
+      'Search for multiple products at once using vector embeddings. Useful for processing entire receipts.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Batch search results',
+    type: BatchEmbeddingSearchResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request parameters',
+  })
+  async batchSearchByEmbedding(
+    @Body() batchRequest: BatchEmbeddingSearchRequestDto,
+  ): Promise<BatchEmbeddingSearchResponseDto> {
+    const startTime = Date.now();
+    const results = [] as BatchEmbeddingSearchResultDto[];
+    let queriesWithMatches = 0;
+
+    // Process each query
+    for (const query of batchRequest.queries) {
+      const matches =
+        await this.vectorEmbeddingService.findSimilarProductsEnhanced({
+          queryText: query,
+          merchant: batchRequest.merchant,
+          similarityThreshold: batchRequest.similarityThreshold || 0.85,
+          limit: batchRequest.limitPerQuery || 3,
+          includeDiscounts: false,
+          includeAdjustments: false,
+        });
+
+      const searchResults: EmbeddingSearchResultDto[] = matches.map(
+        (result) => ({
+          productId: result.productId,
+          similarity: result.similarity,
+          rawName: result.normalizedProduct.rawName,
+          normalizedName: result.normalizedProduct.normalizedName,
+          brand: result.normalizedProduct.brand,
+          category: result.normalizedProduct.category,
+          confidenceScore: result.normalizedProduct.confidenceScore,
+          matchCount: result.normalizedProduct.matchCount,
+          lastMatchedAt: result.normalizedProduct.lastMatchedAt,
+        }),
+      );
+
+      const hasMatches = searchResults.length > 0;
+      if (hasMatches) {
+        queriesWithMatches++;
+      }
+
+      const batchResult: BatchEmbeddingSearchResultDto = {
+        query,
+        matches: searchResults,
+        hasMatches,
+      };
+      results.push(batchResult);
+    }
+
+    const totalSearchTimeMs = Date.now() - startTime;
+
+    return {
+      results: results,
+      totalQueries: batchRequest.queries.length,
+      queriesWithMatches,
+      merchant: batchRequest.merchant,
+      totalSearchTimeMs,
+    };
+  }
+
+  @Post('embeddings/update')
+  @ApiOperation({
+    summary: 'Update embeddings for products without them',
+    description:
+      "Batch process to generate and store embeddings for normalized products that don't have them yet.",
+  })
+  @ApiQuery({
+    name: 'batchSize',
+    description: 'Number of products to process in this batch',
+    required: false,
+    type: Number,
+    example: 50,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Embedding update results',
+    schema: {
+      properties: {
+        updatedCount: { type: 'number', example: 45 },
+        batchSize: { type: 'number', example: 50 },
+        message: {
+          type: 'string',
+          example: 'Successfully updated 45 product embeddings',
+        },
+      },
+    },
+  })
+  async updateProductEmbeddings(
+    @Query('batchSize') batchSize?: number,
+  ): Promise<{ updatedCount: number; batchSize: number; message: string }> {
+    const size = batchSize && batchSize > 0 ? Math.min(batchSize, 100) : 50;
+    const updatedCount =
+      await this.vectorEmbeddingService.batchUpdateEmbeddings(size);
+
+    return {
+      updatedCount,
+      batchSize: size,
+      message: `Successfully updated ${updatedCount} product embeddings`,
+    };
+  }
+
+  @Get('embeddings/stats')
+  @ApiOperation({
+    summary: 'Get embedding statistics',
+    description:
+      'Get statistics about product embeddings including coverage and dimensions.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Embedding statistics',
+    schema: {
+      properties: {
+        totalProducts: { type: 'number', example: 1000 },
+        productsWithEmbeddings: { type: 'number', example: 850 },
+        productsWithoutEmbeddings: { type: 'number', example: 150 },
+        averageEmbeddingLength: { type: 'number', example: 1536 },
+        coveragePercentage: { type: 'number', example: 85.0 },
+      },
+    },
+  })
+  async getEmbeddingStats(): Promise<{
+    totalProducts: number;
+    productsWithEmbeddings: number;
+    productsWithoutEmbeddings: number;
+    averageEmbeddingLength: number;
+    coveragePercentage: number;
+  }> {
+    const stats = await this.vectorEmbeddingService.getEmbeddingStats();
+    const coveragePercentage =
+      stats.totalProducts > 0
+        ? (stats.productsWithEmbeddings / stats.totalProducts) * 100
+        : 0;
+
+    return {
+      ...stats,
+      coveragePercentage: Math.round(coveragePercentage * 100) / 100,
+    };
+  }
+
+  // Product Linking Endpoints
+
+  @Get('linking/stats')
+  @ApiOperation({
+    summary: 'Get product linking statistics',
+    description:
+      'Get statistics about normalized product linking coverage and performance.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product linking statistics',
+    schema: {
+      properties: {
+        totalNormalizedProducts: { type: 'number', example: 1000 },
+        highConfidenceProducts: { type: 'number', example: 800 },
+        linkedProducts: { type: 'number', example: 600 },
+        unlinkeds: { type: 'number', example: 200 },
+        linkingCoverage: { type: 'number', example: 75.0 },
+      },
+    },
+  })
+  async getLinkingStats() {
+    return this.productLinkingService.getLinkingStatistics();
+  }
+
+  @Get('unlinked')
+  @ApiOperation({
+    summary: 'Get unlinked high-confidence products',
+    description:
+      'Get normalized products with confidence ≥0.80 that are not yet linked to catalog products.',
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of products to return',
+    required: false,
+    type: Number,
+    example: 50,
+  })
+  @ApiQuery({
+    name: 'offset',
+    description: 'Number of products to skip',
+    required: false,
+    type: Number,
+    example: 0,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of unlinked high-confidence products',
+    type: [Object],
+  })
+  async getUnlinkedProducts(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.productLinkingService.getUnlinkedHighConfidenceProducts(
+      limit || 50,
+      offset || 0,
+    );
+  }
+
+  @Post('sync-receipt-prices')
+  @ApiOperation({
+    summary: 'Sync receipt prices to Price entities',
+    description:
+      'Extract pricing data from linked normalized products and create Price entities for historical tracking.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Price synchronization results',
+    schema: {
+      properties: {
+        success: { type: 'boolean', example: true },
+        pricesSynced: { type: 'number', example: 250 },
+        discountsProcessed: { type: 'number', example: 45 },
+        errors: { type: 'number', example: 3 },
+        errorMessages: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  async syncReceiptPrices() {
+    return this.receiptPriceIntegrationService.syncReceiptPrices();
+  }
+
+  @Get('price-sync/stats')
+  @ApiOperation({
+    summary: 'Get price synchronization statistics',
+    description: 'Get statistics about receipt price synchronization coverage.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Price sync statistics',
+    schema: {
+      properties: {
+        linkedProductsCount: { type: 'number', example: 600 },
+        syncedPricesCount: { type: 'number', example: 500 },
+        pendingSyncCount: { type: 'number', example: 100 },
+        totalReceiptItemsProcessed: { type: 'number', example: 1200 },
+      },
+    },
+  })
+  async getPriceSyncStats() {
+    return this.receiptPriceIntegrationService.getPriceSyncStatistics();
+  }
+
+  // Receipt Confirmation Endpoints (Mobile Frontend Integration)
+
+  @Get('receipt/confirmation-candidates')
+  @ApiOperation({
+    summary: 'Get receipt items ready for user confirmation',
+    description:
+      'Retrieves high-confidence normalized products from receipt processing that require user confirmation before linking to catalog products.',
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of candidates to return',
+    required: false,
+    type: Number,
+    example: 50,
+  })
+  @ApiQuery({
+    name: 'offset',
+    description: 'Number of candidates to skip',
+    required: false,
+    type: Number,
+    example: 0,
+  })
+  @ApiQuery({
+    name: 'userId',
+    description: 'User ID for personalized results',
+    required: false,
+    type: String,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of normalized products ready for confirmation',
+    type: GetConfirmationCandidatesResponseDto,
+  })
+  async getConfirmationCandidates(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('userId') userId?: string,
+  ): Promise<GetConfirmationCandidatesResponseDto> {
+    return this.productConfirmationService.getConfirmationCandidates(
+      userId,
+      limit || 50,
+      offset || 0,
+    );
+  }
+
+  @Post('receipt/process-confirmations')
+  @ApiOperation({
+    summary: 'Process user confirmations for receipt items',
+    description:
+      'Processes user confirmations and edits for receipt items after OCR processing. ' +
+      'Links confirmed items to catalog products, handles unmatched items, and identifies ' +
+      'items requiring user selection when multiple matches are found.',
+  })
+  @ApiBody({
+    description:
+      'Receipt confirmation request with user confirmations and edits',
+    type: ProcessReceiptConfirmationDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt confirmation processing results',
+    type: ReceiptConfirmationResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Some normalized products not found',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid confirmation data',
+  })
+  async processReceiptConfirmations(
+    @Body() confirmationRequest: ProcessReceiptConfirmationDto,
+  ): Promise<ReceiptConfirmationResponseDto> {
+    const result =
+      await this.productConfirmationService.confirmNormalizedProducts(
+        confirmationRequest.items,
+        confirmationRequest.userId,
+      );
+    // Map the service result to our DTO structure
+    return result as ReceiptConfirmationResponseDto;
+  }
+
+  @Get('receipt/confirmation-stats')
+  @ApiOperation({
+    summary: 'Get receipt confirmation statistics',
+    description:
+      'Retrieves statistics about receipt items pending confirmation, linked products, and unprocessed items.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt confirmation statistics',
+    type: ConfirmationStatsResponseDto,
+  })
+  async getReceiptConfirmationStats(): Promise<ConfirmationStatsResponseDto> {
+    return this.productConfirmationService.getConfirmationStats();
+  }
+
+  @Get('receipt/:receiptId/pending-selections')
+  @ApiOperation({
+    summary: 'Get pending product selections for a specific receipt',
+    description:
+      'Retrieves all products from a specific receipt that require user selection ' +
+      'because multiple catalog product matches were found. Automatically finds ' +
+      'all unlinked, high-confidence normalized products from the receipt that ' +
+      'have multiple potential matches.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt-scoped pending product selections',
+    type: ReceiptPendingSelectionsResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found or no pending selections',
+  })
+  async getReceiptPendingSelections(
+    @Param('receiptId') receiptId: string,
+  ): Promise<ReceiptPendingSelectionsResponseDto> {
+    return this.productConfirmationService.getReceiptPendingSelectionsByReceiptId(
+      receiptId,
+    );
+  }
+
+  @Post('receipt/process-selections')
+  @ApiOperation({
+    summary: 'Process user product selections for pending items',
+    description:
+      'Processes user choices for products that had multiple matches. Users can either ' +
+      'select a specific catalog product or provide empty selection (which moves the ' +
+      'item to the unprocessed queue for manual review).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User selections processed successfully',
+    type: ReceiptSelectionsResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid selection data',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Some normalized products not found',
+  })
+  async processReceiptSelections(
+    @Body() selectionsRequest: ProcessReceiptSelectionsDto,
+  ): Promise<ReceiptSelectionsResponseDto> {
+    return this.productConfirmationService.processReceiptSelections(
+      selectionsRequest.selections,
+      selectionsRequest.userId,
+      selectionsRequest.receiptId,
+    );
+  }
+
+  // Unprocessed Product Management Endpoints
+
+  @Get('unprocessed/review')
+  @ApiOperation({
+    summary: 'Get unprocessed products for review',
+    description:
+      'Get products that could not be matched and need manual review. These are candidates for creating new catalog products.',
+  })
+  @ApiQuery({
+    name: 'status',
+    description: 'Filter by status',
+    required: false,
+    enum: UnprocessedProductStatus,
+  })
+  @ApiQuery({
+    name: 'reason',
+    description: 'Filter by reason',
+    required: false,
+    enum: UnprocessedProductReason,
+  })
+  @ApiQuery({
+    name: 'merchant',
+    description: 'Filter by merchant',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'minPriorityScore',
+    description: 'Minimum priority score',
+    required: false,
+    type: Number,
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of items to return',
+    required: false,
+    type: Number,
+    example: 50,
+  })
+  @ApiQuery({
+    name: 'offset',
+    description: 'Number of items to skip',
+    required: false,
+    type: Number,
+    example: 0,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of unprocessed products for review',
+    schema: {
+      properties: {
+        items: { type: 'array', items: { type: 'object' } },
+        totalCount: { type: 'number', example: 150 },
+      },
+    },
+  })
+  async getUnprocessedProductsForReview(
+    @Query('status') status?: UnprocessedProductStatus,
+    @Query('reason') reason?: UnprocessedProductReason,
+    @Query('merchant') merchant?: string,
+    @Query('minPriorityScore') minPriorityScore?: number,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.unprocessedProductService.getUnprocessedProductsForReview(
+      status,
+      reason,
+      merchant,
+      minPriorityScore,
+      limit || 50,
+      offset || 0,
+    );
+  }
+
+  @Get('unprocessed/stats')
+  @ApiOperation({
+    summary: 'Get unprocessed product statistics',
+    description:
+      'Get comprehensive statistics about unprocessed products and review queue.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Unprocessed product statistics',
+    schema: {
+      properties: {
+        totalUnprocessed: { type: 'number', example: 400 },
+        pendingReview: { type: 'number', example: 300 },
+        underReview: { type: 'number', example: 50 },
+        approvedForCreation: { type: 'number', example: 30 },
+        rejected: { type: 'number', example: 15 },
+        processed: { type: 'number', example: 5 },
+        averagePriorityScore: { type: 'number', example: 3.2 },
+        topReasons: { type: 'array', items: { type: 'object' } },
+        topMerchants: { type: 'array', items: { type: 'object' } },
+      },
+    },
+  })
+  async getUnprocessedProductStats() {
+    return this.unprocessedProductService.getUnprocessedProductStats();
+  }
+
+  @Get('unprocessed/high-priority')
+  @ApiOperation({
+    summary: 'Get high-priority unprocessed products',
+    description:
+      'Get unprocessed products with high priority scores that need immediate attention.',
+  })
+  @ApiQuery({
+    name: 'minPriorityScore',
+    description: 'Minimum priority score threshold',
+    required: false,
+    type: Number,
+    example: 5.0,
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of items to return',
+    required: false,
+    type: Number,
+    example: 20,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of high-priority unprocessed products',
+    type: [Object],
+  })
+  async getHighPriorityUnprocessedProducts(
+    @Query('minPriorityScore') minPriorityScore?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.unprocessedProductService.getHighPriorityUnprocessedProducts(
+      minPriorityScore || 5.0,
+      limit || 20,
+    );
+  }
+
+  @Put('unprocessed/:unprocessedProductSk/status')
+  @ApiOperation({
+    summary: 'Update unprocessed product status',
+    description: 'Update the review status of an unprocessed product.',
+  })
+  @ApiBody({
+    description: 'Status update information',
+    schema: {
+      properties: {
+        status: { enum: Object.values(UnprocessedProductStatus) },
+        reviewNotes: { type: 'string', description: 'Optional review notes' },
+        reviewerId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'ID of the reviewer',
+        },
+      },
+      required: ['status'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Updated unprocessed product',
+    type: Object,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Unprocessed product not found',
+  })
+  async updateUnprocessedProductStatus(
+    @Param('unprocessedProductSk') unprocessedProductSk: string,
+    @Body()
+    body: {
+      status: UnprocessedProductStatus;
+      reviewNotes?: string;
+      reviewerId?: string;
+    },
+  ) {
+    return this.unprocessedProductService.updateUnprocessedProductStatus(
+      unprocessedProductSk,
+      body.status,
+      body.reviewNotes,
+      body.reviewerId,
+    );
+  }
+
+  @Post('unprocessed/:unprocessedProductSk/create-product')
+  @ApiOperation({
+    summary: 'Create product from unprocessed product',
+    description:
+      'Create a new catalog product from an unprocessed product entry.',
+  })
+  @ApiBody({
+    description: 'Product creation options',
+    schema: {
+      properties: {
+        reviewerId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'ID of the reviewer',
+        },
+        productOverrides: {
+          type: 'object',
+          description: 'Optional product field overrides',
+          properties: {
+            name: { type: 'string' },
+            brandName: { type: 'string' },
+            barcode: { type: 'string' },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Product created successfully',
+    schema: {
+      properties: {
+        product: { type: 'object', description: 'Created product' },
+        unprocessedProduct: {
+          type: 'object',
+          description: 'Updated unprocessed product',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Unprocessed product not found',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Product creation failed',
+  })
+  async createProductFromUnprocessedProduct(
+    @Param('unprocessedProductSk') unprocessedProductSk: string,
+    @Body()
+    body: {
+      reviewerId?: string;
+      productOverrides?: Partial<Product>;
+    },
+  ) {
+    return this.unprocessedProductService.createProductFromUnprocessedProduct(
+      unprocessedProductSk,
+      body.reviewerId,
+      body.productOverrides,
+    );
+  }
+
+  @Post('unprocessed/bulk-review')
+  @ApiOperation({
+    summary: 'Perform bulk review actions',
+    description:
+      'Perform review actions on multiple unprocessed products at once.',
+  })
+  @ApiBody({
+    description: 'Bulk review action',
+    schema: {
+      properties: {
+        unprocessedProductSks: {
+          type: 'array',
+          items: { type: 'string', format: 'uuid' },
+          description: 'List of unprocessed product SKs',
+        },
+        action: {
+          type: 'string',
+          enum: ['approve', 'reject', 'create_product'],
+          description: 'Action to perform',
+        },
+        reviewNotes: { type: 'string', description: 'Optional review notes' },
+        reviewerId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'ID of the reviewer',
+        },
+      },
+      required: ['unprocessedProductSks', 'action'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bulk review results',
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        processed: { type: 'number', example: 10 },
+        approved: { type: 'number', example: 7 },
+        rejected: { type: 'number', example: 2 },
+        created: { type: 'number', example: 1 },
+        errors: { type: 'number', example: 0 },
+        errorMessages: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  async performBulkReviewAction(@Body() bulkAction: BulkReviewAction) {
+    return this.unprocessedProductService.performBulkReviewAction(bulkAction);
+  }
+
+  @Delete('unprocessed/cleanup')
+  @ApiOperation({
+    summary: 'Cleanup processed unprocessed products',
+    description:
+      'Delete old processed or rejected unprocessed products for database cleanup.',
+  })
+  @ApiQuery({
+    name: 'olderThanDays',
+    description: 'Delete records older than this many days',
+    required: false,
+    type: Number,
+    example: 30,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cleanup results',
+    schema: {
+      properties: {
+        deletedCount: { type: 'number', example: 150 },
+      },
+    },
+  })
+  async cleanupProcessedUnprocessedProducts(
+    @Query('olderThanDays') olderThanDays?: number,
+  ) {
+    return this.unprocessedProductService.cleanupProcessedUnprocessedProducts(
+      olderThanDays || 30,
+    );
   }
 }

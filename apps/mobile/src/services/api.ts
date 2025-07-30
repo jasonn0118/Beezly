@@ -1,8 +1,10 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 // API configuration
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
-const API_TIMEOUT = parseInt(process.env.API_TIMEOUT || '10000', 10);
+// @ts-ignore - Expo environment variables are available at runtime
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+// @ts-ignore - Expo environment variables are available at runtime
+const API_TIMEOUT = parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '10000', 10);
 
 class ApiClient {
   private client: AxiosInstance;
@@ -19,6 +21,9 @@ class ApiClient {
     // Request interceptor for authentication
     this.client.interceptors.request.use(
       (config) => {
+        if (config.data instanceof FormData) {
+          delete config.headers['Content-Type'];
+        }
         // Add auth token if available
         const token = this.getAuthToken();
         if (token) {
