@@ -1,26 +1,46 @@
 import { apiClient } from './api';
 
+export interface ProcessReceiptRequest {
+  file: {
+    uri: string;
+    name:string;
+    type: string;
+  };
+  storeName?: string;
+}
+
 export interface Receipt {
   id: string;
-  storeName: string;
-  receiptNumber: string;
-  transactionDate: string;
-  totalAmount: number;
-  items: ReceiptItem[];
+  merchant: string;
+  date: string;
+  total: number;
+  items: [];
+  item_count: number;
+  raw_text: string;
+  azure_confidence: number;
+  subtotal: number;
+  tax: number;
+  store_address: string;
+  time: string;
+  receipt_id: string;
 }
 
 export interface ReceiptItem {
   id: string;
   name: string;
+  price: number;
   quantity: number;
-  unitPrice: number;
-  totalPrice: number;
-  barcode?: string;
-}
-
-export interface ProcessReceiptRequest {
-  imageData: string; // Base64 encoded image
-  storeName?: string;
+  unit_price: number;
+  item_number: number;
+  normalized_name: string;
+  brand: string;
+  category: string;
+  confidence_score: number;
+  is_discount: boolean;
+  is_adjustment: boolean;
+  normalization_method: string;
+  original_price_numeric: number;
+  final_price: number;
 }
 
 export interface UploadReceiptResponse {
@@ -30,8 +50,13 @@ export interface UploadReceiptResponse {
 }
 
 export class ReceiptService {
-  static async processReceipt(request: ProcessReceiptRequest): Promise<UploadReceiptResponse> {
-    return apiClient.post<UploadReceiptResponse>('/ocr/process-receipt', request);
+  static async processReceipt(formData: FormData): Promise<UploadReceiptResponse> {
+    return apiClient.post<UploadReceiptResponse>('/ocr/process-receipt-enhanced', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 30000,
+    });
   }
 
   static async getReceipt(id: string): Promise<Receipt> {

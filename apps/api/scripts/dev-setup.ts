@@ -43,6 +43,8 @@ async function checkDatabaseExists(): Promise<boolean> {
     );
     return stdout.trim() === '1';
   } catch {
+    // If the psql command fails (e.g., auth issues, server down), it will throw.
+    // We'll return false to attempt creation, which will then provide a more specific error.
     return false;
   }
 }

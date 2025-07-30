@@ -1,12 +1,46 @@
+import { BarcodeType } from '@beezly/types/dto/barcode';
 import { apiClient } from './api';
+
+export interface Barcode {
+  id: string;
+  name: string;
+  barcode: string;
+  barcodeType?: BarcodeType;
+  brandName?: string;
+  categoryName?: string;
+  category: string;
+  image_url : string;
+  isVerified: boolean;
+}
 
 export interface Product {
   id: string;
   name: string;
   barcode: string;
+  type?: BarcodeType;
   category: string;
-  brand?: string;
-  description?: string;
+  brandName: string;
+  storeName?: string;
+  storeAddress?: string;
+  price?: number;
+  image_url?: string;
+}
+
+export interface ProductSearchResult {
+  product_sk: string;
+  name: string;
+  brand_name: string | null;
+  image_url: string;
+}
+
+export interface ScannedDataParam {
+  barcode: string;
+  type: BarcodeType;
+}
+
+export interface UseProductInfoProps {
+  productId?: string;
+  scannedData?: { barcode?: string; type?: BarcodeType };
 }
 
 export interface BarcodeRequest {
@@ -24,12 +58,16 @@ export class ProductService {
     return apiClient.post<ProductResponse>('/barcode/lookup', { barcode });
   }
 
-  static async getProduct(id: string): Promise<Product> {
-    return apiClient.get<Product>(`/product/${id}`);
+  static async getBarcode(barcode: string): Promise<Barcode> {
+    return apiClient.get<Barcode>(`/barcode/${barcode}`);
   }
 
-  static async createProduct(product: Omit<Product, 'id'>): Promise<Product> {
-    return apiClient.post<Product>('/product', product);
+  static async getProduct(id: string): Promise<Product> {
+    return apiClient.get<Product>(`/products/${id}`);
+  }
+
+  static async createProduct(formData: FormData): Promise<Product> {
+    return apiClient.post<Product>('/products', formData);
   }
 
   static async updateProduct(id: string, product: Partial<Product>): Promise<Product> {
@@ -40,8 +78,8 @@ export class ProductService {
     return apiClient.delete<void>(`/product/${id}`);
   }
 
-  static async searchProducts(query: string): Promise<Product[]> {
-    return apiClient.get<Product[]>('/product/search', { params: { q: query } });
+  static async searchProducts(query: string): Promise<ProductSearchResult[]> {
+    return apiClient.get<ProductSearchResult[]>('/products/search', { params: { q: query } });
   }
 }
 
