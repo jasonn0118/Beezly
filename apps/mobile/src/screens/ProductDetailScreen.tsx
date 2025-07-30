@@ -11,7 +11,7 @@ type Props =
   | { scannedData: { barcode: string; type: BarcodeType }; productId?: undefined };
   
 export default function ProductDetailScreen({ productId, scannedData }: Props) {
-    const { productInfo, loading} = useProductInfo({ barcode: scannedData?.data, productId });
+    const { productInfo, loading} = useProductInfo({ scannedData, productId });
     const [showProductRegistrationForm, setShowProductRegistrationForm] = useState(false);
 
     if (loading) {

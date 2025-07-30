@@ -48,11 +48,11 @@ export default function BarcodeResultScreen({ scannedData, onScanAgain }: { scan
     }
 
     if (showProductRegistrationForm) {
-        return <RegisterProduct scannedData={scannedData} />;
+        return <RegisterProduct scannedData={{ barcode: scannedData?.data || '', type: scannedData?.type || BarcodeType.EAN13 }} />;
     }
 
     if (!productInfo) {
-        return <RegisterProductPrompt barcode={scannedData?.data || ''} onRegisterPress={() => setShowProductRegistrationForm(true)} />;
+        return <RegisterProductPrompt scannedData={{ barcode: scannedData?.data || '', type: scannedData?.type || BarcodeType.EAN13 }} onRegisterPress={() => setShowProductRegistrationForm(true)} />;
     }
 
     return (
@@ -71,7 +71,7 @@ export default function BarcodeResultScreen({ scannedData, onScanAgain }: { scan
                 <View style={styles.productCard}>
                     <Image source={{ uri: productInfo.image_url}} style={styles.productImage} />
                     <View style={styles.productDetails}>
-                        <Text style={styles.productBrand}>{productInfo.brand}</Text>
+                        <Text style={styles.productBrand}>{productInfo.brandName}</Text>
                         <Text style={styles.productName}>{productInfo.name}</Text>
                         <Text style={styles.pointsText}>Points Earned: <Text style={styles.pointsValue}>+ 10 P</Text></Text>
                     </View>

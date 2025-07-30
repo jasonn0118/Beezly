@@ -10,10 +10,10 @@ export interface category {
 }
 
 export class categoryService {
-    static async getAllCategories(): Promise<category> {
-        return apiClient.get<category>(`/category`);
+    static async getAllCategories(): Promise<category[]> {
+        return apiClient.get<category[]>(`/category`);
     }
-    static async getCategories(id: string): Promise<category> {
-        return apiClient.get<category>(`/category/${id}`);
+    static async getCategories(id: string): Promise<category[]> {
+        return apiClient.get<category[]>(`/category/${id}`);
     }
 }
