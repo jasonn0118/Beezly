@@ -53,6 +53,15 @@ import {
   UnprocessedProductReason,
 } from '../entities/unprocessed-product.entity';
 import { Product } from '../entities/product.entity';
+import { ProductSelectionService } from './product-selection.service';
+import {
+  ProductSelectionRequestDto,
+  ProductSelectionResponseDto,
+  UserProductSelectionDto,
+  UserProductSelectionResponseDto,
+  BulkProductSelectionDto,
+  BulkProductSelectionResponseDto,
+} from './dto/product-selection.dto';
 
 @ApiTags('Products')
 @Controller('products')
@@ -66,6 +75,7 @@ export class ProductController {
     private readonly unmatchedProductService: UnmatchedProductService,
     private readonly productConfirmationService: ProductConfirmationService,
     private readonly unprocessedProductService: UnprocessedProductService,
+    private readonly productSelectionService: ProductSelectionService,
   ) {}
 
   @Get()
@@ -909,6 +919,52 @@ export class ProductController {
         errorMessages: { type: 'array', items: { type: 'string' } },
         linkedProducts: { type: 'array', items: { type: 'object' } },
         unprocessedProducts: { type: 'array', items: { type: 'object' } },
+        pendingSelectionProducts: {
+          type: 'array',
+          description:
+            'Products from current receipt that require user selection',
+          items: {
+            type: 'object',
+            properties: {
+              normalizedProduct: {
+                type: 'object',
+                properties: {
+                  normalizedProductSk: { type: 'string', format: 'uuid' },
+                  rawName: { type: 'string', example: 'KS GRK YOG' },
+                  normalizedName: { type: 'string', example: 'Greek Yogurt' },
+                  brand: { type: 'string', example: 'Kirkland Signature' },
+                  category: { type: 'string', example: 'Dairy' },
+                  merchant: { type: 'string', example: 'Costco' },
+                  confidenceScore: { type: 'number', example: 0.92 },
+                  createdAt: { type: 'string', format: 'date-time' },
+                },
+              },
+              matchCount: { type: 'number', example: 3 },
+              topMatches: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    productSk: { type: 'string', format: 'uuid' },
+                    name: { type: 'string', example: 'Greek Yogurt' },
+                    brandName: {
+                      type: 'string',
+                      example: 'Kirkland Signature',
+                    },
+                    barcode: { type: 'string', example: '1234567890123' },
+                    score: { type: 'number', example: 0.85 },
+                    method: { type: 'string', example: 'name_similarity' },
+                    imageUrl: {
+                      type: 'string',
+                      example: 'https://example.com/image.jpg',
+                    },
+                    description: { type: 'string', example: 'Category: Dairy' },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
   })
@@ -1264,6 +1320,142 @@ export class ProductController {
   ) {
     return this.unprocessedProductService.cleanupProcessedUnprocessedProducts(
       olderThanDays || 30,
+    );
+  }
+
+  // Product Selection Endpoints (User Choice for Multiple Matches)
+
+  @Post('selection/options')
+  @ApiOperation({
+    summary: 'Get product selection options for user choice',
+    description:
+      'When a normalized product has multiple potential catalog product matches, ' +
+      'this endpoint returns all options for the user to choose from. Typically used ' +
+      'when 2 or more products match the same normalized_name and brand.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product selection options with matching candidates',
+    type: ProductSelectionResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Normalized product not found',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Product already linked or invalid request',
+  })
+  async getProductSelectionOptions(
+    @Body() request: ProductSelectionRequestDto,
+  ): Promise<ProductSelectionResponseDto> {
+    return this.productSelectionService.getProductSelectionOptions(request);
+  }
+
+  @Post('selection/confirm')
+  @ApiOperation({
+    summary: 'Process user product selection',
+    description:
+      "Process the user's selection when they choose which catalog product " +
+      'should be linked to a normalized product. Creates the final product link.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User selection processed and product linked',
+    type: UserProductSelectionResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid selection or product already linked',
+  })
+  async processUserSelection(
+    @Body() selection: UserProductSelectionDto,
+  ): Promise<UserProductSelectionResponseDto> {
+    return this.productSelectionService.processUserSelection(selection);
+  }
+
+  @Post('selection/bulk-confirm')
+  @ApiOperation({
+    summary: 'Process multiple user selections in batch',
+    description:
+      'Process multiple user product selections at once. Useful for mobile apps ' +
+      'where users might confirm multiple product matches in a single session.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bulk user selections processed',
+    type: BulkProductSelectionResponseDto,
+  })
+  async processBulkUserSelections(
+    @Body() bulkRequest: BulkProductSelectionDto,
+  ): Promise<BulkProductSelectionResponseDto> {
+    return this.productSelectionService.processBulkUserSelections(bulkRequest);
+  }
+
+  @Get('selection/pending')
+  @ApiOperation({
+    summary: 'Get products requiring user selection',
+    description:
+      'Get normalized products that have multiple catalog product matches ' +
+      'and require user selection to resolve ambiguity. These are products ' +
+      'where automated linking found 2 or more potential matches.',
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Maximum number of products to return',
+    required: false,
+    type: Number,
+    example: 50,
+  })
+  @ApiQuery({
+    name: 'offset',
+    description: 'Number of products to skip',
+    required: false,
+    type: Number,
+    example: 0,
+  })
+  @ApiQuery({
+    name: 'minConfidenceScore',
+    description: 'Minimum confidence score for candidates',
+    required: false,
+    type: Number,
+    example: 0.8,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of products requiring user selection',
+    schema: {
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              normalizedProduct: { type: 'object' },
+              matchCount: { type: 'number', example: 3 },
+              topMatches: { type: 'array', items: { type: 'object' } },
+            },
+          },
+        },
+        totalCount: { type: 'number', example: 25 },
+      },
+    },
+  })
+  async getProductsRequiringSelection(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('minConfidenceScore') minConfidenceScore?: number,
+  ) {
+    // Ensure minimum confidence is never below the minimum threshold
+    const validMinConfidence = Math.max(
+      minConfidenceScore || this.MIN_CONFIDENCE_THRESHOLD,
+      this.MIN_CONFIDENCE_THRESHOLD,
+    );
+
+    return this.productSelectionService.getProductsRequiringSelection(
+      limit || 50,
+      offset || 0,
+      validMinConfidence,
     );
   }
 }

@@ -15,6 +15,9 @@ export interface ProductLinkingResult {
   linkingConfidence: number;
   linkingMethod: string;
   reason?: string;
+  requiresUserSelection?: boolean;
+  candidateCount?: number;
+  topCandidates?: ProductMatchCandidate[];
 }
 
 export interface ProductMatchCandidate {
@@ -33,6 +36,8 @@ export interface ProductLinkingOptions {
   embeddingSimilarityThreshold?: number; // Default: 0.85
   forceBarcodeMatch?: boolean; // Default: true
   dryRun?: boolean; // Default: false
+  requireUserSelectionThreshold?: number; // Default: 2 - require user selection when 2+ matches
+  includeUserSelectionCandidates?: boolean; // Default: false - include candidate details for user selection
 }
 
 /**
@@ -126,6 +131,8 @@ export class ProductLinkingService {
     const {
       embeddingSimilarityThreshold = this
         .DEFAULT_EMBEDDING_SIMILARITY_THRESHOLD,
+      requireUserSelectionThreshold = 2,
+      includeUserSelectionCandidates = false,
       // forceBarcodeMatch = true, // Not used in current implementation
     } = options;
 
@@ -148,10 +155,42 @@ export class ProductLinkingService {
         linkingConfidence: 0,
         linkingMethod: 'no_candidates',
         reason: 'No matching product candidates found',
+        requiresUserSelection: false,
+        candidateCount: 0,
       };
     }
 
-    // Apply matching hierarchy
+    // Check if user selection is required (multiple similar-quality matches)
+    const qualifiedCandidates = candidates.filter(
+      (candidate) => candidate.score >= embeddingSimilarityThreshold * 0.8, // Lower threshold for qualification
+    );
+
+    const requiresUserSelection =
+      qualifiedCandidates.length >= requireUserSelectionThreshold;
+
+    // If user selection is required, return candidates for user choice
+    if (requiresUserSelection) {
+      const topCandidates = includeUserSelectionCandidates
+        ? qualifiedCandidates.slice(0, 10) // Top 10 candidates
+        : undefined;
+
+      this.logger.log(
+        `Multiple matches found for normalized product ${normalizedProduct.normalizedProductSk}: ` +
+          `${qualifiedCandidates.length} candidates. User selection required.`,
+      );
+
+      return {
+        success: false,
+        linkingConfidence: 0,
+        linkingMethod: 'requires_user_selection',
+        reason: `Found ${qualifiedCandidates.length} similar matches - user selection required`,
+        requiresUserSelection: true,
+        candidateCount: qualifiedCandidates.length,
+        topCandidates,
+      };
+    }
+
+    // Apply matching hierarchy for automatic linking
     const bestMatch = this.selectBestMatch(
       candidates,
       embeddingSimilarityThreshold,
@@ -164,6 +203,8 @@ export class ProductLinkingService {
         linkingConfidence: 0,
         linkingMethod: 'no_match',
         reason: 'No candidates met matching criteria',
+        requiresUserSelection: false,
+        candidateCount: candidates.length,
       };
     }
 
@@ -172,6 +213,8 @@ export class ProductLinkingService {
       linkedProductSk: bestMatch.productSk,
       linkingConfidence: bestMatch.score,
       linkingMethod: bestMatch.method,
+      requiresUserSelection: false,
+      candidateCount: candidates.length,
     };
   }
 
@@ -216,14 +259,7 @@ export class ProductLinkingService {
       candidates.push(...embeddingMatches);
     }
 
-    // 3. Brand + Category matching
-    if (normalizedProduct.brand && normalizedProduct.category) {
-      const brandCategoryMatches =
-        await this.findByBrandCategory(normalizedProduct);
-      candidates.push(...brandCategoryMatches);
-    }
-
-    // 4. Fuzzy name matching
+    // 3. Fuzzy name matching (with brand validation)
     const nameMatches = await this.findByNameSimilarity(normalizedProduct);
     candidates.push(...nameMatches);
 
@@ -305,46 +341,6 @@ export class ProductLinkingService {
       );
       return [];
     }
-  }
-
-  /**
-   * Find products by brand and category matching
-   */
-  private async findByBrandCategory(
-    normalizedProduct: NormalizedProduct,
-  ): Promise<ProductMatchCandidate[]> {
-    const query = this.productRepository.createQueryBuilder('product');
-
-    // Fuzzy brand matching
-    if (normalizedProduct.brand) {
-      query.where('LOWER(product.brandName) LIKE LOWER(:brand)', {
-        brand: `%${normalizedProduct.brand}%`,
-      });
-    }
-
-    // Add category matching if we have category relationships
-    // For now, we'll use text similarity on product names
-    const products = await query.limit(10).getMany();
-
-    return products.map((product) => {
-      let score = 0.6; // Base score for brand match
-
-      // Boost score if names are similar
-      const nameSimilarity = this.calculateStringSimilarity(
-        normalizedProduct.normalizedName.toLowerCase(),
-        product.name.toLowerCase(),
-      );
-      score = Math.max(score, nameSimilarity);
-
-      return {
-        productSk: product.productSk,
-        name: product.name,
-        brand: product.brandName,
-        barcode: product.barcode,
-        score,
-        method: 'brand_category_match',
-      };
-    });
   }
 
   /**

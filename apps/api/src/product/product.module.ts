@@ -10,6 +10,7 @@ import { ReceiptPriceIntegrationService } from './receipt-price-integration.serv
 import { UnmatchedProductService } from './unmatched-product.service';
 import { ProductConfirmationService } from './product-confirmation.service';
 import { UnprocessedProductService } from './unprocessed-product.service';
+import { ProductSelectionService } from './product-selection.service';
 import { Product } from '../entities/product.entity';
 import { Category } from '../entities/category.entity';
 import { Store } from '../entities/store.entity';
@@ -43,6 +44,7 @@ import { ReceiptItemNormalization } from '../entities/receipt-item-normalization
     UnmatchedProductService,
     ProductConfirmationService,
     UnprocessedProductService,
+    ProductSelectionService,
   ],
   exports: [
     ProductService,
@@ -54,6 +56,7 @@ import { ReceiptItemNormalization } from '../entities/receipt-item-normalization
     UnmatchedProductService,
     ProductConfirmationService,
     UnprocessedProductService,
+    ProductSelectionService,
   ],
 })
 export class ProductModule {}

@@ -362,14 +362,27 @@ export class OcrService {
       // Step 1: Get OCR results
       const ocrResult = await this.processReceipt(buffer, endpoint, apiKey);
 
-      // Step 2: Filter out non-product items (tax, rewards, change, etc.)
-      const productItems = ocrResult.items.filter((item, index) => {
-        const shouldExclude = this.shouldExcludeFromNormalization(item.name);
-        if (shouldExclude) {
-          console.log(`Excluding non-product item ${index}: "${item.name}"`);
-        }
-        return !shouldExclude;
-      });
+      // Step 2: Filter out non-product items and clean product names
+      const productItems = ocrResult.items
+        .filter((item, index) => {
+          const shouldExclude = this.shouldExcludeFromNormalization(item.name);
+          if (shouldExclude) {
+            console.log(`Excluding non-product item ${index}: "${item.name}"`);
+          }
+          return !shouldExclude;
+        })
+        .map((item) => {
+          // Clean product name and extract item code
+          const { cleanedName, extractedItemCode } =
+            this.cleanProductNameAndExtractCode(item.name);
+
+          return {
+            ...item,
+            name: cleanedName,
+            // Preserve original item_number if it exists, otherwise use extracted code
+            item_number: item.item_number || extractedItemCode || undefined,
+          };
+        });
 
       console.log(
         `Filtered ${ocrResult.items.length} items to ${productItems.length} products`,
@@ -811,22 +824,22 @@ export class OcrService {
 
   /**
    * Check if an item should be excluded from normalization
-   * This includes discounts, taxes, rewards, change, and other non-product items
+   * This includes discounts, taxes, rewards, change, fees, and other non-product items
    */
   private shouldExcludeFromNormalization(itemName: string): boolean {
     const name = itemName.toLowerCase().trim();
 
     // Patterns for items that should not be normalized as products
+    // Note: Be careful not to exclude discount items that should be linked to products
     const exclusionPatterns = [
-      // Discounts and adjustments
-      /^tpd\//, // TPD/ pattern
-      /discount/, // Contains discount
+      // Administrative discounts (not product-specific)
       /coupon/, // Contains coupon
       /adjustment/, // Contains adjustment
       /refund/, // Contains refund
       /credit/, // Contains credit
-      /^-/, // Starts with minus sign
-      /-\s*[a-z]*$/, // Ends with dash and letters
+
+      // Note: TPD/, ECO FEE, and negative price patterns are now processed as discounts/fees
+      // instead of being excluded, so they can be linked to products
 
       // Tax patterns
       /tax/, // Any tax reference
@@ -879,5 +892,96 @@ export class OcrService {
    */
   private isLikelyDiscountOrAdjustment(itemName: string): boolean {
     return this.shouldExcludeFromNormalization(itemName);
+  }
+
+  /**
+   * Clean product name by removing item numbers and other non-product identifiers
+   * Also extracts the item code if found
+   * Handles patterns like "1628802 OPTIMUM" -> { cleanedName: "OPTIMUM", extractedItemCode: "1628802" }
+   */
+  private cleanProductNameAndExtractCode(itemName: string): {
+    cleanedName: string;
+    extractedItemCode: string | null;
+  } {
+    let cleanedName = itemName.trim();
+    let extractedItemCode: string | null = null;
+
+    // Extract leading item numbers (6-8 digits followed by space)
+    // Common patterns: "1628802 OPTIMUM", "123456 PRODUCT NAME"
+    let match = cleanedName.match(/^(\d{6,8})\s+(.+)$/);
+    if (match) {
+      extractedItemCode = match[1];
+      cleanedName = match[2];
+    } else {
+      // Extract leading shorter item numbers (4-5 digits followed by space)
+      // But be more conservative to avoid removing quantities
+      match = cleanedName.match(/^(\d{4,5})\s+([A-Za-z].*)$/);
+      if (match) {
+        extractedItemCode = match[1];
+        cleanedName = match[2];
+      } else {
+        // Extract leading item codes with letters (like "ABC123 PRODUCT")
+        match = cleanedName.match(/^([A-Z]{2,4}\d{3,6})\s+(.+)$/);
+        if (match) {
+          extractedItemCode = match[1];
+          cleanedName = match[2];
+        }
+      }
+    }
+
+    // Extract trailing item numbers or codes in parentheses
+    if (!extractedItemCode) {
+      match = cleanedName.match(/^(.+?)\s*\((\d+)\)$/);
+      if (match) {
+        extractedItemCode = match[2];
+        cleanedName = match[1];
+      } else {
+        match = cleanedName.match(/^(.+?)\s*\(([A-Z0-9]+)\)$/);
+        if (match) {
+          extractedItemCode = match[2];
+          cleanedName = match[1];
+        }
+      }
+    }
+
+    // Extract SKU patterns at the end
+    if (!extractedItemCode) {
+      match = cleanedName.match(/^(.+?)\s+SKU\s*(\d+)$/i);
+      if (match) {
+        extractedItemCode = match[2];
+        cleanedName = match[1];
+      } else {
+        match = cleanedName.match(/^(.+?)\s+#(\d+)$/);
+        if (match) {
+          extractedItemCode = match[2];
+          cleanedName = match[1];
+        }
+      }
+    }
+
+    // Remove extra whitespace
+    cleanedName = cleanedName.replace(/\s+/g, ' ').trim();
+
+    // If cleaning removed everything, return the original
+    if (!cleanedName || cleanedName.length < 2) {
+      return {
+        cleanedName: itemName.trim(),
+        extractedItemCode: null,
+      };
+    }
+
+    return {
+      cleanedName,
+      extractedItemCode,
+    };
+  }
+
+  /**
+   * Clean product name by removing item numbers and other non-product identifiers
+   * Handles patterns like "1628802 OPTIMUM" -> "OPTIMUM"
+   * @deprecated Use cleanProductNameAndExtractCode instead
+   */
+  private cleanProductName(itemName: string): string {
+    return this.cleanProductNameAndExtractCode(itemName).cleanedName;
   }
 }
