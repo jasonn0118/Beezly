@@ -1,21 +1,21 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, StatusBar, Button, Animated, Dimensions } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, StatusBar, Button, Animated, Dimensions, SafeAreaView, Platform } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
-// Import your components
-import BarcodeScanResult from '../../../src/components/BarcodeScanResult';
-import ReceiptScanResult from '../../../src/components/ReceiptScanResult';
+
+import { BarcodeType } from '@beezly/types/dto/barcode'; // Assuming this path is correct
+import { useRouter } from 'expo-router';
+import ReceiptScanResult from '../../../src/components/ReceiptScanResult'; // Assuming this path is correct
 
 const { width, height } = Dimensions.get('window');
 
-
 export default function ScanPage() {
-    // This state now controls everything: 'barcodeScan', 'receiptScan', 'barcodeResult', 'receiptResult'
     const [currentView, setCurrentView] = useState<'barcodeScan' | 'receiptScan' | 'barcodeResult' | 'receiptResult'>('barcodeScan');
+    const router = useRouter();
     const [permission, requestPermission] = useCameraPermissions();
     const [scanStatus, setScanStatus] = useState('Searching for barcode...');
-    const [scannedData, setScannedData] = useState<{ type: string; data: string } | null>(null);
+    const [scannedData, setScannedData] = useState<{ barcode: string; type: string } | null>(null);
     const [photoUri, setPhotoUri] = useState<string | null>(null);
     const cameraRef = useRef<CameraView>(null);
     const scanAnimation = useRef(new Animated.Value(0)).current;
@@ -48,12 +48,18 @@ export default function ScanPage() {
     );
 
     // Called on barcode scan success -> switches view to the result component
-    const handleBarcodeScanned = (data: { type: string; data: string }) => {
-        setScannedData(data);
+    const handleBarcodeScanned = ({ data, type }: { data: string; type: string }) => {
+        setScannedData({ barcode: data, type: type as BarcodeType });
         setScanStatus('Scan Complete!');
         setCurrentView('barcodeResult');
     };
-    
+
+    useEffect(() => {
+        if (currentView === 'barcodeResult' && scannedData) {
+            router.push(`/product-detail?scannedData=${JSON.stringify(scannedData)}`);
+        }
+    }, [scannedData, currentView]);
+
     // Called on receipt capture success
     const handleReceiptCapture = async () => {
         if (cameraRef.current) {
@@ -76,7 +82,7 @@ export default function ScanPage() {
     };
 
     if (!permission) {
-        return <View />;
+        return <View style={styles.permissionContainer}><Text>Requesting for camera permission...</Text></View>;
     }
 
     if (!permission.granted) {
@@ -87,6 +93,11 @@ export default function ScanPage() {
             </View>
         );
     }
+
+    const barcodeScanLineTranslation = scanAnimation.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, height * 0.25 - 4] // 4 is the height of the scanLine itself
+    });
 
     const scanLineStyle = {
         transform: [
@@ -108,11 +119,10 @@ export default function ScanPage() {
         return <ReceiptScanResult pictureData={photoUri} onScanAgain={handleScanAgain} />;
     }
 
-    // Otherwise, show the camera and the scanner UI
     return (
         <View style={styles.container}>
             <StatusBar barStyle="light-content" />
-            
+
             <CameraView
                 ref={cameraRef}
                 style={styles.camera}
@@ -120,43 +130,48 @@ export default function ScanPage() {
                 barcodeScannerSettings={{
                     barcodeTypes: ["code39", "ean8", "ean13", "codabar", "itf14", "code128", "upc_a", "upc_e"],
                 }}
-            >
-                <View style={styles.overlay}>
-                    {/* Top switcher UI */}
-                    <View style={styles.switcherContainer}>
-                        <TouchableOpacity
-                            style={[styles.switchButton, currentView === 'barcodeScan' && styles.switchButtonActive]}
-                            onPress={() => setCurrentView('barcodeScan')}
-                        >
-                            <Text style={[styles.switchButtonText, currentView === 'barcodeScan' && styles.switchButtonTextActive]}>
-                                Barcode
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.switchButton, currentView === 'receiptScan' && styles.switchButtonActive]}
-                            onPress={() => setCurrentView('receiptScan')}
-                        >
-                            <Text style={[styles.switchButtonText, currentView === 'receiptScan' && styles.switchButtonTextActive]}>
-                                Receipt
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
+            />
 
-                    {/* Conditional UI based on the scanner mode */}
-                    {currentView === 'barcodeScan' ? (
-                        <>
+            <SafeAreaView style={styles.overlay}>
+                {/* Top switcher UI - Fixed position */}
+                <View style={styles.switcherContainer}>
+                    <TouchableOpacity
+                        style={[styles.switchButton, currentView === 'barcodeScan' && styles.switchButtonActive]}
+                        onPress={() => setCurrentView('barcodeScan')}
+                    >
+                        <Text style={[styles.switchButtonText, currentView === 'barcodeScan' && styles.switchButtonTextActive]}>
+                            Barcode
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.switchButton, currentView === 'receiptScan' && styles.switchButtonActive]}
+                        onPress={() => setCurrentView('receiptScan')}
+                    >
+                        <Text style={[styles.switchButtonText, currentView === 'receiptScan' && styles.switchButtonTextActive]}>
+                            Receipt
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* Conditional UI based on the scanner mode */}
+                {currentView === 'barcodeScan' ? (
+                    <>
+                        <View style={styles.barcodeOverlayContent}>
                             <View style={styles.topMessageContainer}>
                                 <Text style={[styles.statusText, styles.statusTextSuccess]}>
                                     {scanStatus}
                                 </Text>
                             </View>
+                            {/* scanFrame만 남기고 오버레이 제거 */}
                             <View style={styles.scanFrame}>
                                 <Text style={styles.scanFrameText}>Align barcode within the frame</Text>
                                 <Animated.View style={[styles.scanLine, scanLineStyle]} />
                             </View>
-                        </>
-                    ) : ( // This is for 'receiptScan' view
-                        <>
+                        </View>
+                    </>
+                ) : ( // This is for 'receiptScan' view
+                    <>
+                        <View style={styles.receiptOverlayContent}>
                             <View style={styles.guidanceFrame}>
                                 <Text style={styles.guidanceText}>Align receipt within the frame</Text>
                             </View>
@@ -165,10 +180,10 @@ export default function ScanPage() {
                                     <View style={styles.captureButtonInner} />
                                 </TouchableOpacity>
                             </View>
-                        </>
-                    )}
-                </View>
-            </CameraView>
+                        </View>
+                    </>
+                )}
+            </SafeAreaView>
         </View>
     );
 }
@@ -179,12 +194,13 @@ const styles = StyleSheet.create({
         backgroundColor: 'black',
     },
     camera: {
-        flex: 1,
+        ...StyleSheet.absoluteFillObject, // Camera takes full screen
     },
     overlay: {
         ...StyleSheet.absoluteFillObject,
+        justifyContent: 'space-between', // Distribute content vertically
         alignItems: 'center',
-        justifyContent: 'center',
+        paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0, // Handle Android status bar
     },
     permissionContainer: {
         flex: 1,
@@ -196,18 +212,15 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     switcherContainer: {
-        position: 'absolute',
-        top: 60,
-        alignSelf: 'center',
         flexDirection: 'row',
         backgroundColor: 'rgba(40,40,40,0.7)',
         borderRadius: 25,
         height: 44,
         padding: 4,
         zIndex: 10,
+        marginTop: 20, // Add some top margin for visual appeal
     },
     switchButton: {
-        flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
         borderRadius: 20,
@@ -224,16 +237,40 @@ const styles = StyleSheet.create({
     switchButtonTextActive: {
         color: '#111827',
     },
-    // Barcode Styles
+    // Barcode Scan UI Styles
+    barcodeOverlayContent: {
+        flex: 1, // Take remaining space
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingBottom: height * 0.15, // Push content up slightly
+    },
+    topMessageContainer: {
+        marginBottom: 40,
+    },
+    statusText: {
+        color: 'white',
+        fontSize: 18,
+        fontWeight: 'bold',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 12,
+    },
+    statusTextSuccess: {
+        color: '#20c997', // Vibrant Teal for success
+    },
+    // Modified scanFrame - now just a visual guide
     scanFrame: {
         width: width * 0.8,
         height: height * 0.25,
         borderWidth: 8,
-        borderColor: 'rgba(255, 255, 255, 0.5)',
+        borderColor: 'rgba(255, 255, 255, 0.5)', // Still visible border
         borderRadius: 24,
-        overflow: 'hidden',
+        overflow: 'hidden', // Still needed for scanLine animation
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: 'transparent', // Ensure it's transparent to see camera through
     },
     scanFrameText: {
         position: 'absolute',
@@ -243,15 +280,23 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 8,
+        zIndex: 1, // Ensure text is above the scan line
     },
     scanLine: {
         position: 'absolute',
-        top: 0,
         width: '100%',
         height: 4,
         backgroundColor: '#FFC107',
+        top: 0, // Starts at the top of the scan frame
     },
-    // Receipt Styles
+    // Receipt Scan UI Styles
+    receiptOverlayContent: {
+        flex: 1, // Take remaining space
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingBottom: height * 0.1, // Push content up slightly for button
+    },
     guidanceFrame: {
         width: width * 0.9,
         height: height * 0.6,
@@ -261,6 +306,7 @@ const styles = StyleSheet.create({
         borderRadius: 24,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: 'transparent', // Ensure it's transparent
     },
     guidanceText: {
         color: 'white',
@@ -288,22 +334,5 @@ const styles = StyleSheet.create({
         borderRadius: 30,
         borderWidth: 3,
         borderColor: 'black',
-    },
-    topMessageContainer: {
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom : 40,
-    },
-    statusText: {
-        color: 'white',
-        fontSize: 18,
-        fontWeight: 'bold',
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 12,
-    },
-    statusTextSuccess: {
-        color: '#20c997', // Vibrant Teal for success
     },
 });

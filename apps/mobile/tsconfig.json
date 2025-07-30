@@ -3,6 +3,10 @@
   "compilerOptions": {
     "strict": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@beezly/types/*": ["../../packages/types/*"]
+    }
   },
   "include": [
     "**/*.ts",
