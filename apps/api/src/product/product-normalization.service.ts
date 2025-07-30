@@ -262,12 +262,15 @@ export class ProductNormalizationService {
     options: ProductNormalizationOptions,
   ): Promise<NormalizationResult> {
     const {
-      merchant,
+      merchant: originalMerchant,
       rawName,
       itemCode,
       useAI = true,
       similarityThreshold = 0.85,
     } = options;
+
+    // Normalize merchant name for consistency
+    const merchant = this.normalizeMerchantName(originalMerchant);
 
     this.logger.debug(`Normalizing product: ${rawName} from ${merchant}`);
 
@@ -869,6 +872,73 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
   }
 
   /**
+   * Public method to store normalization result (used by OCR service)
+   */
+  async storeResult(
+    merchant: string,
+    rawName: string,
+    result: NormalizationResult,
+  ): Promise<NormalizedProduct> {
+    // Normalize merchant name to prevent duplicates
+    const normalizedMerchant = this.normalizeMerchantName(merchant);
+    return await this.storeNormalizationResult(
+      normalizedMerchant,
+      rawName,
+      result,
+    );
+  }
+
+  /**
+   * Normalize merchant names to prevent duplicates from inconsistent naming
+   */
+  private normalizeMerchantName(merchant: string): string {
+    const normalized = merchant.trim().toLowerCase();
+
+    // Define merchant name mappings for common variations
+    const merchantMappings: Record<string, string> = {
+      costco: 'Costco Wholesale',
+      'costco wholesale': 'Costco Wholesale',
+      walmart: 'Walmart',
+      'walmart supercenter': 'Walmart',
+      target: 'Target',
+      'whole foods': 'Whole Foods Market',
+      'whole foods market': 'Whole Foods Market',
+      'trader joes': "Trader Joe's",
+      "trader joe's": "Trader Joe's",
+      kroger: 'Kroger',
+      safeway: 'Safeway',
+      albertsons: 'Albertsons',
+      publix: 'Publix',
+      'harris teeter': 'Harris Teeter',
+      wegmans: 'Wegmans',
+      'stop & shop': 'Stop & Shop',
+      giant: 'Giant',
+      'food lion': 'Food Lion',
+      'king soopers': 'King Soopers',
+      'fred meyer': 'Fred Meyer',
+      qfc: 'QFC',
+      "ralph's": "Ralph's",
+      ralphs: "Ralph's",
+    };
+
+    // Return mapped value or properly capitalized original
+    return (
+      merchantMappings[normalized] || this.capitalizeWords(merchant.trim())
+    );
+  }
+
+  /**
+   * Capitalize each word in a string (for unknown merchants)
+   */
+  private capitalizeWords(str: string): string {
+    return str
+      .toLowerCase()
+      .split(' ')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  /**
    * Store normalization result in the database with embedding
    */
   private async storeNormalizationResult(
@@ -946,15 +1016,45 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
   }
 
   /**
-   * Find comprehensive duplicate based on normalized_name, merchant, item_code,
-   * brand, category, and confidence_score (instead of just raw_name + merchant)
+   * Find comprehensive duplicate based on core criteria: normalized_name, brand, confidence_score
+   * Falls back to full field matching if needed
    */
   private async findComprehensiveDuplicate(
     merchant: string,
     rawName: string,
     result: NormalizationResult,
   ): Promise<NormalizedProduct | null> {
-    // Strategy 1: Search by normalized results first (most likely duplicates)
+    // Strategy 1: Search by core product information (normalized_name + brand + merchant)
+    const coreSearchConditions: {
+      merchant: string;
+      normalizedName: string;
+      brand?: string;
+    } = {
+      merchant,
+      normalizedName: result.normalizedName,
+    };
+
+    // Add brand to core search if available
+    if (result.brand) {
+      coreSearchConditions.brand = result.brand;
+    }
+
+    const coreCandidates = await this.normalizedProductRepository.find({
+      where: coreSearchConditions,
+    });
+
+    // Check core candidates first (highest chance of being duplicates)
+    for (const candidate of coreCandidates) {
+      const isDuplicate = this.isComprehensiveDuplicate(candidate, result);
+      if (isDuplicate) {
+        this.logger.debug(
+          `Found duplicate via core search: ${candidate.normalizedName} (brand: ${candidate.brand})`,
+        );
+        return candidate;
+      }
+    }
+
+    // Strategy 2: Search by full normalized results (legacy comprehensive search)
     const normalizedCandidates = await this.normalizedProductRepository.find({
       where: {
         merchant,
@@ -1005,7 +1105,8 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
   /**
    * Check if a candidate product is a comprehensive duplicate
-   * based on ALL normalization results matching
+   * Primary check: normalized_name, brand, and confidence_score must match
+   * Secondary check: ALL fields must match for complete duplicate
    */
   private isComprehensiveDuplicate(
     candidate: NormalizedProduct,
@@ -1018,17 +1119,11 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       return value === undefined ? null : value;
     };
 
-    // Check if ALL normalized results are the same
+    // PRIMARY DUPLICATE CHECK: Core product information
     const sameNormalizedName =
       candidate.normalizedName === result.normalizedName;
     const sameBrand =
       normalizeValue(candidate.brand) === normalizeValue(result.brand);
-    const sameCategory =
-      normalizeValue(candidate.category) === normalizeValue(result.category);
-    const sameItemCode =
-      normalizeValue(candidate.itemCode) === normalizeValue(result.itemCode);
-    const sameIsDiscount = candidate.isDiscount === result.isDiscount;
-    const sameIsAdjustment = candidate.isAdjustment === result.isAdjustment;
 
     // Check if confidence scores are the same (within a small tolerance)
     const confidenceThreshold = 0.001; // Allow small floating point differences
@@ -1036,7 +1131,25 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       Math.abs(candidate.confidenceScore - result.confidenceScore) <
       confidenceThreshold;
 
-    // ALL fields must match for it to be considered a duplicate
+    // If core product info matches, consider it a duplicate
+    const isCoreProductDuplicate =
+      sameNormalizedName && sameBrand && sameConfidenceScore;
+
+    if (isCoreProductDuplicate) {
+      this.logger.debug(
+        `Found core duplicate: ${candidate.normalizedName} with brand ${candidate.brand} and confidence ${candidate.confidenceScore}`,
+      );
+      return true;
+    }
+
+    // SECONDARY CHECK: All fields must match for complete duplicate (legacy logic)
+    const sameCategory =
+      normalizeValue(candidate.category) === normalizeValue(result.category);
+    const sameItemCode =
+      normalizeValue(candidate.itemCode) === normalizeValue(result.itemCode);
+    const sameIsDiscount = candidate.isDiscount === result.isDiscount;
+    const sameIsAdjustment = candidate.isAdjustment === result.isAdjustment;
+
     const isCompleteDuplicate =
       sameNormalizedName &&
       sameBrand &&
@@ -1245,19 +1358,21 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     }>,
     merchant: string,
   ): Promise<NormalizationResult[]> {
+    // Normalize merchant name for consistency
+    const normalizedMerchant = this.normalizeMerchantName(merchant);
     // Step 1: Normalize all items first
     const normalizedItems: NormalizationResult[] = [];
 
     for (const item of items) {
       // Parse the price to detect negative/discount amounts
-      const parsedPrice = this.parsePrice(item.price, merchant);
+      const parsedPrice = this.parsePrice(item.price, normalizedMerchant);
 
       // Check if price format indicates this is a discount
       const isPriceBasedDiscount = parsedPrice.isNegative;
 
       const result = await this.normalizeProduct({
         rawName: item.name,
-        merchant,
+        merchant: normalizedMerchant,
         itemCode: item.itemCode,
         useAI: true,
       });

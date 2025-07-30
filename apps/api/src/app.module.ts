@@ -24,6 +24,7 @@ import {
   VerificationLogs,
   NormalizedProduct,
   ReceiptItemNormalization,
+  UnprocessedProduct,
 } from './entities';
 import { OcrModule } from './ocr/ocr.module';
 import { PriceModule } from './price/price.module';
@@ -84,6 +85,7 @@ import { UserModule } from './user/user.module';
           VerificationLogs,
           NormalizedProduct,
           ReceiptItemNormalization,
+          UnprocessedProduct,
         ],
         synchronize: process.env.NODE_ENV === 'test', // Only synchronize for tests, use migrations for dev/prod
         logging:
