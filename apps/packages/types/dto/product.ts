@@ -1,57 +1,135 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { BarcodeType } from "./barcode";
+
+export enum DiscountType {
+  PERCENTAGE = 'percentage',
+  FIXED_AMOUNT = 'fixed_amount',
+  COUPON = 'coupon',
+  ADJUSTMENT = 'adjustment',
+}
+
+export interface NormalizationResult {
+  normalizedName: string;
+  brand?: string;
+  category?: string;
+  confidenceScore: number;
+  isDiscount: boolean;
+  isAdjustment: boolean;
+  itemCode?: string;
+}
+
+export interface ProductNormalizationOptions {
+  merchant: string;
+  rawName: string;
+  itemCode?: string;
+  useAI?: boolean;
+  similarityThreshold?: number;
+}
+
+export interface NormalizedProductData {
+  normalizedProductSk: string;
+  rawName: string;
+  merchant: string;
+  itemCode?: string;
+  normalizedName: string;
+  brand?: string;
+  category?: string;
+  confidenceScore: number;
+  embedding?: number[];
+  isDiscount: boolean;
+  isAdjustment: boolean;
+  matchCount: number;
+  lastMatchedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface NormalizationStats {
+  totalNormalizedProducts: number;
+  discountLines: number;
+  adjustmentLines: number;
+  averageConfidence: number;
+  lowConfidenceProducts: number;
+  merchant?: string;
+}
+
+export interface EmbeddingResult {
+  productId: string;
+  similarity: number;
+  normalizedProduct: NormalizedProductData;
+}
 
 export class NormalizedProductDTO {
   @ApiProperty({
     example: "d290f1ee-6c54-4b01-90e6-d701748f0851",
     description: "Product primary key (UUID)",
   })
-  id: string; // product_sk (UUID)
+  product_sk: string;
 
   @ApiProperty({
-    example: "Apple iPhone 15",
+    example: "Organic Apple",
     description: "Name of the product",
   })
   name: string;
 
   @ApiPropertyOptional({
-    example: "190199204200",
+    example: "1234567890123",
     description: "Optional product barcode",
   })
   barcode?: string;
 
   @ApiPropertyOptional({
-    example: "Electronics",
-    description: "Optional product category",
+    example: BarcodeType.EAN13,
+    description: "Type of barcode",
+    enum: BarcodeType,
   })
-  category?: string;
-
-  @ApiPropertyOptional({
-    example: 1299.99,
-    description: "Optional product price",
-  })
-  price?: number;
+  barcode_type?: BarcodeType;
 
   @ApiPropertyOptional({
     example: "https://example.com/images/product.jpg",
     description: "Optional product image URL",
   })
-  imageUrl?: string;
+  image_url?: string;
+
+  @ApiPropertyOptional({
+    example: "Cheil Jedang",
+    description: "Optional product brand name",
+  })
+  brand_name?: string;
+
+  @ApiPropertyOptional({
+    example: 80.5,
+    description: "Initial credit score of the product (0~100)",
+  })
+  credit_score?: number;
+
+  @ApiPropertyOptional({
+    example: 0,
+    description: "Number of verified validations",
+  })
+  verified_count?: number;
+
+  @ApiPropertyOptional({
+    example: 0,
+    description: "Number of times this product was flagged",
+  })
+  flagged_count?: number;
 
   @ApiProperty({
-    example: 100,
-    description: "Available quantity in stock",
+    example: "2025-07-17T10:00:00Z",
+    description: "Product creation timestamp (ISO 8601)",
   })
-  quantity: number;
+  created_at: string;
 
   @ApiProperty({
-    example: "2025-07-07T10:00:00Z",
-    description: "Creation timestamp (ISO string)",
+    example: "2025-07-17T12:00:00Z",
+    description: "Product last update timestamp (ISO 8601)",
   })
-  createdAt: string;
+  updated_at: string;
 
-  @ApiProperty({
-    example: "2025-07-07T12:00:00Z",
-    description: "Last update timestamp (ISO string)",
+  @ApiPropertyOptional({
+    example: 1,
+    description: "Foreign key category ID (integer)",
   })
-  updatedAt: string;
+  category?: number;
 }

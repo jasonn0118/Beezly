@@ -7,6 +7,7 @@ import { ReceiptService } from './receipt/receipt.service';
 import { ReceiptItemService } from './receiptItem/receiptItem.service';
 import { StoreService } from './store/store.service';
 import { UserService } from './user/user.service';
+import { CategoryService } from './category/category.service';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -21,6 +22,7 @@ describe('AppController', () => {
         { provide: ReceiptService, useValue: {} },
         { provide: ReceiptItemService, useValue: {} },
         { provide: StoreService, useValue: {} },
+        { provide: CategoryService, useValue: {} },
         {
           provide: UserService,
           useValue: {
