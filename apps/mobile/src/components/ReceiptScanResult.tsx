@@ -37,7 +37,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const [isNameFocused, setIsNameFocused] = useState(false);
     const [isPriceFocused, setIsPriceFocused] = useState(false);
     const [isBrandFocused, setIsBrandFocused] = useState(false);
-
+    
     const handleDeleteItem = (itemId: string) => {
         setProductInfo((prev) => prev.filter((item) => item.id !== itemId));
     };
@@ -85,14 +85,21 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
             formData.append('file', { uri: pictureData, name: 'receipt.jpg', type: 'image/jpeg' } as any);
             const response: any = await ReceiptService.processReceipt(formData);
             if (response.success && response.data) {
-                setProductInfo(response.data.items.map((item: any, index: number) => ({ ...item, id: item.id || `temp-${index}`, price: parseFloat(item.price) || 0 })) || []);
-                setMerchantName(response.data.merchant || null);
-                setStoreAddress(response.data.store_address || null);
+                if (response.data.item_count > 0) {
+                    setProductInfo(response.data.items.map((item: any, index: number) => ({ ...item, id: item.id || `temp-${index}`, price: parseFloat(item.price) || 0 })) || []);
+                    setMerchantName(response.data.merchant || null);
+                    setStoreAddress(response.data.store_address || null);
+                } else {
+                    // 영수증이지만 아이템이 없을때...
+                    setError('aaaaaaaaaaaaaaaaaaaaa.');
+                    setScanFailed(true);
+                }
             } else {
                 setError((response as any).message || 'Failed to analyze receipt.');
                 setScanFailed(true);
             }
         } catch (err: any) {
+            console.error("Error processing receipt:", JSON.stringify(err, null, 2));
             setError(err.response?.data?.message || err.message || 'A network error occurred.');
             setScanFailed(true);
         } finally {
@@ -157,7 +164,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                             swipeableRefs.current.forEach((ref, i) => { if (i !== index && ref) ref.close(); });
                         }}
                     >
-                        <TouchableOpacity style={styles.productCard} activeOpacity={0.8} onPress={() => handleOpenModal(item)}>
+                        <TouchableOpacity style={styles.productCard} activeOpacity={0.8} onPress={() => {if (item.confidence_score < 0.9) { handleOpenModal(item); } }}>
                             <View style={[styles.statusDot, { backgroundColor: getConfidenceColor(item.confidence_score) }]} />
                             <View style={styles.productDetails}>
                                 <Text style={styles.productName}>{item.brand && <Text>{item.brand} - </Text>}{item.normalized_name || item.name}</Text>

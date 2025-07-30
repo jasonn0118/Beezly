@@ -111,10 +111,6 @@ export default function ScanPage() {
     };
     
     // If the view is a result screen, we don't need the camera.
-    if (currentView === 'barcodeResult') {
-        return <BarcodeScanResult scannedData={scannedData} onScanAgain={handleScanAgain} />;
-    }
-
     if (currentView === 'receiptResult') {
         return <ReceiptScanResult pictureData={photoUri} onScanAgain={handleScanAgain} />;
     }

@@ -1,7 +1,6 @@
 import { Tabs, router } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { ScanResetProvider, useScanReset } from '../../src/contexts/ScanResetContext';
 
 const colors = {
   yellow: '#FFC700',
@@ -60,11 +59,10 @@ const styles = StyleSheet.create({
 });
 
 function TabContent() {
-  const { resetScan } = useScanReset();
 
   return (
     <Tabs
-      initialRouteName='scan/index'
+      initialRouteName='index/index'
       screenOptions={{
         headerShown: false, // Hide default header
         tabBarStyle: styles.bottomNav,
@@ -73,12 +71,12 @@ function TabContent() {
         tabBarShowLabel: false, // We'll render custom labels
       }}>
       <Tabs.Screen
-        name="search/index"
+        name="index/index"
         options={{
           title: 'Search',
           tabBarIcon: ({ color, focused }) => (
             <View style={styles.tabButton}>
-              <FontAwesome name="trophy" size={24} color={color} />
+              <FontAwesome name="search" size={24} color={color} />
               <Text style={[styles.tabLabel, { color: color }]}>Search</Text>
             </View>
           ),
@@ -96,16 +94,6 @@ function TabContent() {
             </View>
           )
         }}
-        listeners={{
-          tabPress: (e) => {
-            // Prevent default action to handle navigation manually
-            e.preventDefault();
-            // Navigate to the scan tab
-            router.navigate('/scan');
-            // Trigger scan reset via context
-            resetScan();
-          },
-        }}
       />
       <Tabs.Screen
         name="profile/index"
@@ -113,7 +101,7 @@ function TabContent() {
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
             <View style={styles.tabButton}>
-              <FontAwesome name="home" size={24} color={color} />
+              <FontAwesome name="user" size={24} color={color} />
               <Text style={[styles.tabLabel, { color: color }]}>Profile</Text>
             </View>
           ),
@@ -126,8 +114,6 @@ function TabContent() {
 
 export default function TabsLayout() {
   return (
-    <ScanResetProvider>
       <TabContent />
-    </ScanResetProvider>
   );
 }

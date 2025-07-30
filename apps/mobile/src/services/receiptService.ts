@@ -52,10 +52,10 @@ export interface UploadReceiptResponse {
 export class ReceiptService {
   static async processReceipt(formData: FormData): Promise<UploadReceiptResponse> {
     return apiClient.post<UploadReceiptResponse>('/ocr/process-receipt-enhanced', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-      timeout: 30000,
+      // headers: {
+      //   'Content-Type': 'multipart/form-data',
+      // },
+      timeout: 3000000,
     });
   }
 
