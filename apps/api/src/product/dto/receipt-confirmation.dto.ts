@@ -67,6 +67,15 @@ export class ProcessReceiptConfirmationDto {
   @IsOptional()
   @IsUUID()
   userId?: string;
+
+  @ApiProperty({
+    description: 'Receipt ID to associate these confirmations with',
+    example: '789e0123-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  receiptId?: string;
 }
 
 // Response DTOs
@@ -325,10 +334,33 @@ export class ReceiptConfirmationResponseDto {
   unprocessedProducts: UnprocessedProductDto[];
 
   @ApiProperty({
-    description: 'Products from current receipt requiring user selection',
+    description:
+      'Products from current receipt requiring user selection between multiple matches. This includes ALL items from the receipt (both confirmed and unconfirmed) that have multiple potential catalog product matches.',
     type: [PendingSelectionProductDto],
   })
   pendingSelectionProducts: PendingSelectionProductDto[];
+
+  @ApiProperty({
+    description: 'Summary of all receipt items after processing',
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      totalReceiptItems: { type: 'number', example: 25 },
+      confirmedItems: { type: 'number', example: 20 },
+      unconfirmedItems: { type: 'number', example: 5 },
+      successfullyLinked: { type: 'number', example: 15 },
+      requiresUserSelection: { type: 'number', example: 3 },
+      movedToUnprocessed: { type: 'number', example: 2 },
+    },
+  })
+  receiptSummary: {
+    totalReceiptItems: number;
+    confirmedItems: number;
+    unconfirmedItems: number;
+    successfullyLinked: number;
+    requiresUserSelection: number;
+    movedToUnprocessed: number;
+  };
 }
 
 // Additional DTOs for fetching confirmation candidates
@@ -376,4 +408,190 @@ export class ConfirmationStatsResponseDto {
   @Min(0)
   @Max(1)
   averageConfidenceScore: number;
+}
+
+// Request DTO for receipt-scoped pending selections
+export class GetReceiptPendingSelectionsDto {
+  @ApiProperty({
+    description: 'Receipt ID to get pending selections for',
+    example: '789e0123-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  receiptId?: string;
+
+  @ApiProperty({
+    description: 'Array of normalized product SKs from the current receipt',
+    example: [
+      '123e4567-e89b-12d3-a456-426614174000',
+      '456e7890-e89b-12d3-a456-426614174001',
+    ],
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  normalizedProductSks: string[];
+}
+
+// Response DTO for receipt-scoped pending selections
+export class ReceiptPendingSelectionsResponseDto {
+  @ApiProperty({
+    description: 'Products from this receipt requiring user selection',
+    type: [PendingSelectionProductDto],
+  })
+  pendingSelections: PendingSelectionProductDto[];
+
+  @ApiProperty({
+    description: 'Receipt ID if available',
+    example: '789e0123-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  receiptId?: string;
+
+  @ApiProperty({
+    description: 'Total count of pending selections for this receipt',
+    example: 5,
+  })
+  totalCount: number;
+}
+
+// DTOs for processing user product selections
+
+export class UserProductChoiceDto {
+  @ApiProperty({
+    description: 'UUID of the normalized product that needs selection',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsUUID()
+  normalizedProductSk: string;
+
+  @ApiProperty({
+    description:
+      'UUID of the chosen catalog product. Leave empty/null if no suitable match found.',
+    example: '456e7890-e89b-12d3-a456-426614174001',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  selectedProductSk?: string;
+
+  @ApiProperty({
+    description: 'Reason for the choice or why no product was selected',
+    example: 'Selected best match',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  selectionReason?: string;
+}
+
+export class ProcessReceiptSelectionsDto {
+  @ApiProperty({
+    description: 'Array of user product choices for pending selections',
+    type: [UserProductChoiceDto],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UserProductChoiceDto)
+  selections: UserProductChoiceDto[];
+
+  @ApiProperty({
+    description: 'Optional user ID for tracking',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
+
+  @ApiProperty({
+    description: 'Optional receipt ID for tracking',
+    example: '789e0123-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  receiptId?: string;
+}
+
+export class ProcessedSelectionDto {
+  @ApiProperty({
+    description: 'UUID of the normalized product',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  normalizedProductSk: string;
+
+  @ApiProperty({
+    description: 'UUID of the linked catalog product if selection was made',
+    example: '456e7890-e89b-12d3-a456-426614174001',
+    required: false,
+  })
+  linkedProductSk?: string;
+
+  @ApiProperty({
+    description: 'Processing status',
+    example: 'linked',
+    enum: ['linked', 'moved_to_unprocessed', 'error'],
+  })
+  status: 'linked' | 'moved_to_unprocessed' | 'error';
+
+  @ApiProperty({
+    description: 'Additional information about the processing',
+    example: 'Successfully linked to catalog product',
+    required: false,
+  })
+  message?: string;
+}
+
+export class ReceiptSelectionsResponseDto {
+  @ApiProperty({
+    description: 'Whether the operation was successful',
+    example: true,
+  })
+  success: boolean;
+
+  @ApiProperty({
+    description: 'Number of selections processed',
+    example: 5,
+  })
+  processedCount: number;
+
+  @ApiProperty({
+    description: 'Number of products successfully linked',
+    example: 3,
+  })
+  linkedCount: number;
+
+  @ApiProperty({
+    description: 'Number of products moved to unprocessed queue',
+    example: 2,
+  })
+  unprocessedCount: number;
+
+  @ApiProperty({
+    description: 'Number of errors encountered',
+    example: 0,
+  })
+  errorCount: number;
+
+  @ApiProperty({
+    description: 'List of error messages if any',
+    type: [String],
+    example: [],
+  })
+  errorMessages: string[];
+
+  @ApiProperty({
+    description: 'Detailed results for each processed selection',
+    type: [ProcessedSelectionDto],
+  })
+  processedSelections: ProcessedSelectionDto[];
+
+  @ApiProperty({
+    description: 'Receipt ID if provided',
+    example: '789e0123-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  receiptId?: string;
 }

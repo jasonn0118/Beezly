@@ -24,6 +24,7 @@ export enum UnprocessedProductReason {
   LOW_SIMILARITY_SCORE = 'low_similarity_score',
   MULTIPLE_MATCHES_FOUND = 'multiple_matches_found',
   USER_CREATED_NEW_ITEM = 'user_created_new_item',
+  NO_SUITABLE_MATCH_FOUND = 'no_suitable_match_found',
 }
 
 @Entity('unprocessed_products')

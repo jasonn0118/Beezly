@@ -363,7 +363,7 @@ export class ProductSelectionService {
   }
 
   /**
-   * Find product candidates for selection using existing linking logic
+   * Find product candidates for selection with enhanced brand matching criteria
    */
   private async findProductCandidatesForSelection(
     normalizedProduct: NormalizedProduct,
@@ -378,15 +378,138 @@ export class ProductSelectionService {
     // Use the existing product linking service to find candidates
     // This reuses all the sophisticated matching logic (barcode, embedding, brand, name)
     /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
-    const candidates = (await (
+    const allCandidates = (await (
       this.productLinkingService as any
     ).findProductCandidates(searchProduct)) as ProductMatchCandidate[];
     /* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 
-    // Filter by minimum similarity
-    return candidates.filter(
+    // Filter by minimum similarity first
+    const qualifiedCandidates = allCandidates.filter(
       (candidate: ProductMatchCandidate) => candidate.score >= minSimilarity,
     );
+
+    // Apply enhanced brand matching criteria
+    const filteredCandidates = this.applyBrandMatchingCriteria(
+      qualifiedCandidates,
+      normalizedProduct,
+    );
+
+    this.logger.debug(
+      `Brand filtering for ${normalizedProduct.normalizedProductSk} (brand: "${normalizedProduct.brand}"): ` +
+        `${qualifiedCandidates.length} candidates -> ${filteredCandidates.length} after brand filtering`,
+    );
+
+    return filteredCandidates;
+  }
+
+  /**
+   * Apply enhanced brand matching criteria:
+   * 1. If normalized product has a brand, filter out mismatched brands
+   * 2. Prioritize exact brand matches at the top
+   * 3. Show brand matches first, then other matches
+   */
+  private applyBrandMatchingCriteria(
+    candidates: ProductMatchCandidate[],
+    normalizedProduct: NormalizedProduct,
+  ): ProductMatchCandidate[] {
+    const normalizedBrand = normalizedProduct.brand?.toLowerCase().trim();
+
+    // If no brand specified in normalized product, return all candidates sorted by score
+    if (!normalizedBrand) {
+      return candidates.sort((a, b) => b.score - a.score);
+    }
+
+    // Separate candidates into brand matches and non-matches
+    const brandMatches: ProductMatchCandidate[] = [];
+    const nonBrandMatches: ProductMatchCandidate[] = [];
+
+    candidates.forEach((candidate) => {
+      const candidateBrand = candidate.brand?.toLowerCase().trim();
+
+      if (
+        candidateBrand &&
+        this.isBrandMatch(normalizedBrand, candidateBrand)
+      ) {
+        // This is a brand match - boost the score slightly for priority sorting
+        brandMatches.push({
+          ...candidate,
+          score: Math.min(candidate.score + 0.1, 1.0), // Boost by 0.1, max 1.0
+          method: `${candidate.method}_brand_match`,
+        });
+        this.logger.debug(
+          `Brand match: "${normalizedBrand}" matches "${candidateBrand}" for product ${candidate.name}`,
+        );
+      } else if (!candidateBrand) {
+        // Product has no brand - include it but with lower priority
+        nonBrandMatches.push(candidate);
+        this.logger.debug(
+          `No brand product included: ${candidate.name} (no brand specified)`,
+        );
+      } else {
+        // Products with mismatched brands are filtered out entirely
+        this.logger.debug(
+          `Brand mismatch filtered out: "${normalizedBrand}" != "${candidateBrand}" for product ${candidate.name}`,
+        );
+      }
+    });
+
+    // Sort brand matches by score (descending), then non-brand matches
+    brandMatches.sort((a, b) => b.score - a.score);
+    nonBrandMatches.sort((a, b) => b.score - a.score);
+
+    // Return brand matches first, then non-brand matches
+    // This ensures brand-matched products appear at the top of the list
+    return [...brandMatches, ...nonBrandMatches];
+  }
+
+  /**
+   * Check if two brand names match using fuzzy logic
+   * Handles variations like "Kirkland" vs "Kirkland Signature"
+   */
+  private isBrandMatch(
+    normalizedBrand: string,
+    candidateBrand: string,
+  ): boolean {
+    // Exact match
+    if (normalizedBrand === candidateBrand) {
+      return true;
+    }
+
+    // Check if one brand contains the other (handles "Kirkland" vs "Kirkland Signature")
+    const shorter =
+      normalizedBrand.length < candidateBrand.length
+        ? normalizedBrand
+        : candidateBrand;
+    const longer =
+      normalizedBrand.length >= candidateBrand.length
+        ? normalizedBrand
+        : candidateBrand;
+
+    // If shorter brand is contained in longer brand, it's a match
+    if (longer.includes(shorter) && shorter.length >= 3) {
+      return true;
+    }
+
+    // Check for common brand variations and abbreviations
+    const brandVariations: Record<string, string[]> = {
+      kirkland: ['kirkland signature', 'ks'],
+      'great value': ['gv', 'great val'],
+      "president's choice": ['pc', 'presidents choice'],
+      'no name': ['noname', 'nn'],
+      'store brand': ['store', 'generic'],
+    };
+
+    for (const [canonical, variations] of Object.entries(brandVariations)) {
+      const allForms = [canonical, ...variations];
+      if (
+        allForms.includes(normalizedBrand) &&
+        allForms.includes(candidateBrand)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**

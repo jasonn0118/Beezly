@@ -14,7 +14,11 @@ import {
 import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
 import { ProductSelectionService } from './product-selection.service';
 
-import { ReceiptItemConfirmationDto } from './dto/receipt-confirmation.dto';
+import {
+  ReceiptItemConfirmationDto,
+  UserProductChoiceDto,
+  ReceiptSelectionsResponseDto,
+} from './dto/receipt-confirmation.dto';
 
 export type ConfirmationItem = ReceiptItemConfirmationDto;
 
@@ -59,6 +63,14 @@ export interface ConfirmationResult {
       description?: string;
     }[];
   }[];
+  receiptSummary: {
+    totalReceiptItems: number;
+    confirmedItems: number;
+    unconfirmedItems: number;
+    successfullyLinked: number;
+    requiresUserSelection: number;
+    movedToUnprocessed: number;
+  };
 }
 
 @Injectable()
@@ -96,6 +108,14 @@ export class ProductConfirmationService {
       linkedProducts: [],
       unprocessedProducts: [],
       pendingSelectionProducts: [],
+      receiptSummary: {
+        totalReceiptItems: items.length,
+        confirmedItems: items.filter((item) => item.isConfirmed).length,
+        unconfirmedItems: items.filter((item) => !item.isConfirmed).length,
+        successfullyLinked: 0,
+        requiresUserSelection: 0,
+        movedToUnprocessed: 0,
+      },
     };
 
     // Get all confirmed items only
@@ -202,6 +222,12 @@ export class ProductConfirmationService {
 
     // Fetch pending selection products for current receipt items
     await this.fetchPendingSelectionProductsForSession(result, items);
+
+    // Update receipt summary with final counts
+    result.receiptSummary.successfullyLinked = result.linked;
+    result.receiptSummary.requiresUserSelection =
+      result.pendingSelectionProducts.length;
+    result.receiptSummary.movedToUnprocessed = result.unprocessed;
 
     // Trigger price synchronization for linked products (async)
     if (result.linked > 0) {
@@ -524,43 +550,381 @@ export class ProductConfirmationService {
   }
 
   /**
-   * Fetch pending selection products for the current receipt session
-   * Only includes unconfirmed items from the current receipt that require user selection
+   * Get pending selections for a specific receipt by receipt ID
+   * Automatically finds all normalized products from the receipt that need user selection
    */
-  private async fetchPendingSelectionProductsForSession(
-    result: ConfirmationResult,
-    allItems: ConfirmationItem[],
-  ): Promise<void> {
+  async getReceiptPendingSelectionsByReceiptId(receiptId: string): Promise<{
+    pendingSelections: any[];
+    receiptId: string;
+    totalCount: number;
+  }> {
     try {
-      // Get unconfirmed items from the current receipt
-      const unconfirmedItems = allItems.filter((item) => !item.isConfirmed);
-
-      if (unconfirmedItems.length === 0) {
-        this.logger.debug(
-          'No unconfirmed items to check for pending selections',
-        );
-        return;
-      }
-
-      // Get normalized products for unconfirmed items
-      const unconfirmedProductSks = unconfirmedItems.map(
-        (item) => item.normalizedProductSk,
+      this.logger.debug(
+        `Getting pending selections for receipt ID: ${receiptId}`,
       );
 
-      const unconfirmedProducts = await this.normalizedProductRepository.find({
+      // Find all normalized products from this specific receipt that are unlinked and high confidence
+      // Using the relationship: NormalizedProduct -> ReceiptItemNormalization -> ReceiptItem -> Receipt
+      const normalizedProducts = await this.normalizedProductRepository
+        .createQueryBuilder('np')
+        .innerJoin('np.receiptItemNormalizations', 'rin')
+        .innerJoin('rin.receiptItem', 'ri')
+        .where('np.linkedProductSk IS NULL') // Not yet linked
+        .andWhere('np.confidenceScore >= :threshold', {
+          threshold: this.MIN_CONFIDENCE_THRESHOLD,
+        })
+        .andWhere('ri.receiptSk = :receiptId', { receiptId }) // Filter by receipt ID
+        .andWhere('rin.isSelected = true') // Only selected normalizations
+        .orderBy('np.createdAt', 'DESC')
+        .getMany();
+
+      this.logger.debug(
+        `Found ${normalizedProducts.length} unlinked products from receipt ${receiptId}`,
+      );
+
+      const pendingSelections: any[] = [];
+
+      // Check each product for multiple matches using the enhanced brand filtering
+      for (const normalizedProduct of normalizedProducts) {
+        try {
+          const selectionResponse =
+            await this.productSelectionService.getProductSelectionOptions({
+              normalizedProductSk: normalizedProduct.normalizedProductSk,
+              query: normalizedProduct.normalizedName,
+              brand: normalizedProduct.brand,
+              minSimilarityThreshold: 0.5,
+              maxOptions: 5,
+            });
+
+          // If user selection is required, add to pending selections
+          if (selectionResponse.requiresUserSelection) {
+            pendingSelections.push({
+              normalizedProduct: {
+                normalizedProductSk: normalizedProduct.normalizedProductSk,
+                rawName: normalizedProduct.rawName,
+                normalizedName: normalizedProduct.normalizedName,
+                brand: normalizedProduct.brand,
+                category: normalizedProduct.category,
+                merchant: normalizedProduct.merchant,
+                confidenceScore: normalizedProduct.confidenceScore,
+                createdAt: normalizedProduct.createdAt,
+              },
+              matchCount: selectionResponse.totalMatches,
+              topMatches: selectionResponse.matchingOptions.map((option) => ({
+                productSk: option.productSk,
+                name: option.name,
+                brandName: option.brandName,
+                barcode: option.barcode,
+                score: option.score,
+                method: option.method,
+                imageUrl: option.imageUrl,
+                description: option.description,
+              })),
+            });
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Error checking selection options for ${normalizedProduct.normalizedProductSk}:`,
+            error,
+          );
+          // Continue processing other products
+        }
+      }
+
+      this.logger.log(
+        `Found ${pendingSelections.length} products requiring user selection for receipt ${receiptId}`,
+      );
+
+      return {
+        pendingSelections,
+        receiptId,
+        totalCount: pendingSelections.length,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error getting pending selections for receipt ${receiptId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get pending selections for a specific receipt (legacy method)
+   * @deprecated Use getReceiptPendingSelectionsByReceiptId instead
+   */
+  async getReceiptPendingSelections(
+    normalizedProductSks: string[],
+    receiptId?: string,
+  ): Promise<{
+    pendingSelections: any[];
+    receiptId?: string;
+    totalCount: number;
+  }> {
+    try {
+      const pendingSelections: any[] = [];
+
+      // Get normalized products for the provided SKs
+      const normalizedProducts = await this.normalizedProductRepository.find({
         where: {
-          normalizedProductSk: In(unconfirmedProductSks),
+          normalizedProductSk: In(normalizedProductSks),
           confidenceScore: MoreThanOrEqual(this.MIN_CONFIDENCE_THRESHOLD),
           linkedProductSk: IsNull(), // Not yet linked
         },
       });
 
       this.logger.debug(
-        `Found ${unconfirmedProducts.length} unconfirmed products eligible for selection checking`,
+        `Found ${normalizedProducts.length} receipt products eligible for selection checking`,
       );
 
-      // Check each unconfirmed product for multiple matches
-      for (const normalizedProduct of unconfirmedProducts) {
+      // Check each product for multiple matches
+      for (const normalizedProduct of normalizedProducts) {
+        try {
+          const selectionResponse =
+            await this.productSelectionService.getProductSelectionOptions({
+              normalizedProductSk: normalizedProduct.normalizedProductSk,
+              query: normalizedProduct.normalizedName,
+              brand: normalizedProduct.brand,
+              minSimilarityThreshold: 0.5,
+              maxOptions: 5,
+            });
+
+          // If user selection is required, add to pending selections
+          if (selectionResponse.requiresUserSelection) {
+            pendingSelections.push({
+              normalizedProduct: {
+                normalizedProductSk: normalizedProduct.normalizedProductSk,
+                rawName: normalizedProduct.rawName,
+                normalizedName: normalizedProduct.normalizedName,
+                brand: normalizedProduct.brand,
+                category: normalizedProduct.category,
+                merchant: normalizedProduct.merchant,
+                confidenceScore: normalizedProduct.confidenceScore,
+                createdAt: normalizedProduct.createdAt,
+              },
+              matchCount: selectionResponse.totalMatches,
+              topMatches: selectionResponse.matchingOptions.map((option) => ({
+                productSk: option.productSk,
+                name: option.name,
+                brandName: option.brandName,
+                barcode: option.barcode,
+                score: option.score,
+                method: option.method,
+                imageUrl: option.imageUrl,
+                description: option.description,
+              })),
+            });
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Error checking selection options for ${normalizedProduct.normalizedProductSk}:`,
+            error,
+          );
+          // Continue processing other products
+        }
+      }
+
+      return {
+        pendingSelections,
+        receiptId,
+        totalCount: pendingSelections.length,
+      };
+    } catch (error) {
+      this.logger.error('Error getting receipt pending selections:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process user product selections - either link to chosen product or move to unprocessed
+   */
+  async processReceiptSelections(
+    selections: UserProductChoiceDto[],
+    userId?: string,
+    receiptId?: string,
+  ): Promise<ReceiptSelectionsResponseDto> {
+    this.logger.log(`Processing ${selections.length} user product selections`);
+
+    const result: ReceiptSelectionsResponseDto = {
+      success: true,
+      processedCount: 0,
+      linkedCount: 0,
+      unprocessedCount: 0,
+      errorCount: 0,
+      errorMessages: [],
+      processedSelections: [],
+      receiptId,
+    };
+
+    if (selections.length === 0) {
+      this.logger.warn('No selections provided');
+      return result;
+    }
+
+    // Get all normalized products for the selections
+    const normalizedProductSks = selections.map((s) => s.normalizedProductSk);
+    const normalizedProducts = await this.normalizedProductRepository.find({
+      where: {
+        normalizedProductSk: In(normalizedProductSks),
+        linkedProductSk: IsNull(), // Only process unlinked products
+      },
+    });
+
+    if (normalizedProducts.length !== selections.length) {
+      const foundSks = normalizedProducts.map((p) => p.normalizedProductSk);
+      const missingSks = normalizedProductSks.filter(
+        (sk) => !foundSks.includes(sk),
+      );
+      result.errorMessages.push(
+        `Some normalized products not found or already linked: ${missingSks.join(', ')}`,
+      );
+    }
+
+    // Process each selection
+    for (const selection of selections) {
+      try {
+        result.processedCount++;
+
+        const normalizedProduct = normalizedProducts.find(
+          (p) => p.normalizedProductSk === selection.normalizedProductSk,
+        );
+
+        if (!normalizedProduct) {
+          result.errorCount++;
+          result.processedSelections.push({
+            normalizedProductSk: selection.normalizedProductSk,
+            status: 'error',
+            message: 'Normalized product not found or already linked',
+          });
+          continue;
+        }
+
+        if (selection.selectedProductSk) {
+          // User selected a product - create the link
+          await this.linkNormalizedProductToSelected(
+            normalizedProduct,
+            selection.selectedProductSk,
+          );
+
+          result.linkedCount++;
+          result.processedSelections.push({
+            normalizedProductSk: selection.normalizedProductSk,
+            linkedProductSk: selection.selectedProductSk,
+            status: 'linked',
+            message:
+              selection.selectionReason ||
+              'Successfully linked to selected product',
+          });
+
+          this.logger.debug(
+            `Linked ${selection.normalizedProductSk} to ${selection.selectedProductSk}`,
+          );
+        } else {
+          // User provided empty selection - move to unprocessed
+          const unprocessedProduct = await this.createUnprocessedProduct(
+            normalizedProduct,
+            UnprocessedProductReason.NO_SUITABLE_MATCH_FOUND,
+            userId,
+          );
+
+          result.unprocessedCount++;
+          result.processedSelections.push({
+            normalizedProductSk: selection.normalizedProductSk,
+            status: 'moved_to_unprocessed',
+            message:
+              selection.selectionReason ||
+              'No suitable product found - moved to manual review',
+          });
+
+          this.logger.debug(
+            `Moved ${selection.normalizedProductSk} to unprocessed: ${unprocessedProduct.unprocessedProductSk}`,
+          );
+        }
+      } catch (error) {
+        result.errorCount++;
+        const errorMsg = `Error processing selection ${selection.normalizedProductSk}: ${(error as Error).message}`;
+        result.errorMessages.push(errorMsg);
+        result.processedSelections.push({
+          normalizedProductSk: selection.normalizedProductSk,
+          status: 'error',
+          message: errorMsg,
+        });
+        this.logger.error(errorMsg, error);
+      }
+    }
+
+    // Trigger price synchronization for linked products (async)
+    const linkedProductSks = result.processedSelections
+      .filter((p) => p.linkedProductSk)
+      .map((p) => p.linkedProductSk!);
+
+    if (linkedProductSks.length > 0) {
+      void this.syncPricesAsync(linkedProductSks);
+    }
+
+    this.logger.log(
+      `Selection processing completed. Processed: ${result.processedCount}, Linked: ${result.linkedCount}, Unprocessed: ${result.unprocessedCount}, Errors: ${result.errorCount}`,
+    );
+
+    return result;
+  }
+
+  /**
+   * Link normalized product to user-selected catalog product
+   */
+  private async linkNormalizedProductToSelected(
+    normalizedProduct: NormalizedProduct,
+    selectedProductSk: string,
+  ): Promise<void> {
+    // Update the normalized product with the selected link
+    normalizedProduct.linkedProductSk = selectedProductSk;
+    normalizedProduct.updatedAt = new Date();
+
+    await this.normalizedProductRepository.save(normalizedProduct);
+
+    this.logger.debug(
+      `Successfully linked normalized product ${normalizedProduct.normalizedProductSk} to catalog product ${selectedProductSk}`,
+    );
+  }
+
+  /**
+   * Fetch pending selection products for the current receipt session
+   * Includes ALL items from the current receipt that require user selection
+   * (both confirmed and unconfirmed items that couldn't be linked automatically)
+   */
+  private async fetchPendingSelectionProductsForSession(
+    result: ConfirmationResult,
+    allItems: ConfirmationItem[],
+  ): Promise<void> {
+    try {
+      // Get ALL normalized product SKs from the current receipt
+      const allReceiptProductSks = allItems.map(
+        (item) => item.normalizedProductSk,
+      );
+
+      if (allReceiptProductSks.length === 0) {
+        this.logger.debug(
+          'No items in receipt to check for pending selections',
+        );
+        return;
+      }
+
+      // Get all normalized products from this receipt that are eligible for selection
+      // This includes both confirmed and unconfirmed items that haven't been linked yet
+      const receiptProducts = await this.normalizedProductRepository.find({
+        where: {
+          normalizedProductSk: In(allReceiptProductSks),
+          confidenceScore: MoreThanOrEqual(this.MIN_CONFIDENCE_THRESHOLD),
+          linkedProductSk: IsNull(), // Not yet linked
+        },
+      });
+
+      this.logger.debug(
+        `Found ${receiptProducts.length} receipt products eligible for selection checking`,
+      );
+
+      // Check each receipt product for multiple matches
+      for (const normalizedProduct of receiptProducts) {
         try {
           // Use the product selection service to check if this product has multiple matches
           const selectionResponse =

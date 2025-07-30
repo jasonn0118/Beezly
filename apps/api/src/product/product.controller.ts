@@ -39,13 +39,15 @@ import {
 import { VectorEmbeddingService } from './vector-embedding.service';
 import { ProductLinkingService } from './product-linking.service';
 import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
-import { UnmatchedProductService } from './unmatched-product.service';
 import { ProductConfirmationService } from './product-confirmation.service';
 import {
   ProcessReceiptConfirmationDto,
   ReceiptConfirmationResponseDto,
   GetConfirmationCandidatesResponseDto,
   ConfirmationStatsResponseDto,
+  ReceiptPendingSelectionsResponseDto,
+  ProcessReceiptSelectionsDto,
+  ReceiptSelectionsResponseDto,
 } from './dto/receipt-confirmation.dto';
 import {
   UnprocessedProductService,
@@ -56,15 +58,6 @@ import {
   UnprocessedProductReason,
 } from '../entities/unprocessed-product.entity';
 import { Product } from '../entities/product.entity';
-import { ProductSelectionService } from './product-selection.service';
-import {
-  ProductSelectionRequestDto,
-  ProductSelectionResponseDto,
-  UserProductSelectionDto,
-  UserProductSelectionResponseDto,
-  BulkProductSelectionDto,
-  BulkProductSelectionResponseDto,
-} from './dto/product-selection.dto';
 
 @ApiTags('Products')
 @Controller('products')
@@ -75,10 +68,8 @@ export class ProductController {
     private readonly vectorEmbeddingService: VectorEmbeddingService,
     private readonly productLinkingService: ProductLinkingService,
     private readonly receiptPriceIntegrationService: ReceiptPriceIntegrationService,
-    private readonly unmatchedProductService: UnmatchedProductService,
     private readonly productConfirmationService: ProductConfirmationService,
     private readonly unprocessedProductService: UnprocessedProductService,
-    private readonly productSelectionService: ProductSelectionService,
   ) {}
 
   @Get()
@@ -497,54 +488,6 @@ export class ProductController {
 
   // Product Linking Endpoints
 
-  @Post('link-receipt-products')
-  @ApiOperation({
-    summary: 'Link normalized receipt products to catalog products',
-    description:
-      'Batch process to link high-confidence normalized products (≥0.80) with existing catalog products using barcode, embedding, and name matching.',
-  })
-  @ApiQuery({
-    name: 'confidenceThreshold',
-    description: 'Minimum confidence score for linking (default: 0.80)',
-    required: false,
-    type: Number,
-    example: 0.8,
-  })
-  @ApiQuery({
-    name: 'dryRun',
-    description: 'Preview results without saving changes',
-    required: false,
-    type: Boolean,
-    example: false,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Product linking results',
-    schema: {
-      properties: {
-        processed: { type: 'number', example: 150 },
-        linked: { type: 'number', example: 120 },
-        skipped: { type: 'number', example: 25 },
-        errors: { type: 'number', example: 5 },
-      },
-    },
-  })
-  async linkReceiptProducts(
-    @Query('confidenceThreshold') confidenceThreshold?: number,
-    @Query('dryRun') dryRun?: boolean,
-  ) {
-    // Ensure confidence threshold is never below the minimum threshold
-    const validConfidenceThreshold = Math.max(
-      confidenceThreshold || this.MIN_CONFIDENCE_THRESHOLD,
-      this.MIN_CONFIDENCE_THRESHOLD,
-    );
-
-    return this.productLinkingService.linkNormalizedProducts({
-      confidenceThreshold: validConfidenceThreshold,
-      dryRun: dryRun || false,
-    });
-  }
-
   @Get('linking/stats')
   @ApiOperation({
     summary: 'Get product linking statistics',
@@ -647,176 +590,6 @@ export class ProductController {
     return this.receiptPriceIntegrationService.getPriceSyncStatistics();
   }
 
-  // Unmatched Product Management Endpoints
-
-  @Get('unmatched/candidates')
-  @ApiOperation({
-    summary: 'Get unmatched product candidates for review',
-    description:
-      'Get high-confidence normalized products that could be used to create new catalog products.',
-  })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Maximum number of candidates to return',
-    required: false,
-    type: Number,
-    example: 50,
-  })
-  @ApiQuery({
-    name: 'offset',
-    description: 'Number of candidates to skip',
-    required: false,
-    type: Number,
-    example: 0,
-  })
-  @ApiQuery({
-    name: 'minConfidence',
-    description: 'Minimum confidence score (default: 0.80)',
-    required: false,
-    type: Number,
-    example: 0.8,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of unmatched product candidates',
-    type: [Object],
-  })
-  async getUnmatchedCandidates(
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
-    @Query('minConfidence') minConfidence?: number,
-  ) {
-    // Ensure minimum confidence is never below the minimum threshold
-    const validMinConfidence = Math.max(
-      minConfidence || this.MIN_CONFIDENCE_THRESHOLD,
-      this.MIN_CONFIDENCE_THRESHOLD,
-    );
-
-    return this.unmatchedProductService.getUnmatchedProductCandidates(
-      limit || 50,
-      offset || 0,
-      validMinConfidence,
-    );
-  }
-
-  @Get('unmatched/suggestions')
-  @ApiOperation({
-    summary: 'Generate product creation suggestions',
-    description:
-      'Analyze unmatched products and generate intelligent suggestions for creating new catalog products.',
-  })
-  @ApiQuery({
-    name: 'minOccurrences',
-    description: 'Minimum number of occurrences to suggest a product',
-    required: false,
-    type: Number,
-    example: 3,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of product creation suggestions',
-    type: [Object],
-  })
-  async getProductCreationSuggestions(
-    @Query('minOccurrences') minOccurrences?: number,
-  ) {
-    return this.unmatchedProductService.generateProductCreationSuggestions(
-      minOccurrences || 3,
-      0.8,
-    );
-  }
-
-  @Post('create-from-unmatched/:normalizedProductSk')
-  @ApiOperation({
-    summary: 'Create product from unmatched normalized product',
-    description:
-      'Create a new catalog product from a high-confidence unmatched normalized product.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Product created successfully',
-    type: Object,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Normalized product not found',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Product already linked or invalid data',
-  })
-  async createProductFromUnmatched(
-    @Param('normalizedProductSk') normalizedProductSk: string,
-    @Body() overrides?: Partial<Product>,
-  ) {
-    return this.unmatchedProductService.createProductFromUnmatched(
-      normalizedProductSk,
-      overrides,
-    );
-  }
-
-  @Get('unmatched/stats')
-  @ApiOperation({
-    summary: 'Get unmatched product review queue statistics',
-    description:
-      'Get comprehensive statistics about unmatched products requiring review.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Review queue statistics',
-    schema: {
-      properties: {
-        totalUnmatched: { type: 'number', example: 400 },
-        highConfidenceUnmatched: { type: 'number', example: 200 },
-        pendingReview: { type: 'number', example: 150 },
-        averageConfidenceScore: { type: 'number', example: 0.72 },
-        topCategories: { type: 'array', items: { type: 'object' } },
-        topBrands: { type: 'array', items: { type: 'object' } },
-        topMerchants: { type: 'array', items: { type: 'object' } },
-      },
-    },
-  })
-  async getUnmatchedStats() {
-    return this.unmatchedProductService.getReviewQueueStats();
-  }
-
-  @Post('bulk-create-from-suggestions')
-  @ApiOperation({
-    summary: 'Bulk create products from suggestions',
-    description:
-      'Create multiple catalog products from a list of unmatched normalized product suggestions.',
-  })
-  @ApiBody({
-    description: 'List of normalized product SKs to create products from',
-    schema: {
-      properties: {
-        normalizedProductSks: {
-          type: 'array',
-          items: { type: 'string' },
-          example: ['uuid1', 'uuid2', 'uuid3'],
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Bulk creation results',
-    schema: {
-      properties: {
-        created: { type: 'number', example: 8 },
-        errors: { type: 'number', example: 2 },
-        errorMessages: { type: 'array', items: { type: 'string' } },
-      },
-    },
-  })
-  async bulkCreateFromSuggestions(
-    @Body() body: { normalizedProductSks: string[] },
-  ) {
-    return this.unmatchedProductService.bulkCreateProductsFromSuggestions(
-      body.normalizedProductSks,
-    );
-  }
-
   // Receipt Confirmation Endpoints (Mobile Frontend Integration)
 
   @Get('receipt/confirmation-candidates')
@@ -913,6 +686,63 @@ export class ProductController {
   })
   async getReceiptConfirmationStats(): Promise<ConfirmationStatsResponseDto> {
     return this.productConfirmationService.getConfirmationStats();
+  }
+
+  @Get('receipt/:receiptId/pending-selections')
+  @ApiOperation({
+    summary: 'Get pending product selections for a specific receipt',
+    description:
+      'Retrieves all products from a specific receipt that require user selection ' +
+      'because multiple catalog product matches were found. Automatically finds ' +
+      'all unlinked, high-confidence normalized products from the receipt that ' +
+      'have multiple potential matches.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt-scoped pending product selections',
+    type: ReceiptPendingSelectionsResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found or no pending selections',
+  })
+  async getReceiptPendingSelections(
+    @Param('receiptId') receiptId: string,
+  ): Promise<ReceiptPendingSelectionsResponseDto> {
+    return this.productConfirmationService.getReceiptPendingSelectionsByReceiptId(
+      receiptId,
+    );
+  }
+
+  @Post('receipt/process-selections')
+  @ApiOperation({
+    summary: 'Process user product selections for pending items',
+    description:
+      'Processes user choices for products that had multiple matches. Users can either ' +
+      'select a specific catalog product or provide empty selection (which moves the ' +
+      'item to the unprocessed queue for manual review).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User selections processed successfully',
+    type: ReceiptSelectionsResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid selection data',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Some normalized products not found',
+  })
+  async processReceiptSelections(
+    @Body() selectionsRequest: ProcessReceiptSelectionsDto,
+  ): Promise<ReceiptSelectionsResponseDto> {
+    return this.productConfirmationService.processReceiptSelections(
+      selectionsRequest.selections,
+      selectionsRequest.userId,
+      selectionsRequest.receiptId,
+    );
   }
 
   // Unprocessed Product Management Endpoints
@@ -1236,142 +1066,6 @@ export class ProductController {
   ) {
     return this.unprocessedProductService.cleanupProcessedUnprocessedProducts(
       olderThanDays || 30,
-    );
-  }
-
-  // Product Selection Endpoints (User Choice for Multiple Matches)
-
-  @Post('selection/options')
-  @ApiOperation({
-    summary: 'Get product selection options for user choice',
-    description:
-      'When a normalized product has multiple potential catalog product matches, ' +
-      'this endpoint returns all options for the user to choose from. Typically used ' +
-      'when 2 or more products match the same normalized_name and brand.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Product selection options with matching candidates',
-    type: ProductSelectionResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Normalized product not found',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Product already linked or invalid request',
-  })
-  async getProductSelectionOptions(
-    @Body() request: ProductSelectionRequestDto,
-  ): Promise<ProductSelectionResponseDto> {
-    return this.productSelectionService.getProductSelectionOptions(request);
-  }
-
-  @Post('selection/confirm')
-  @ApiOperation({
-    summary: 'Process user product selection',
-    description:
-      "Process the user's selection when they choose which catalog product " +
-      'should be linked to a normalized product. Creates the final product link.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'User selection processed and product linked',
-    type: UserProductSelectionResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid selection or product already linked',
-  })
-  async processUserSelection(
-    @Body() selection: UserProductSelectionDto,
-  ): Promise<UserProductSelectionResponseDto> {
-    return this.productSelectionService.processUserSelection(selection);
-  }
-
-  @Post('selection/bulk-confirm')
-  @ApiOperation({
-    summary: 'Process multiple user selections in batch',
-    description:
-      'Process multiple user product selections at once. Useful for mobile apps ' +
-      'where users might confirm multiple product matches in a single session.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Bulk user selections processed',
-    type: BulkProductSelectionResponseDto,
-  })
-  async processBulkUserSelections(
-    @Body() bulkRequest: BulkProductSelectionDto,
-  ): Promise<BulkProductSelectionResponseDto> {
-    return this.productSelectionService.processBulkUserSelections(bulkRequest);
-  }
-
-  @Get('selection/pending')
-  @ApiOperation({
-    summary: 'Get products requiring user selection',
-    description:
-      'Get normalized products that have multiple catalog product matches ' +
-      'and require user selection to resolve ambiguity. These are products ' +
-      'where automated linking found 2 or more potential matches.',
-  })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Maximum number of products to return',
-    required: false,
-    type: Number,
-    example: 50,
-  })
-  @ApiQuery({
-    name: 'offset',
-    description: 'Number of products to skip',
-    required: false,
-    type: Number,
-    example: 0,
-  })
-  @ApiQuery({
-    name: 'minConfidenceScore',
-    description: 'Minimum confidence score for candidates',
-    required: false,
-    type: Number,
-    example: 0.8,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of products requiring user selection',
-    schema: {
-      properties: {
-        items: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              normalizedProduct: { type: 'object' },
-              matchCount: { type: 'number', example: 3 },
-              topMatches: { type: 'array', items: { type: 'object' } },
-            },
-          },
-        },
-        totalCount: { type: 'number', example: 25 },
-      },
-    },
-  })
-  async getProductsRequiringSelection(
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
-    @Query('minConfidenceScore') minConfidenceScore?: number,
-  ) {
-    // Ensure minimum confidence is never below the minimum threshold
-    const validMinConfidence = Math.max(
-      minConfidenceScore || this.MIN_CONFIDENCE_THRESHOLD,
-      this.MIN_CONFIDENCE_THRESHOLD,
-    );
-
-    return this.productSelectionService.getProductsRequiringSelection(
-      limit || 50,
-      offset || 0,
-      validMinConfidence,
     );
   }
 }

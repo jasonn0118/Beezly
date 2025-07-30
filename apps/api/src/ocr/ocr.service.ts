@@ -117,6 +117,8 @@ export interface CleanOcrResult extends Omit<OcrResult, 'items'> {
     total_discount_amount: number;
     products_with_discounts: number;
   };
+  receipt_id?: string; // Receipt ID if stored in database
+  session_id?: string; // Temporary session ID for tracking
 }
 
 @Injectable()
