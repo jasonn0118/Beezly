@@ -26,6 +26,7 @@ export interface ReceiptPriceData {
   rawPrice: string;
   parsedPrice: ParsedPrice;
   merchant: string;
+  storeSk?: string;
   receiptDate?: Date;
   isDiscount: boolean;
   isAdjustment: boolean;
@@ -183,6 +184,7 @@ export class ReceiptPriceIntegrationService {
         rawPrice: receiptItem.price.toString(),
         parsedPrice,
         merchant,
+        storeSk: receiptItem.receipt?.storeSk,
         receiptDate: receiptItem.receipt?.createdAt,
         isDiscount: receiptItem.isDiscountLine || normalizedProduct.isDiscount,
         isAdjustment:
@@ -198,8 +200,23 @@ export class ReceiptPriceIntegrationService {
    */
   private async syncSinglePrice(priceData: ReceiptPriceData): Promise<boolean> {
     try {
-      // Find or create store
-      const store = await this.findOrCreateStore(priceData.merchant);
+      // Use store from receipt or find/create by merchant name as fallback
+      let store: Store;
+      if (priceData.storeSk) {
+        const existingStore = await this.storeRepository.findOne({
+          where: { storeSk: priceData.storeSk },
+        });
+        if (existingStore) {
+          store = existingStore;
+        } else {
+          this.logger.warn(
+            `Store with SK ${priceData.storeSk} not found, falling back to merchant lookup`,
+          );
+          store = await this.findOrCreateStore(priceData.merchant);
+        }
+      } else {
+        store = await this.findOrCreateStore(priceData.merchant);
+      }
 
       // Check if this exact price already exists to avoid duplicates
       const existingPrice = await this.priceRepository.findOne({
@@ -223,9 +240,10 @@ export class ReceiptPriceIntegrationService {
         productSk: priceData.linkedProductSk,
         storeSk: store.storeSk,
         price: priceData.parsedPrice.amount,
+        originalPrice: priceData.parsedPrice.amount, // For regular items, original equals current price
         recordedAt: priceData.receiptDate || new Date(),
-        currency: 'USD', // Default currency
-        creditScore: 1.0, // Receipt-based prices are trustworthy
+        currency: 'CAD', // Default currency
+        creditScore: 1.0, // OCR receipt-based prices have highest confidence
         verifiedCount: 1,
         flaggedCount: 0,
         isDiscount: false, // Regular prices are not discounts
@@ -267,8 +285,23 @@ export class ReceiptPriceIntegrationService {
         return false;
       }
 
-      // Find or create store
-      const store = await this.findOrCreateStore(discount.merchant);
+      // Use store from receipt or find/create by merchant name as fallback
+      let store: Store;
+      if (discount.storeSk) {
+        const existingStore = await this.storeRepository.findOne({
+          where: { storeSk: discount.storeSk },
+        });
+        if (existingStore) {
+          store = existingStore;
+        } else {
+          this.logger.warn(
+            `Store with SK ${discount.storeSk} not found, falling back to merchant lookup`,
+          );
+          store = await this.findOrCreateStore(discount.merchant);
+        }
+      } else {
+        store = await this.findOrCreateStore(discount.merchant);
+      }
 
       // Determine discount type
       const discountType = this.determineDiscountType(
@@ -282,8 +315,8 @@ export class ReceiptPriceIntegrationService {
         storeSk: store.storeSk,
         price: discount.parsedPrice.amount, // Negative discount amount
         recordedAt: discount.receiptDate || new Date(),
-        currency: 'USD',
-        creditScore: 1.0,
+        currency: 'CAD',
+        creditScore: 1.0, // OCR receipt-based prices have highest confidence
         verifiedCount: 1,
         flaggedCount: 0,
         isDiscount: true,
@@ -376,7 +409,7 @@ export class ReceiptPriceIntegrationService {
           where: { linkedProductSk: Not(IsNull()) },
         }),
         this.priceRepository.count({
-          where: { creditScore: 1.0 }, // Receipt-based prices have creditScore 1.0
+          where: { creditScore: 1.0 }, // OCR receipt-based prices have highest confidence
         }),
         this.receiptItemNormalizationRepository.count({
           where: { isSelected: true },
