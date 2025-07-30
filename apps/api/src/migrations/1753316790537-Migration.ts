@@ -11,7 +11,6 @@ export class Migration1753316790537 implements MigrationInterface {
       SELECT 1 FROM information_schema.table_constraints 
       WHERE constraint_name = 'FK_41185546107ec4b4774da68df2f' 
       AND table_name = 'Category'
-      AND table_schema = 'public'
     `);
 
     if (constraintExists.length > 0) {
@@ -26,7 +25,6 @@ export class Migration1753316790537 implements MigrationInterface {
       const columnExists = await queryRunner.query(`
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'Category' AND column_name = '${column}'
-        AND table_schema = 'public'
       `);
 
       if (columnExists.length > 0) {
@@ -42,7 +40,6 @@ export class Migration1753316790537 implements MigrationInterface {
       const columnExists = await queryRunner.query(`
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'Category' AND column_name = '${column}'
-        AND table_schema = 'public'
       `);
 
       if (columnExists.length === 0) {
@@ -80,7 +77,6 @@ export class Migration1753316790537 implements MigrationInterface {
       const columnExists = await queryRunner.query(`
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'Category' AND column_name = '${column}'
-        AND table_schema = 'public'
       `);
 
       if (columnExists.length > 0) {
