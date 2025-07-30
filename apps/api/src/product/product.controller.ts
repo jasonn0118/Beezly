@@ -40,10 +40,13 @@ import { VectorEmbeddingService } from './vector-embedding.service';
 import { ProductLinkingService } from './product-linking.service';
 import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
 import { UnmatchedProductService } from './unmatched-product.service';
+import { ProductConfirmationService } from './product-confirmation.service';
 import {
-  ProductConfirmationService,
-  ConfirmationItem,
-} from './product-confirmation.service';
+  ProcessReceiptConfirmationDto,
+  ReceiptConfirmationResponseDto,
+  GetConfirmationCandidatesResponseDto,
+  ConfirmationStatsResponseDto,
+} from './dto/receipt-confirmation.dto';
 import {
   UnprocessedProductService,
   BulkReviewAction,
@@ -814,13 +817,13 @@ export class ProductController {
     );
   }
 
-  // Product Confirmation Endpoints (Mobile Frontend Integration)
+  // Receipt Confirmation Endpoints (Mobile Frontend Integration)
 
-  @Get('confirmation/candidates')
+  @Get('receipt/confirmation-candidates')
   @ApiOperation({
-    summary: 'Get normalized products ready for user confirmation',
+    summary: 'Get receipt items ready for user confirmation',
     description:
-      'Get high-confidence normalized products that are ready for user review and confirmation before linking.',
+      'Retrieves high-confidence normalized products from receipt processing that require user confirmation before linking to catalog products.',
   })
   @ApiQuery({
     name: 'limit',
@@ -845,18 +848,13 @@ export class ProductController {
   @ApiResponse({
     status: 200,
     description: 'List of normalized products ready for confirmation',
-    schema: {
-      properties: {
-        items: { type: 'array', items: { type: 'object' } },
-        totalCount: { type: 'number', example: 150 },
-      },
-    },
+    type: GetConfirmationCandidatesResponseDto,
   })
   async getConfirmationCandidates(
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
     @Query('userId') userId?: string,
-  ) {
+  ): Promise<GetConfirmationCandidatesResponseDto> {
     return this.productConfirmationService.getConfirmationCandidates(
       userId,
       limit || 50,
@@ -864,138 +862,56 @@ export class ProductController {
     );
   }
 
-  @Post('confirmation/confirm')
+  @Post('receipt/process-confirmations')
   @ApiOperation({
-    summary: 'Confirm normalized products and link to catalog',
+    summary: 'Process user confirmations for receipt items',
     description:
-      'Called by mobile frontend when user confirms/edits normalized products. Attempts to link confirmed items to catalog products.',
+      'Processes user confirmations and edits for receipt items after OCR processing. ' +
+      'Links confirmed items to catalog products, handles unmatched items, and identifies ' +
+      'items requiring user selection when multiple matches are found.',
   })
   @ApiBody({
     description:
-      'List of confirmed normalized products with optional user edits',
-    schema: {
-      properties: {
-        items: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              normalizedProductSk: { type: 'string', format: 'uuid' },
-              normalizedName: {
-                type: 'string',
-                description: 'User-edited name (optional)',
-              },
-              brand: {
-                type: 'string',
-                description: 'User-edited brand (optional)',
-              },
-              isConfirmed: {
-                type: 'boolean',
-                description: 'Whether user confirmed this item',
-              },
-            },
-            required: ['normalizedProductSk', 'isConfirmed'],
-          },
-        },
-        userId: {
-          type: 'string',
-          format: 'uuid',
-          description: 'User ID (optional)',
-        },
-      },
-      required: ['items'],
-    },
+      'Receipt confirmation request with user confirmations and edits',
+    type: ProcessReceiptConfirmationDto,
   })
   @ApiResponse({
     status: 200,
-    description: 'Confirmation and linking results',
-    schema: {
-      properties: {
-        success: { type: 'boolean' },
-        processed: { type: 'number', example: 20 },
-        linked: { type: 'number', example: 15 },
-        unprocessed: { type: 'number', example: 5 },
-        errors: { type: 'number', example: 0 },
-        errorMessages: { type: 'array', items: { type: 'string' } },
-        linkedProducts: { type: 'array', items: { type: 'object' } },
-        unprocessedProducts: { type: 'array', items: { type: 'object' } },
-        pendingSelectionProducts: {
-          type: 'array',
-          description:
-            'Products from current receipt that require user selection',
-          items: {
-            type: 'object',
-            properties: {
-              normalizedProduct: {
-                type: 'object',
-                properties: {
-                  normalizedProductSk: { type: 'string', format: 'uuid' },
-                  rawName: { type: 'string', example: 'KS GRK YOG' },
-                  normalizedName: { type: 'string', example: 'Greek Yogurt' },
-                  brand: { type: 'string', example: 'Kirkland Signature' },
-                  category: { type: 'string', example: 'Dairy' },
-                  merchant: { type: 'string', example: 'Costco' },
-                  confidenceScore: { type: 'number', example: 0.92 },
-                  createdAt: { type: 'string', format: 'date-time' },
-                },
-              },
-              matchCount: { type: 'number', example: 3 },
-              topMatches: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    productSk: { type: 'string', format: 'uuid' },
-                    name: { type: 'string', example: 'Greek Yogurt' },
-                    brandName: {
-                      type: 'string',
-                      example: 'Kirkland Signature',
-                    },
-                    barcode: { type: 'string', example: '1234567890123' },
-                    score: { type: 'number', example: 0.85 },
-                    method: { type: 'string', example: 'name_similarity' },
-                    imageUrl: {
-                      type: 'string',
-                      example: 'https://example.com/image.jpg',
-                    },
-                    description: { type: 'string', example: 'Category: Dairy' },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
+    description: 'Receipt confirmation processing results',
+    type: ReceiptConfirmationResponseDto,
   })
-  async confirmNormalizedProducts(
-    @Body() body: { items: ConfirmationItem[]; userId?: string },
-  ) {
-    return this.productConfirmationService.confirmNormalizedProducts(
-      body.items,
-      body.userId,
-    );
+  @ApiResponse({
+    status: 404,
+    description: 'Some normalized products not found',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid confirmation data',
+  })
+  async processReceiptConfirmations(
+    @Body() confirmationRequest: ProcessReceiptConfirmationDto,
+  ): Promise<ReceiptConfirmationResponseDto> {
+    const result =
+      await this.productConfirmationService.confirmNormalizedProducts(
+        confirmationRequest.items,
+        confirmationRequest.userId,
+      );
+    // Map the service result to our DTO structure
+    return result as ReceiptConfirmationResponseDto;
   }
 
-  @Get('confirmation/stats')
+  @Get('receipt/confirmation-stats')
   @ApiOperation({
-    summary: 'Get product confirmation statistics',
+    summary: 'Get receipt confirmation statistics',
     description:
-      'Get statistics about products pending confirmation and processing status.',
+      'Retrieves statistics about receipt items pending confirmation, linked products, and unprocessed items.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Confirmation statistics',
-    schema: {
-      properties: {
-        pendingConfirmation: { type: 'number', example: 150 },
-        totalLinked: { type: 'number', example: 850 },
-        totalUnprocessed: { type: 'number', example: 75 },
-        averageConfidenceScore: { type: 'number', example: 0.85 },
-      },
-    },
+    description: 'Receipt confirmation statistics',
+    type: ConfirmationStatsResponseDto,
   })
-  async getConfirmationStats() {
+  async getReceiptConfirmationStats(): Promise<ConfirmationStatsResponseDto> {
     return this.productConfirmationService.getConfirmationStats();
   }
 

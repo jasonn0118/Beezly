@@ -59,6 +59,22 @@ export interface EnhancedOcrItem extends OcrItem {
   }; // Information about the original price format
 }
 
+export interface CleanOcrItem {
+  name: string;
+  quantity: string;
+  unit_price?: string;
+  item_number?: string;
+  normalized_name: string;
+  brand?: string;
+  category?: string;
+  confidence_score: number;
+  normalized_product_sk?: string;
+  linked_discounts?: DiscountInfo[];
+  applied_to_product_id?: string;
+  original_price: number;
+  final_price: number;
+}
+
 export interface OcrResult {
   merchant: string;
   store_address?: string;
@@ -77,6 +93,20 @@ export interface OcrResult {
 
 export interface EnhancedOcrResult extends Omit<OcrResult, 'items'> {
   items: EnhancedOcrItem[];
+  normalization_summary: {
+    total_items: number;
+    product_items: number;
+    discount_items: number;
+    adjustment_items: number;
+    average_confidence: number;
+    linked_discounts: number;
+    total_discount_amount: number;
+    products_with_discounts: number;
+  };
+}
+
+export interface CleanOcrResult extends Omit<OcrResult, 'items'> {
+  items: CleanOcrItem[];
   normalization_summary: {
     total_items: number;
     product_items: number;
@@ -983,5 +1013,49 @@ export class OcrService {
    */
   private cleanProductName(itemName: string): string {
     return this.cleanProductNameAndExtractCode(itemName).cleanedName;
+  }
+
+  /**
+   * Convert EnhancedOcrResult to CleanOcrResult by removing unnecessary fields
+   */
+  private convertToCleanResult(
+    enhancedResult: EnhancedOcrResult,
+  ): CleanOcrResult {
+    const cleanItems: CleanOcrItem[] = enhancedResult.items.map((item) => ({
+      name: item.name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      item_number: item.item_number,
+      normalized_name: item.normalized_name,
+      brand: item.brand,
+      category: item.category,
+      confidence_score: item.confidence_score,
+      normalized_product_sk: item.normalized_product_sk,
+      linked_discounts: item.linked_discounts,
+      applied_to_product_id: item.applied_to_product_id,
+      original_price: item.original_price_numeric || 0,
+      final_price: item.final_price || 0,
+    }));
+
+    return {
+      ...enhancedResult,
+      items: cleanItems,
+    };
+  }
+
+  /**
+   * Process receipt with product normalization and return clean response
+   */
+  async processReceiptEnhanced(
+    buffer: Buffer,
+    endpoint?: string,
+    apiKey?: string,
+  ): Promise<CleanOcrResult> {
+    const enhancedResult = await this.processReceiptWithNormalization(
+      buffer,
+      endpoint,
+      apiKey,
+    );
+    return this.convertToCleanResult(enhancedResult);
   }
 }

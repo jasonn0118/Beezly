@@ -17,7 +17,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { OcrService, OcrResult, EnhancedOcrResult } from './ocr.service';
+import { OcrService, OcrResult, CleanOcrResult } from './ocr.service';
 import { ReceiptService } from '../receipt/receipt.service';
 import { ReceiptNormalizationService } from '../receipt/receipt-normalization.service';
 import { upload_receipt } from '../utils/storage.util';
@@ -307,12 +307,10 @@ export class OcrController {
                   normalized_name: { type: 'string' },
                   brand: { type: 'string' },
                   category: { type: 'string' },
-                  price: { type: 'string' },
                   quantity: { type: 'string' },
+                  unit_price: { type: 'string' },
+                  item_number: { type: 'string' },
                   confidence_score: { type: 'number' },
-                  is_discount: { type: 'boolean' },
-                  is_adjustment: { type: 'boolean' },
-                  normalization_method: { type: 'string' },
                   normalized_product_sk: { type: 'string' },
                   linked_discounts: {
                     type: 'array',
@@ -331,15 +329,8 @@ export class OcrController {
                     },
                   },
                   applied_to_product_id: { type: 'string' },
-                  original_price_numeric: { type: 'number' },
+                  original_price: { type: 'number' },
                   final_price: { type: 'number' },
-                  price_format_info: {
-                    type: 'object',
-                    properties: {
-                      was_negative: { type: 'boolean' },
-                      original_format: { type: 'string' },
-                    },
-                  },
                 },
               },
             },
@@ -377,7 +368,7 @@ export class OcrController {
   async processReceiptEnhanced(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: ProcessReceiptEnhancedDto,
-  ): Promise<{ success: boolean; data: EnhancedOcrResult | OcrResult }> {
+  ): Promise<{ success: boolean; data: CleanOcrResult | OcrResult }> {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
@@ -423,11 +414,11 @@ export class OcrController {
         );
       }
 
-      let result: EnhancedOcrResult | OcrResult;
+      let result: CleanOcrResult | OcrResult;
 
       // Process with or without normalization based on the flag
       if (body.include_normalization !== false) {
-        result = await this.ocrService.processReceiptWithNormalization(
+        result = await this.ocrService.processReceiptEnhanced(
           file.buffer,
           azureEndpoint,
           azureApiKey,
@@ -470,8 +461,18 @@ export class OcrController {
 
       if (body.create_receipt) {
         try {
+          // For receipt creation, we need to use the enhanced result if normalization was enabled
+          const receiptData =
+            body.include_normalization !== false
+              ? await this.ocrService.processReceiptWithNormalization(
+                  file.buffer,
+                  azureEndpoint,
+                  azureApiKey,
+                )
+              : (result as OcrResult); // Cast CleanOcrResult to OcrResult since it only contains base OcrResult when normalization is false
+
           const receipt = await this.receiptService.createReceiptFromOcrResult(
-            result,
+            receiptData,
             body.user_id, // Pass actual user_id, not default
             uploadedFilePath,
           );

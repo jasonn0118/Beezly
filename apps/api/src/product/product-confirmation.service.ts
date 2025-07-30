@@ -14,13 +14,9 @@ import {
 import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
 import { ProductSelectionService } from './product-selection.service';
 
-export interface ConfirmationItem {
-  normalizedProductSk: string;
-  // User can modify these fields before confirmation
-  normalizedName?: string;
-  brand?: string;
-  isConfirmed: boolean;
-}
+import { ReceiptItemConfirmationDto } from './dto/receipt-confirmation.dto';
+
+export type ConfirmationItem = ReceiptItemConfirmationDto;
 
 export interface ConfirmationResult {
   success: boolean;

@@ -20,6 +20,33 @@ export class OcrAzureService {
     }
 
     try {
+      // Validate inputs before making API call
+      console.log('Azure API call details:', {
+        endpoint: endpoint?.slice(0, 50) + '...',
+        hasApiKey: !!apiKey,
+        apiKeyLength: apiKey?.length,
+        bufferSize: buffer.length,
+      });
+
+      // Validate endpoint format
+      if (
+        !endpoint.startsWith('https://') ||
+        !endpoint.includes('.cognitiveservices.azure.com')
+      ) {
+        throw new Error(
+          `Invalid Azure endpoint format. Expected: https://your-resource.cognitiveservices.azure.com\n` +
+            `Received: ${endpoint}`,
+        );
+      }
+
+      // Validate API key format (Azure keys are typically 32 or 64+ characters)
+      if (!apiKey || apiKey.length < 32) {
+        throw new Error(
+          `Invalid Azure API key format. Expected at least 32-character key, got ${apiKey?.length || 0} characters.\n` +
+            `Please check your Azure Document Intelligence API key.`,
+        );
+      }
+
       // Initialize Azure Document Intelligence client
       const client = DocumentIntelligence(
         endpoint,
@@ -35,9 +62,54 @@ export class OcrAzureService {
         });
 
       if (initialResponse.status !== '202') {
-        throw new Error(
-          `Azure API error: ${initialResponse.status} - ${String(initialResponse.body)}`,
-        );
+        // Enhanced error logging for 403 and other authentication issues
+        let errorDetails = 'Unknown error';
+        try {
+          if (
+            initialResponse.body &&
+            typeof initialResponse.body === 'object'
+          ) {
+            errorDetails = JSON.stringify(initialResponse.body, null, 2);
+          } else {
+            const bodyValue = initialResponse.body;
+            if (
+              typeof bodyValue === 'string' ||
+              typeof bodyValue === 'number'
+            ) {
+              errorDetails = String(bodyValue);
+            } else {
+              errorDetails = 'No error details provided';
+            }
+          }
+        } catch {
+          errorDetails = 'Could not parse error response';
+        }
+
+        // Log additional details for debugging
+        console.error('Azure API Error Details:', {
+          status: initialResponse.status,
+          statusText: initialResponse.status,
+          headers: initialResponse.headers,
+          body: initialResponse.body,
+        });
+
+        const errorMessage = `Azure API error: ${initialResponse.status} - ${errorDetails}`;
+
+        // Provide specific guidance for common error codes
+        if (initialResponse.status === '403') {
+          throw new Error(
+            `${errorMessage}\n\nThis is a 403 Forbidden error. Common causes:\n` +
+              `1. Invalid API key\n` +
+              `2. API key doesn't have permission for Document Intelligence\n` +
+              `3. Endpoint URL is incorrect\n` +
+              `4. Resource might be in a different region\n` +
+              `5. API quota exceeded\n` +
+              `6. Resource is paused or disabled\n\n` +
+              `Please verify your Azure Document Intelligence credentials and permissions.`,
+          );
+        }
+
+        throw new Error(errorMessage);
       }
 
       // Get operation location for polling
