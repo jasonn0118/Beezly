@@ -10,6 +10,26 @@ import { ReceiptItem } from '../entities/receipt-item.entity';
 import { ReceiptItemNormalization } from '../entities/receipt-item-normalization.entity';
 import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
 
+interface ReceiptItemRawResult {
+  rin_final_price?: string;
+  ri_price: string;
+  ri_is_discount_line: boolean;
+  ri_is_adjustment_line: boolean;
+  r_receipt_date?: string;
+  r_receipt_time?: string;
+  r_created_at?: string;
+}
+
+interface ReceiptContextRawResult {
+  r_receiptSk: string;
+  r_receiptDate?: string;
+  r_storeSk?: string;
+}
+
+interface AvgConfidenceRawResult {
+  avg: string;
+}
+
 export interface EnhancedLinkingResult {
   success: boolean;
   productLinked: boolean;
@@ -350,7 +370,12 @@ export class EnhancedReceiptLinkingService {
     context: ProductLinkingContext,
     manager: EntityManager,
   ): Promise<{
-    regular: Array<{ price: number; originalPrice?: number; receiptDate?: Date; currency?: string }>;
+    regular: Array<{
+      price: number;
+      originalPrice?: number;
+      receiptDate?: Date;
+      currency?: string;
+    }>;
     discounts: Array<{
       price: number;
       originalPrice?: number;
@@ -368,7 +393,7 @@ export class EnhancedReceiptLinkingService {
         'ri.is_adjustment_line as ri_is_adjustment_line',
         'r.receipt_date as r_receipt_date',
         'r.receipt_time as r_receipt_time',
-        'r.created_at as r_created_at'
+        'r.created_at as r_created_at',
       ])
       .from('receipt_item_normalizations', 'rin')
       .leftJoin(
@@ -401,9 +426,11 @@ export class EnhancedReceiptLinkingService {
       const finalPrice = item.rin_final_price
         ? parseFloat(item.rin_final_price)
         : originalPrice;
-      const receiptDate = item.r_created_at
-        ? new Date(item.r_created_at)
-        : undefined;
+      const receiptDate = this.parseReceiptDateTime(
+        item.r_receipt_date,
+        item.r_receipt_time,
+        item.r_created_at,
+      );
 
       if (item.ri_is_discount_line || normalizedProduct.isDiscount) {
         // For discount lines, use the discount amount
@@ -454,7 +481,12 @@ export class EnhancedReceiptLinkingService {
 
   private async syncPricesForLinkedProduct(
     priceData: {
-      regular: Array<{ price: number; originalPrice?: number; receiptDate?: Date; currency?: string }>;
+      regular: Array<{
+        price: number;
+        originalPrice?: number;
+        receiptDate?: Date;
+        currency?: string;
+      }>;
       discounts: Array<{
         price: number;
         originalPrice?: number;
@@ -569,7 +601,7 @@ export class EnhancedReceiptLinkingService {
     receiptDate?: Date;
     storeSk?: string;
   } | null> {
-    const result = await this.receiptItemNormalizationRepository
+    const result = (await this.receiptItemNormalizationRepository
       .createQueryBuilder('rin')
       .leftJoin('rin.receiptItem', 'ri')
       .leftJoin('ri.receipt', 'r')
@@ -579,13 +611,15 @@ export class EnhancedReceiptLinkingService {
       })
       .andWhere('rin.isSelected = :isSelected', { isSelected: true })
       .limit(1)
-      .getRawOne();
+      .getRawOne()) as ReceiptContextRawResult | null;
 
     if (!result) return null;
 
     return {
       receiptSk: result.r_receiptSk,
-      receiptDate: result.r_receiptDate,
+      receiptDate: result.r_receiptDate
+        ? new Date(result.r_receiptDate)
+        : undefined,
       storeSk: result.r_storeSk,
     };
   }
@@ -601,6 +635,75 @@ export class EnhancedReceiptLinkingService {
     // Check for common percentage patterns (would need original price for accurate detection)
     // For now, default to coupon
     return DiscountType.COUPON;
+  }
+
+  /**
+   * Parse receipt date and time into a proper Date object
+   * Fixed to properly handle timezone and fallback to receipt creation date
+   */
+  private parseReceiptDateTime(
+    receiptDate?: string,
+    receiptTime?: string,
+    createdAt?: string,
+  ): Date {
+    // If we have a receipt_date field, parse it and combine with time if available
+    let receiptDateTime: Date | undefined;
+    if (receiptDate) {
+      try {
+        // Parse the date to avoid timezone issues
+        const dateParts = receiptDate.match(/(\d{4})-(\d{2})-(\d{2})/);
+
+        if (dateParts) {
+          const year = parseInt(dateParts[1]);
+          const month = parseInt(dateParts[2]) - 1; // JavaScript months are 0-indexed
+          const day = parseInt(dateParts[3]);
+
+          let hours = 0;
+          let minutes = 0;
+          let seconds = 0;
+
+          // Add time if available
+          if (receiptTime) {
+            const timeParts = receiptTime.match(
+              /(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i,
+            );
+            if (timeParts) {
+              hours = parseInt(timeParts[1]);
+              minutes = parseInt(timeParts[2]);
+              seconds = timeParts[3] ? parseInt(timeParts[3]) : 0;
+              const ampm = timeParts[4]?.toUpperCase();
+
+              // Handle AM/PM conversion
+              if (ampm === 'PM' && hours !== 12) hours += 12;
+              if (ampm === 'AM' && hours === 12) hours = 0;
+            }
+          }
+
+          // Create date in local timezone (not UTC) to match receipt's actual time
+          receiptDateTime = new Date(year, month, day, hours, minutes, seconds);
+
+          this.logger.debug(
+            `Parsed receipt date/time: ${receiptDateTime.toISOString()} from date: ${receiptDate}, time: ${receiptTime}`,
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Failed to parse receipt date/time: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    }
+
+    // Improved fallback logic: use receipt creation date before current timestamp
+    const fallbackDate =
+      receiptDateTime || (createdAt ? new Date(createdAt) : null);
+
+    if (!receiptDateTime && createdAt) {
+      this.logger.debug(
+        `Using receipt creation date as fallback: ${createdAt}`,
+      );
+    }
+
+    return fallbackDate || new Date();
   }
 
   /**
@@ -655,7 +758,9 @@ export class EnhancedReceiptLinkingService {
       productsWithPrices,
       productsWithStores,
       totalPricesSynced: totalPrices,
-      averageLinkingConfidence: parseFloat(avgConfidence?.avg || '0'),
+      averageLinkingConfidence: parseFloat(
+        (avgConfidence as AvgConfidenceRawResult | null)?.avg || '0',
+      ),
     };
   }
 }

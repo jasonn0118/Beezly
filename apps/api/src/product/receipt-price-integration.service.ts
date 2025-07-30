@@ -6,6 +6,7 @@ import { NormalizedProduct } from '../entities/normalized-product.entity';
 import { Store } from '../entities/store.entity';
 import { ReceiptItem } from '../entities/receipt-item.entity';
 import { ReceiptItemNormalization } from '../entities/receipt-item-normalization.entity';
+import { Receipt } from '../entities/receipt.entity';
 import {
   ProductNormalizationService,
   ParsedPrice,
@@ -185,7 +186,7 @@ export class ReceiptPriceIntegrationService {
         parsedPrice,
         merchant,
         storeSk: receiptItem.receipt?.storeSk,
-        receiptDate: receiptItem.receipt?.createdAt,
+        receiptDate: this.parseReceiptDateTime(receiptItem.receipt),
         isDiscount: receiptItem.isDiscountLine || normalizedProduct.isDiscount,
         isAdjustment:
           receiptItem.isAdjustmentLine || normalizedProduct.isAdjustment,
@@ -219,18 +220,30 @@ export class ReceiptPriceIntegrationService {
       }
 
       // Check if this exact price already exists to avoid duplicates
-      const existingPrice = await this.priceRepository.findOne({
-        where: {
+      // Use a time range to account for minor timestamp differences
+      const recordedAtTime = priceData.receiptDate || new Date();
+      const timeBuffer = 60000; // 1 minute buffer for duplicate detection
+      const startTime = new Date(recordedAtTime.getTime() - timeBuffer);
+      const endTime = new Date(recordedAtTime.getTime() + timeBuffer);
+
+      const existingPrice = await this.priceRepository
+        .createQueryBuilder('price')
+        .where('price.productSk = :productSk', {
           productSk: priceData.linkedProductSk,
-          storeSk: store.storeSk,
+        })
+        .andWhere('price.storeSk = :storeSk', { storeSk: store.storeSk })
+        .andWhere('price.price = :price', {
           price: priceData.parsedPrice.amount,
-          recordedAt: priceData.receiptDate || new Date(),
-        },
-      });
+        })
+        .andWhere('price.recordedAt BETWEEN :startTime AND :endTime', {
+          startTime,
+          endTime,
+        })
+        .getOne();
 
       if (existingPrice) {
         this.logger.debug(
-          `Price already exists for product ${priceData.linkedProductSk} at store ${store.name}`,
+          `Price already exists for product ${priceData.linkedProductSk} at store ${store.name} with recorded_at: ${existingPrice.recordedAt.toISOString()}`,
         );
         return false;
       }
@@ -252,7 +265,7 @@ export class ReceiptPriceIntegrationService {
       await this.priceRepository.save(price);
 
       this.logger.debug(
-        `Synced price $${priceData.parsedPrice.amount} for product ${priceData.linkedProductSk}`,
+        `Synced price $${priceData.parsedPrice.amount} for product ${priceData.linkedProductSk} with recorded_at: ${price.recordedAt.toISOString()}`,
       );
       return true;
     } catch (error) {
@@ -328,7 +341,7 @@ export class ReceiptPriceIntegrationService {
       await this.priceRepository.save(discountPrice);
 
       this.logger.debug(
-        `Processed discount $${discount.parsedPrice.amount} for product ${discount.linkedProductSk}`,
+        `Processed discount $${discount.parsedPrice.amount} for product ${discount.linkedProductSk} with recorded_at: ${discountPrice.recordedAt.toISOString()}`,
       );
       return true;
     } catch (error) {
@@ -477,5 +490,78 @@ export class ReceiptPriceIntegrationService {
     }
 
     return result;
+  }
+
+  /**
+   * Parse receipt date and time into a proper Date object
+   * Fixed to properly handle timezone and fallback to receipt creation date
+   */
+  private parseReceiptDateTime(receipt?: Receipt): Date {
+    if (!receipt) {
+      return new Date(); // Fallback to current timestamp
+    }
+
+    // Priority order: purchaseDate > receiptDate, combined with receiptTime
+    let receiptDateTime: Date | undefined;
+    const targetDate = receipt.purchaseDate || receipt.receiptDate;
+
+    if (targetDate) {
+      try {
+        // Parse the date to avoid timezone issues - handle Date objects properly
+        const dateStr = targetDate instanceof Date ? 
+          targetDate.toISOString().substring(0, 10) : 
+          String(targetDate);
+        const dateParts = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+
+        if (dateParts) {
+          const year = parseInt(dateParts[1]);
+          const month = parseInt(dateParts[2]) - 1; // JavaScript months are 0-indexed
+          const day = parseInt(dateParts[3]);
+
+          let hours = 0;
+          let minutes = 0;
+          let seconds = 0;
+
+          // Add time if available
+          if (receipt.receiptTime) {
+            const timeParts = receipt.receiptTime.match(
+              /(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i,
+            );
+            if (timeParts) {
+              hours = parseInt(timeParts[1]);
+              minutes = parseInt(timeParts[2]);
+              seconds = timeParts[3] ? parseInt(timeParts[3]) : 0;
+              const ampm = timeParts[4]?.toUpperCase();
+
+              // Handle AM/PM conversion
+              if (ampm === 'PM' && hours !== 12) hours += 12;
+              if (ampm === 'AM' && hours === 12) hours = 0;
+            }
+          }
+
+          // Create date in local timezone (not UTC) to match receipt's actual time
+          receiptDateTime = new Date(year, month, day, hours, minutes, seconds);
+
+          this.logger.debug(
+            `Parsed receipt date/time: ${receiptDateTime.toISOString()} from date: ${dateStr}, time: ${receipt.receiptTime}`,
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Failed to parse receipt date/time: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    }
+
+    // Improved fallback logic: use receipt creation date before current timestamp
+    const fallbackDate = receiptDateTime || receipt.createdAt;
+
+    if (!receiptDateTime && receipt.createdAt) {
+      this.logger.debug(
+        `Using receipt creation date as fallback: ${receipt.createdAt.toISOString()}`,
+      );
+    }
+
+    return fallbackDate || new Date();
   }
 }
