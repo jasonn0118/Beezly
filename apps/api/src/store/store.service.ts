@@ -548,20 +548,123 @@ export class StoreService {
       }
     }
 
-    // Step 5: Create new store if no match found
+    // Step 5: Create new store with atomic upsert to prevent race conditions
     const addressComponents = store_address
       ? this.parseStoreAddress(store_address)
       : {};
 
-    const newStore = this.storeRepository.create({
+    const storeData = {
       name: normalizedName,
       fullAddress: store_address || addressComponents.fullAddress,
       city: addressComponents.city,
       province: addressComponents.province,
       postalCode: addressComponents.postalCode,
+    };
+
+    try {
+      // Use upsert with conflict resolution on store_sk
+      const result = await this.storeRepository
+        .createQueryBuilder()
+        .insert()
+        .into(Store)
+        .values(storeData)
+        .orIgnore() // Ignore if duplicate key constraint violation occurs
+        .returning('*')
+        .execute();
+
+      if (result.identifiers.length > 0) {
+        // Successfully created new store
+        const createdStore = await this.storeRepository.findOneBy({
+          id: result.identifiers[0].id as number,
+        });
+        if (!createdStore) {
+          throw new Error('Failed to retrieve newly created store');
+        }
+        return createdStore;
+      } else {
+        // Store already exists due to concurrent creation, try to find it
+        const existingStore = await this.findExistingStoreByNameAndAddress(
+          normalizedName,
+          store_address,
+        );
+        if (!existingStore) {
+          throw new Error(
+            'Failed to find or create store after conflict resolution',
+          );
+        }
+        return existingStore;
+      }
+    } catch (error: unknown) {
+      // Fallback: Handle race condition by trying to find existing store
+      const dbError = error as { code?: string; message?: string };
+
+      if (dbError?.code === '23505') {
+        // Unique constraint violation
+        const existingStore = await this.findExistingStoreByNameAndAddress(
+          normalizedName,
+          store_address,
+        );
+        if (existingStore) {
+          return existingStore;
+        }
+
+        // If still no match, this might be a different unique constraint issue
+        // Let's try one more comprehensive search
+        const fallbackStore = await this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.name ILIKE :name', { name: `%${normalizedName}%` })
+          .andWhere(
+            store_address ? 'store.fullAddress ILIKE :address' : '1=1',
+            { address: `%${store_address}%` },
+          )
+          .orderBy('store.createdAt', 'DESC') // Get the most recent match
+          .getOne();
+
+        if (fallbackStore) {
+          return fallbackStore;
+        }
+      }
+
+      // Log the error for debugging
+      console.error('Error creating store:', {
+        error: dbError.message || 'Unknown error',
+        code: dbError.code || 'N/A',
+        normalizedName,
+        store_address,
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Helper method to find existing store by name and address after race condition
+   */
+  private async findExistingStoreByNameAndAddress(
+    normalizedName: string,
+    storeAddress?: string,
+  ): Promise<Store | null> {
+    // First try exact name match
+    let existingStore = await this.storeRepository.findOne({
+      where: { name: normalizedName },
     });
 
-    return await this.storeRepository.save(newStore);
+    if (existingStore) {
+      return existingStore;
+    }
+
+    // If address provided, try address-based matching
+    if (storeAddress) {
+      existingStore = await this.storeRepository.findOne({
+        where: { fullAddress: storeAddress },
+      });
+
+      if (existingStore) {
+        return existingStore;
+      }
+    }
+
+    return null;
   }
 
   /**

@@ -71,6 +71,16 @@ export class ReceiptItemNormalization {
   })
   similarityScore?: number;
 
+  @Column({
+    name: 'final_price',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    comment: 'Final price after applying discounts or fees',
+  })
+  finalPrice?: number;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt: Date;
 
