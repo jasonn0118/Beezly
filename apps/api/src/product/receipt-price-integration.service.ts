@@ -508,9 +508,10 @@ export class ReceiptPriceIntegrationService {
     if (targetDate) {
       try {
         // Parse the date to avoid timezone issues - handle Date objects properly
-        const dateStr = targetDate instanceof Date ? 
-          targetDate.toISOString().substring(0, 10) : 
-          String(targetDate);
+        const dateStr =
+          targetDate instanceof Date
+            ? targetDate.toISOString().substring(0, 10)
+            : String(targetDate);
         const dateParts = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
 
         if (dateParts) {
