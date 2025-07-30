@@ -583,7 +583,7 @@ export class ProductService {
         productSk: product.productSk,
         storeSk: store.storeSk,
         price: productData.price,
-        currency: 'KRW',
+        currency: 'CAD',
         creditScore: 0,
         verifiedCount: 0,
         flaggedCount: 0,
@@ -609,7 +609,7 @@ export class ProductService {
       price: {
         price_sk: price.priceSk,
         price: Number(price.price),
-        currency: price.currency || 'KRW',
+        currency: price.currency || 'CAD',
         recorded_at: price.recordedAt.toISOString(),
       },
     };

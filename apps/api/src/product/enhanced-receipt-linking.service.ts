@@ -722,7 +722,7 @@ export class EnhancedReceiptLinkingService {
       productsWithStores,
       totalPrices,
       avgConfidence,
-    ] = await Promise.all([
+    ] = (await Promise.all([
       this.normalizedProductRepository.count({
         where: { linkedProductSk: Not(IsNull()) },
       }),
@@ -751,7 +751,7 @@ export class EnhancedReceiptLinkingService {
         .where('np.linkedProductSk IS NOT NULL')
         .andWhere('np.linkingConfidence IS NOT NULL')
         .getRawOne(),
-    ]) as [number, number, number, number, AvgConfidenceRawResult | undefined];
+    ])) as [number, number, number, number, AvgConfidenceRawResult | undefined];
 
     return {
       totalLinkedProducts: totalLinked,

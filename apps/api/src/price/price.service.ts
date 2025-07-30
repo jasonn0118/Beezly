@@ -55,7 +55,7 @@ export class PriceService {
       productSk: createPriceDto.productSk,
       storeSk: createPriceDto.storeSk,
       price: createPriceDto.price,
-      currency: createPriceDto.currency || 'KRW',
+      currency: createPriceDto.currency || 'CAD',
       creditScore: 0,
       verifiedCount: 0,
       flaggedCount: 0,
