@@ -19,6 +19,9 @@ class ApiClient {
     // Request interceptor for authentication
     this.client.interceptors.request.use(
       (config) => {
+        if (config.data instanceof FormData) {
+          delete config.headers['Content-Type'];
+        }
         // Add auth token if available
         const token = this.getAuthToken();
         if (token) {
