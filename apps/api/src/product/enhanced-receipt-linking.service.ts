@@ -27,7 +27,7 @@ interface ReceiptContextRawResult {
 }
 
 interface AvgConfidenceRawResult {
-  avg: string;
+  avg: string | null;
 }
 
 export interface EnhancedLinkingResult {
@@ -384,7 +384,7 @@ export class EnhancedReceiptLinkingService {
     }>;
   }> {
     // Get all receipt items that are normalized to this product
-    const receiptItemNormalizations = await manager
+    const receiptItemNormalizations: ReceiptItemRawResult[] = await manager
       .createQueryBuilder()
       .select([
         'rin.final_price as rin_final_price',
@@ -751,16 +751,14 @@ export class EnhancedReceiptLinkingService {
         .where('np.linkedProductSk IS NOT NULL')
         .andWhere('np.linkingConfidence IS NOT NULL')
         .getRawOne(),
-    ]);
+    ]) as [number, number, number, number, AvgConfidenceRawResult | undefined];
 
     return {
       totalLinkedProducts: totalLinked,
       productsWithPrices,
       productsWithStores,
       totalPricesSynced: totalPrices,
-      averageLinkingConfidence: parseFloat(
-        (avgConfidence as AvgConfidenceRawResult | null)?.avg || '0',
-      ),
+      averageLinkingConfidence: parseFloat(avgConfidence?.avg || '0'),
     };
   }
 }

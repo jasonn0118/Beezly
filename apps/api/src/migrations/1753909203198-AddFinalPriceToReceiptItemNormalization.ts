@@ -6,66 +6,82 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
   name = 'AddFinalPriceToReceiptItemNormalization1753909203198';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "receipt_item_normalizations" DROP CONSTRAINT "FK_receipt_item_normalization_item"`,
+    // Helper function to safely drop index if it exists
+    const dropIndexIfExists = async (indexName: string) => {
+      const indexExists = (await queryRunner.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM pg_indexes 
+          WHERE schemaname = 'public' 
+          AND indexname = '${indexName}'
+        );
+      `)) as [{ exists: boolean }];
+
+      if (indexExists[0]?.exists) {
+        await queryRunner.query(`DROP INDEX "public"."${indexName}"`);
+      }
+    };
+
+    // Helper function to safely drop constraint if it exists
+    const dropConstraintIfExists = async (
+      tableName: string,
+      constraintName: string,
+    ) => {
+      const constraintExists = (await queryRunner.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE table_schema = 'public' 
+          AND table_name = '${tableName}'
+          AND constraint_name = '${constraintName}'
+        );
+      `)) as [{ exists: boolean }];
+
+      if (constraintExists[0]?.exists) {
+        await queryRunner.query(
+          `ALTER TABLE "${tableName}" DROP CONSTRAINT "${constraintName}"`,
+        );
+      }
+    };
+
+    // Drop foreign key constraints safely
+    await dropConstraintIfExists(
+      'receipt_item_normalizations',
+      'FK_receipt_item_normalization_item',
     );
-    await queryRunner.query(
-      `ALTER TABLE "receipt_item_normalizations" DROP CONSTRAINT "FK_receipt_item_normalization_product"`,
+    await dropConstraintIfExists(
+      'receipt_item_normalizations',
+      'FK_receipt_item_normalization_product',
     );
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" DROP CONSTRAINT "FK_normalized_products_linked_product"`,
+    await dropConstraintIfExists(
+      'normalized_products',
+      'FK_normalized_products_linked_product',
     );
-    await queryRunner.query(
-      `ALTER TABLE "unprocessed_products" DROP CONSTRAINT "FK_unprocessed_product_normalized_product"`,
+    await dropConstraintIfExists(
+      'unprocessed_products',
+      'FK_unprocessed_product_normalized_product',
     );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_receipt_item_normalization_unique"`,
+
+    // Drop indexes safely
+    await dropIndexIfExists('IDX_receipt_item_normalization_unique');
+    await dropIndexIfExists('IDX_receipt_item_normalization_item');
+    await dropIndexIfExists('IDX_receipt_item_normalization_product');
+    await dropIndexIfExists('IDX_normalized_products_raw_name');
+    await dropIndexIfExists('IDX_normalized_products_merchant');
+    await dropIndexIfExists('IDX_normalized_products_normalized_name');
+    await dropIndexIfExists('IDX_normalized_products_confidence_score');
+    await dropIndexIfExists('IDX_normalized_products_is_discount');
+    await dropIndexIfExists('IDX_normalized_products_embedding');
+    await dropIndexIfExists('IDX_normalized_products_linked_product_sk');
+    await dropIndexIfExists('IDX_normalized_products_confidence_unlinked');
+    await dropIndexIfExists('IDX_unprocessed_product_status_created');
+    await dropIndexIfExists('IDX_unprocessed_product_reason_status');
+    await dropIndexIfExists('IDX_unprocessed_product_merchant');
+
+    // Drop remaining constraints safely
+    await dropConstraintIfExists(
+      'normalized_products',
+      'CHK_confidence_score_range',
     );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_receipt_item_normalization_item"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_receipt_item_normalization_product"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_normalized_products_raw_name"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_normalized_products_merchant"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_normalized_products_normalized_name"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_normalized_products_confidence_score"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_normalized_products_is_discount"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_normalized_products_embedding"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_normalized_products_linked_product_sk"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_normalized_products_confidence_unlinked"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_unprocessed_product_status_created"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_unprocessed_product_reason_status"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_unprocessed_product_merchant"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" DROP CONSTRAINT "CHK_confidence_score_range"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" DROP CONSTRAINT "UQ_raw_name_merchant"`,
-    );
+    await dropConstraintIfExists('normalized_products', 'UQ_raw_name_merchant');
     await queryRunner.query(
       `ALTER TABLE "receipt_item_normalizations" ADD "final_price" numeric(10,2)`,
     );
