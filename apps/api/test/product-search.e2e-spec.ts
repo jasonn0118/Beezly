@@ -8,6 +8,8 @@ import { VectorEmbeddingService } from '../src/product/vector-embedding.service'
 import { ProductLinkingService } from '../src/product/product-linking.service';
 import { ReceiptPriceIntegrationService } from '../src/product/receipt-price-integration.service';
 import { ProductConfirmationService } from '../src/product/product-confirmation.service';
+import { EnhancedReceiptLinkingService } from '../src/product/enhanced-receipt-linking.service';
+import { ReceiptWorkflowIntegrationService } from '../src/product/receipt-workflow-integration.service';
 import { UnprocessedProductService } from '../src/product/unprocessed-product.service';
 
 describe('Product Search (e2e)', () => {
@@ -100,6 +102,21 @@ describe('Product Search (e2e)', () => {
             getConfirmationStats: jest.fn(),
             getReceiptPendingSelectionsByReceiptId: jest.fn(),
             processReceiptSelections: jest.fn(),
+          },
+        },
+        {
+          provide: EnhancedReceiptLinkingService,
+          useValue: {
+            processReceiptWithEnhancedLinking: jest.fn(),
+            getProcessingStats: jest.fn(),
+            getReceiptProcessingHistory: jest.fn(),
+          },
+        },
+        {
+          provide: ReceiptWorkflowIntegrationService,
+          useValue: {
+            processReceiptWorkflow: jest.fn(),
+            getWorkflowStatus: jest.fn(),
           },
         },
         {

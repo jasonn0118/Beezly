@@ -479,7 +479,7 @@ export class OcrAzureService {
     // Handle currency amount
     if (field.value_currency_amount || field.valueCurrencyAmount) {
       const amount = field.value_currency_amount || field.valueCurrencyAmount;
-      const currency = amount.currency_code || amount.currencyCode || 'USD';
+      const currency = amount.currency_code || amount.currencyCode || 'CAD';
       const value = amount.amount || 0;
       return currency === 'CAD'
         ? `$${value.toFixed(2)}`

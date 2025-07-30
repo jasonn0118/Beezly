@@ -40,6 +40,8 @@ import { VectorEmbeddingService } from './vector-embedding.service';
 import { ProductLinkingService } from './product-linking.service';
 import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
 import { ProductConfirmationService } from './product-confirmation.service';
+import { EnhancedReceiptLinkingService } from './enhanced-receipt-linking.service';
+import { ReceiptWorkflowIntegrationService } from './receipt-workflow-integration.service';
 import {
   ProcessReceiptConfirmationDto,
   ReceiptConfirmationResponseDto,
@@ -69,6 +71,8 @@ export class ProductController {
     private readonly productLinkingService: ProductLinkingService,
     private readonly receiptPriceIntegrationService: ReceiptPriceIntegrationService,
     private readonly productConfirmationService: ProductConfirmationService,
+    private readonly enhancedReceiptLinkingService: EnhancedReceiptLinkingService,
+    private readonly receiptWorkflowIntegrationService: ReceiptWorkflowIntegrationService,
     private readonly unprocessedProductService: UnprocessedProductService,
   ) {}
 
@@ -742,6 +746,361 @@ export class ProductController {
       selectionsRequest.selections,
       selectionsRequest.userId,
       selectionsRequest.receiptId,
+    );
+  }
+
+  // Enhanced Product-Price-Store Linking Endpoints
+
+  @Post('enhanced-linking/link-product')
+  @ApiOperation({
+    summary: 'Link product with automatic price and store synchronization',
+    description:
+      'Enhanced linking that automatically syncs price and store information when a product is successfully linked to a normalized product.',
+  })
+  @ApiBody({
+    description: 'Product linking context with price and store information',
+    schema: {
+      properties: {
+        receiptSk: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Receipt UUID',
+        },
+        normalizedProductSk: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Normalized product UUID',
+        },
+        linkedProductSk: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Catalog product UUID to link to',
+        },
+        linkingConfidence: {
+          type: 'number',
+          minimum: 0,
+          maximum: 1,
+          description: 'Confidence score (0-1)',
+        },
+        linkingMethod: {
+          type: 'string',
+          description: 'Method used for linking',
+          example: 'barcode_match',
+        },
+        merchant: {
+          type: 'string',
+          description: 'Merchant/store name',
+          example: 'Homeplus',
+        },
+        storeSk: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Store UUID (optional)',
+        },
+        receiptDate: {
+          type: 'string',
+          format: 'date-time',
+          description: 'Receipt date (optional)',
+        },
+      },
+      required: [
+        'receiptSk',
+        'normalizedProductSk',
+        'linkedProductSk',
+        'linkingConfidence',
+        'linkingMethod',
+        'merchant',
+      ],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Enhanced linking completed successfully',
+    schema: {
+      properties: {
+        success: { type: 'boolean', example: true },
+        productLinked: { type: 'boolean', example: true },
+        pricesSynced: { type: 'number', example: 3 },
+        storeLinked: { type: 'boolean', example: true },
+        errors: { type: 'array', items: { type: 'string' } },
+        linkedProductSk: { type: 'string', format: 'uuid' },
+        storeSk: { type: 'string', format: 'uuid' },
+        pricesSyncResult: {
+          type: 'object',
+          properties: {
+            regularPrices: { type: 'number', example: 2 },
+            discounts: { type: 'number', example: 1 },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid linking context or failed to link',
+  })
+  async enhancedProductLinking(
+    @Body()
+    linkingContext: {
+      receiptSk: string;
+      normalizedProductSk: string;
+      linkedProductSk: string;
+      linkingConfidence: number;
+      linkingMethod: string;
+      merchant: string;
+      storeSk?: string;
+      receiptDate?: Date;
+    },
+  ) {
+    return this.enhancedReceiptLinkingService.linkProductWithPriceAndStore(
+      linkingContext,
+    );
+  }
+
+  @Post('enhanced-linking/batch-link')
+  @ApiOperation({
+    summary: 'Batch link multiple products with price and store sync',
+    description:
+      'Process multiple product linkings in batch with automatic price and store synchronization.',
+  })
+  @ApiBody({
+    description: 'Array of product linking contexts',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          receiptSk: { type: 'string', format: 'uuid' },
+          normalizedProductSk: { type: 'string', format: 'uuid' },
+          linkedProductSk: { type: 'string', format: 'uuid' },
+          linkingConfidence: { type: 'number', minimum: 0, maximum: 1 },
+          linkingMethod: { type: 'string' },
+          merchant: { type: 'string' },
+          storeSk: { type: 'string', format: 'uuid' },
+          receiptDate: { type: 'string', format: 'date-time' },
+        },
+        required: [
+          'receiptSk',
+          'normalizedProductSk',
+          'linkedProductSk',
+          'linkingConfidence',
+          'linkingMethod',
+          'merchant',
+        ],
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Batch linking results',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean' },
+          productLinked: { type: 'boolean' },
+          pricesSynced: { type: 'number' },
+          storeLinked: { type: 'boolean' },
+          errors: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+  })
+  async batchEnhancedProductLinking(
+    @Body()
+    linkingContexts: Array<{
+      receiptSk: string;
+      normalizedProductSk: string;
+      linkedProductSk: string;
+      linkingConfidence: number;
+      linkingMethod: string;
+      merchant: string;
+      storeSk?: string;
+      receiptDate?: Date;
+    }>,
+  ) {
+    return this.enhancedReceiptLinkingService.batchLinkProductsWithPriceAndStore(
+      linkingContexts,
+    );
+  }
+
+  @Post('enhanced-linking/process-all-pending')
+  @ApiOperation({
+    summary: 'Process all pending product links with price and store sync',
+    description:
+      "Automatically process all normalized products that are linked but haven't had their prices and store information synced yet.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Processing results for all pending links',
+    schema: {
+      properties: {
+        processed: { type: 'number', example: 150 },
+        successful: { type: 'number', example: 140 },
+        totalPricesSynced: { type: 'number', example: 420 },
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  async processAllPendingLinks() {
+    return this.enhancedReceiptLinkingService.processAllPendingLinks();
+  }
+
+  @Get('enhanced-linking/stats')
+  @ApiOperation({
+    summary: 'Get enhanced linking statistics',
+    description:
+      'Get comprehensive statistics about enhanced product linking including price and store sync coverage.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Enhanced linking statistics',
+    schema: {
+      properties: {
+        totalLinkedProducts: { type: 'number', example: 600 },
+        productsWithPrices: { type: 'number', example: 580 },
+        productsWithStores: { type: 'number', example: 600 },
+        totalPricesSynced: { type: 'number', example: 1200 },
+        averageLinkingConfidence: { type: 'number', example: 0.92 },
+      },
+    },
+  })
+  async getEnhancedLinkingStats() {
+    return this.enhancedReceiptLinkingService.getLinkingStatistics();
+  }
+
+  // Receipt Workflow Integration Endpoints
+
+  @Post('receipt-workflow/process/:receiptId')
+  @ApiOperation({
+    summary: 'Process complete receipt workflow with enhanced linking',
+    description:
+      'Process a receipt through the complete workflow: OCR → Normalization → User Confirmation → Product Linking → Price/Store Sync',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt workflow processing results',
+    schema: {
+      properties: {
+        receiptProcessed: { type: 'boolean', example: true },
+        productsLinked: { type: 'number', example: 8 },
+        pricesSynced: { type: 'number', example: 12 },
+        storesLinked: { type: 'number', example: 1 },
+        errors: { type: 'array', items: { type: 'string' } },
+        statistics: {
+          type: 'object',
+          properties: {
+            totalItems: { type: 'number', example: 10 },
+            normalizedItems: { type: 'number', example: 9 },
+            linkedItems: { type: 'number', example: 8 },
+            pendingConfirmation: { type: 'number', example: 1 },
+            requiresSelection: { type: 'number', example: 0 },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found',
+  })
+  async processReceiptWorkflow(@Param('receiptId') receiptId: string) {
+    return this.receiptWorkflowIntegrationService.processReceiptWorkflow(
+      receiptId,
+    );
+  }
+
+  @Post('receipt-workflow/auto-process/:receiptId')
+  @ApiOperation({
+    summary: 'Auto-process receipt after user confirmations',
+    description:
+      'Automatically process receipt with enhanced linking after user has completed confirmations and selections.',
+  })
+  @ApiBody({
+    description: 'Confirmed normalization IDs',
+    schema: {
+      properties: {
+        confirmedNormalizations: {
+          type: 'array',
+          items: { type: 'string', format: 'uuid' },
+          description: 'Array of confirmed normalization IDs',
+        },
+      },
+      required: ['confirmedNormalizations'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Auto-processing results',
+    schema: {
+      properties: {
+        receiptProcessed: { type: 'boolean' },
+        productsLinked: { type: 'number' },
+        pricesSynced: { type: 'number' },
+        storesLinked: { type: 'number' },
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  async autoProcessAfterConfirmation(
+    @Param('receiptId') receiptId: string,
+    @Body() body: { confirmedNormalizations: string[] },
+  ) {
+    return this.receiptWorkflowIntegrationService.autoProcessAfterConfirmation(
+      receiptId,
+      body.confirmedNormalizations,
+    );
+  }
+
+  @Get('receipt-workflow/status/:receiptId')
+  @ApiOperation({
+    summary: 'Get receipt processing status and next actions',
+    description:
+      'Get detailed status of receipt processing including progress statistics and recommended next actions.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt processing status',
+    schema: {
+      properties: {
+        status: {
+          type: 'string',
+          enum: [
+            'pending',
+            'processing',
+            'confirmation_needed',
+            'selection_needed',
+            'completed',
+            'failed',
+          ],
+          example: 'confirmation_needed',
+        },
+        progress: {
+          type: 'object',
+          properties: {
+            totalItems: { type: 'number', example: 10 },
+            normalizedItems: { type: 'number', example: 9 },
+            confirmedItems: { type: 'number', example: 7 },
+            linkedItems: { type: 'number', example: 6 },
+            pricesSynced: { type: 'number', example: 8 },
+          },
+        },
+        nextActions: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['Review and confirm 2 normalized products'],
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found',
+  })
+  async getReceiptProcessingStatus(@Param('receiptId') receiptId: string) {
+    return this.receiptWorkflowIntegrationService.getReceiptProcessingStatus(
+      receiptId,
     );
   }
 
