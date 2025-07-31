@@ -39,7 +39,7 @@ export class AuthController {
 
   @Get('me')
   @ApiOperation({ summary: 'Get current authenticated user' })
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @ApiResponse({
     status: 200,
     description: 'Successfully retrieved current user',
@@ -84,7 +84,7 @@ export class AuthController {
 
   @Post('signout')
   @ApiOperation({ summary: 'Sign out current user' })
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @ApiResponse({ status: 200, description: 'Successfully signed out' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async signOut(
@@ -96,7 +96,7 @@ export class AuthController {
 
   @Put('profile')
   @ApiOperation({ summary: 'Update current user profile' })
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @ApiResponse({
     status: 200,
     description: 'Profile updated successfully',
@@ -113,7 +113,7 @@ export class AuthController {
 
   @Put('password')
   @ApiOperation({ summary: 'Change current user password' })
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @ApiResponse({ status: 200, description: 'Password changed successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 400, description: 'Invalid password' })
@@ -143,7 +143,7 @@ export class AuthController {
   @Roles('admin')
   @Get('users')
   @ApiOperation({ summary: 'List all users (admin only)' })
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @ApiQuery({
     name: 'page',
     required: false,
@@ -186,7 +186,7 @@ export class AuthController {
   @Roles('admin')
   @Get('users/:userId')
   @ApiOperation({ summary: 'Get user by ID (admin only)' })
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @ApiParam({ name: 'userId', description: 'User ID' })
   @ApiResponse({
     status: 200,
@@ -207,7 +207,7 @@ export class AuthController {
   @Roles('admin')
   @Put('users/:userId')
   @ApiOperation({ summary: 'Update user metadata (admin only)' })
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @ApiParam({ name: 'userId', description: 'User ID' })
   @ApiResponse({
     status: 200,
@@ -227,7 +227,7 @@ export class AuthController {
   @Roles('admin')
   @Delete('users/:userId')
   @ApiOperation({ summary: 'Delete user account (admin only)' })
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @ApiParam({ name: 'userId', description: 'User ID' })
   @ApiResponse({ status: 200, description: 'User deleted successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })

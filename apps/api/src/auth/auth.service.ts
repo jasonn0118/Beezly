@@ -1,7 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  UnauthorizedException,
+  ConflictException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { AuthDTO } from '../../../packages/types/dto/auth';
 import { UserProfileDTO } from '../../../packages/types/dto/user';
 import { SupabaseService } from '../supabase/supabase.service';
+import { UserService } from '../user/user.service';
 import { Session, User, AuthError } from '@supabase/supabase-js';
 
 type UserMetadata = {
@@ -17,7 +25,10 @@ type UserMetadata = {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly userService: UserService,
+  ) {}
   async signIn(email: string, password: string): Promise<AuthDTO> {
     try {
       const {
@@ -33,7 +44,7 @@ export class AuthService {
 
       if (error) {
         this.logger.warn(`Sign in failed for ${email}: ${error.message}`);
-        throw new Error(error.message);
+        throw this.mapSupabaseError(error, 'signin');
       }
 
       const { session, user } = data;
@@ -41,7 +52,7 @@ export class AuthService {
         this.logger.warn(
           `Sign in failed for ${email}: No session or user data`,
         );
-        throw new Error('Authentication failed.');
+        throw new UnauthorizedException('Invalid email or password.');
       }
 
       const metadata = (user.user_metadata ?? {}) as UserMetadata;
@@ -67,10 +78,22 @@ export class AuthService {
         expiresIn: session.expires_in,
       };
     } catch (error) {
+      // Re-throw HTTP exceptions as-is
+      if (
+        error instanceof BadRequestException ||
+        error instanceof UnauthorizedException ||
+        error instanceof ConflictException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+
       this.logger.error(
         `Sign in error for ${email}: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
-      throw error;
+      throw new InternalServerErrorException(
+        'Authentication service temporarily unavailable',
+      );
     }
   }
 
@@ -189,15 +212,47 @@ export class AuthService {
 
       if (error) {
         this.logger.warn(`Sign up failed for ${email}: ${error.message}`);
-        throw new Error(error.message);
+        throw this.mapSupabaseError(error, 'signup');
       }
 
       const { session, user } = data;
+
+      // Handle email confirmation required case
+      if (!session && user) {
+        this.logger.log(
+          `User created, email confirmation required for ${email}`,
+        );
+
+        const userMetadata = (user.user_metadata ?? {}) as UserMetadata;
+        const mappedUser: UserProfileDTO = {
+          id: user.id,
+          email: user.email ?? '',
+          firstName: userMetadata.firstName ?? '',
+          lastName: userMetadata.lastName ?? '',
+          pointBalance: 0,
+          level: undefined,
+          rank: undefined,
+          badges: [],
+          createdAt: user.created_at,
+          updatedAt: user.updated_at ?? user.created_at,
+        };
+
+        return {
+          accessToken: null, // No token until confirmed
+          user: mappedUser,
+          expiresIn: 0,
+          message:
+            'Please check your email to confirm your account before signing in.',
+        };
+      }
+
       if (!session || !user) {
         this.logger.warn(
           `Sign up failed for ${email}: No session or user data`,
         );
-        throw new Error('Sign up failed.');
+        throw new BadRequestException(
+          'Account creation failed. Please try again.',
+        );
       }
 
       const userMetadata = (user.user_metadata ?? {}) as UserMetadata;
@@ -215,6 +270,17 @@ export class AuthService {
         updatedAt: user.updated_at ?? user.created_at,
       };
 
+      // Create corresponding user record in local database
+      try {
+        await this.createLocalUserRecord(mappedUser);
+        this.logger.log(`Local user record created for: ${user.email}`);
+      } catch (localError) {
+        this.logger.warn(
+          `Failed to create local user record for ${user.email}: ${localError instanceof Error ? localError.message : 'Unknown error'}`,
+        );
+        // Don't fail the signup if local record creation fails
+      }
+
       this.logger.log(`User signed up successfully: ${user.email}`);
 
       return {
@@ -223,10 +289,22 @@ export class AuthService {
         expiresIn: session.expires_in,
       };
     } catch (error) {
+      // Re-throw HTTP exceptions as-is
+      if (
+        error instanceof BadRequestException ||
+        error instanceof UnauthorizedException ||
+        error instanceof ConflictException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+
       this.logger.error(
         `Sign up error for ${email}: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
-      throw error;
+      throw new InternalServerErrorException(
+        'Authentication service temporarily unavailable',
+      );
     }
   }
 
@@ -508,5 +586,119 @@ export class AuthService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Create a local user record in PostgreSQL database
+   */
+  private async createLocalUserRecord(userDto: UserProfileDTO): Promise<void> {
+    try {
+      // Check if user already exists in local database
+      const existingUser = await this.userService.getUserById(userDto.id);
+      if (existingUser) {
+        this.logger.debug(
+          `Local user record already exists for: ${userDto.email}`,
+        );
+        return;
+      }
+
+      // Create user record in local database with Supabase ID
+      await this.userService.createUserWithSupabaseId(userDto.id, {
+        email: userDto.email,
+        firstName: userDto.firstName,
+        lastName: userDto.lastName,
+        pointBalance: userDto.pointBalance,
+        level: userDto.level,
+      });
+
+      this.logger.log(`Created local user record for: ${userDto.email}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to create local user record: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Map Supabase errors to user-friendly HTTP exceptions
+   */
+  private mapSupabaseError(
+    error: AuthError,
+    context: 'signin' | 'signup',
+  ): Error {
+    const message = error.message.toLowerCase();
+
+    // Password validation errors
+    if (message.includes('password') && message.includes('characters')) {
+      return new BadRequestException(
+        'Password must be at least 8 characters long',
+      );
+    }
+
+    if (message.includes('password') && message.includes('weak')) {
+      return new BadRequestException(
+        'Password is too weak. Please use a stronger password with letters, numbers, and special characters',
+      );
+    }
+
+    // Email validation errors
+    if (message.includes('email') && message.includes('invalid')) {
+      return new BadRequestException('Please enter a valid email address');
+    }
+
+    // User already exists errors
+    if (
+      message.includes('user already registered') ||
+      message.includes('email already exists')
+    ) {
+      return new ConflictException(
+        'An account with this email address already exists',
+      );
+    }
+
+    // Invalid credentials for signin
+    if (
+      context === 'signin' &&
+      (message.includes('invalid') || message.includes('credentials'))
+    ) {
+      return new UnauthorizedException('Invalid email or password');
+    }
+
+    // Rate limiting
+    if (message.includes('rate limit') || message.includes('too many')) {
+      return new BadRequestException(
+        'Too many requests. Please try again later',
+      );
+    }
+
+    // Email confirmation errors
+    if (
+      message.includes('email not confirmed') ||
+      message.includes('confirmation')
+    ) {
+      return new UnauthorizedException(
+        'Please check your email and confirm your account before signing in',
+      );
+    }
+
+    // Generic authentication errors
+    if (message.includes('unauthorized') || message.includes('forbidden')) {
+      return new UnauthorizedException('Authentication failed');
+    }
+
+    // Default to bad request for known auth errors, internal error for unknown
+    if (error.status && error.status >= 400 && error.status < 500) {
+      return new BadRequestException(error.message);
+    }
+
+    // Log unknown errors for debugging
+    this.logger.error(
+      `Unknown Supabase error in ${context}: ${error.message}`,
+      error.stack,
+    );
+    return new InternalServerErrorException(
+      'Authentication service temporarily unavailable',
+    );
   }
 }

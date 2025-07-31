@@ -60,6 +60,24 @@ export class UserService {
     return this.mapUserToDTO(savedUser);
   }
 
+  async createUserWithSupabaseId(
+    supabaseId: string,
+    userData: Partial<UserProfileDTO>,
+  ): Promise<UserProfileDTO> {
+    const user = this.userRepository.create({
+      userSk: supabaseId, // Use Supabase ID as userSk
+      email: userData.email,
+      passwordHash: '', // Supabase handles authentication
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      points: userData.pointBalance || 0,
+      level: userData.level,
+    });
+
+    const savedUser = await this.userRepository.save(user);
+    return this.mapUserToDTO(savedUser);
+  }
+
   async updateUser(
     id: string,
     userData: Partial<UserProfileDTO>,

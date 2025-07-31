@@ -38,6 +38,17 @@ async function bootstrap() {
     .setTitle('Beezly API')
     .setDescription('API documentation for Beezly backend')
     .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Enter JWT token',
+        in: 'header',
+      },
+      'JWT-auth', // This name here is important for matching up with @ApiBearerAuth() in your controller!
+    )
     .addTag('App', 'General application endpoints')
     .addTag('Auth', 'Authentication endpoints')
     .addTag('Barcodes', 'Barcode scanning and lookup endpoints')
