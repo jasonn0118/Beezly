@@ -1,4 +1,4 @@
-import { IsOptional, IsBoolean, IsUUID } from 'class-validator';
+import { IsOptional, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
@@ -44,34 +44,24 @@ export class ProcessReceiptDto {
   store_id?: string;
 }
 
-export class ProcessReceiptEnhancedDto extends ProcessReceiptDto {
+export class ProcessReceiptEnhancedDto {
   @ApiProperty({
-    description: 'Whether to include product normalization',
-    example: true,
+    description: 'User ID for file organization (UUID format)',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
     required: false,
-    default: true,
   })
   @IsOptional()
-  @IsBoolean()
-  @Transform(({ value }): boolean => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return value as boolean;
+  @Transform(({ value }) => {
+    if (
+      value === '' ||
+      value === 'string' ||
+      value === 'undefined' ||
+      value === 'null'
+    ) {
+      return undefined;
+    }
+    return value as string;
   })
-  include_normalization?: boolean = true;
-
-  @ApiProperty({
-    description: 'Whether to create receipt record in database',
-    example: false,
-    required: false,
-    default: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  @Transform(({ value }): boolean => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return value as boolean;
-  })
-  create_receipt?: boolean = false;
+  @IsUUID(4, { message: 'user_id must be a valid UUID' })
+  user_id?: string;
 }
