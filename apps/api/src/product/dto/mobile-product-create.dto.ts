@@ -153,7 +153,7 @@ export class MobileProductResponseDto {
     example: {
       price_sk: 'f290f1ee-6c54-4b01-90e6-d701748f0853',
       price: 5000,
-      currency: 'KRW',
+      currency: 'CAD',
       recorded_at: '2025-07-22T10:00:00Z',
     },
     description: 'Price information',
