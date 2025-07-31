@@ -155,11 +155,12 @@ export class ProductConfirmationService {
           );
         }
 
-        // Check confidence threshold
+        // Skip products below confidence threshold without treating as errors
         if (normalizedProduct.confidenceScore < this.MIN_CONFIDENCE_THRESHOLD) {
-          const errorMsg = `Product ${item.normalizedProductSk} has confidence ${normalizedProduct.confidenceScore} below minimum threshold ${this.MIN_CONFIDENCE_THRESHOLD}`;
-          result.errorMessages.push(errorMsg);
-          result.errors++;
+          this.logger.debug(
+            `Skipping product ${item.normalizedProductSk} with confidence ${normalizedProduct.confidenceScore} below threshold ${this.MIN_CONFIDENCE_THRESHOLD}`,
+          );
+          result.processed--; // Don't count as processed since we're skipping
           continue;
         }
 
