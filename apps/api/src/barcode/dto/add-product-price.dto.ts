@@ -6,9 +6,7 @@ import {
   IsString,
   Min,
   Max,
-  IsBoolean,
   ValidateNested,
-  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -127,7 +125,7 @@ export class StoreLocationDto {
 
 export class PriceInfoSubmissionDto {
   @ApiProperty({
-    description: 'Product price',
+    description: 'Product price (current price including any discounts)',
     example: 3.99,
   })
   @IsNotEmpty()
@@ -144,37 +142,6 @@ export class PriceInfoSubmissionDto {
   @IsOptional()
   @IsString()
   currency?: string;
-
-  @ApiProperty({
-    description: 'Whether this is a discount price',
-    example: false,
-    default: false,
-    required: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  isDiscount?: boolean;
-
-  @ApiProperty({
-    description:
-      'Original price before discount (required if isDiscount is true)',
-    example: 5.99,
-    required: false,
-  })
-  @ValidateIf((o: PriceInfoSubmissionDto) => o.isDiscount === true)
-  @IsNotEmpty({ message: 'Original price is required when isDiscount is true' })
-  @IsNumber()
-  @Min(0)
-  originalPrice?: number;
-
-  @ApiProperty({
-    description: 'Reason for discount',
-    example: 'Weekly sale',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  discountReason?: string;
 }
 
 export class AddProductPriceDto {

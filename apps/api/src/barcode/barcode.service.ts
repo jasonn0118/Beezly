@@ -197,23 +197,6 @@ export class BarcodeService {
       throw new BadRequestException('Invalid barcode provided');
     }
 
-    // Validate price data
-    if (addPriceData.price.isDiscount && !addPriceData.price.originalPrice) {
-      throw new BadRequestException(
-        'Original price is required when isDiscount is true',
-      );
-    }
-
-    if (
-      addPriceData.price.isDiscount &&
-      addPriceData.price.originalPrice &&
-      addPriceData.price.price >= addPriceData.price.originalPrice
-    ) {
-      throw new BadRequestException(
-        'Discount price must be less than original price',
-      );
-    }
-
     this.logger.log(
       `Adding price info for barcode: ${barcode} at store: ${addPriceData.store.name}`,
     );
@@ -276,6 +259,191 @@ export class BarcodeService {
       this.logger.error(`Error adding price for barcode ${barcode}:`, error);
       throw new BadRequestException(
         `Unable to add price information for product with barcode ${barcode}`,
+      );
+    }
+  }
+
+  async getProductByProductSkEnhanced(
+    productSk: string,
+    storeSk?: string,
+    latitude?: number,
+    longitude?: number,
+    maxDistance?: number,
+  ): Promise<EnhancedProductResponseDto> {
+    // Validate product ID format
+    if (!this.isValidUUID(productSk)) {
+      throw new BadRequestException('Invalid product ID format');
+    }
+
+    // Validate location parameters
+    if ((latitude && !longitude) || (!latitude && longitude)) {
+      throw new BadRequestException(
+        'Both latitude and longitude must be provided for location-based search',
+      );
+    }
+
+    if (latitude && (latitude < -90 || latitude > 90)) {
+      throw new BadRequestException(
+        'Latitude must be between -90 and 90 degrees',
+      );
+    }
+
+    if (longitude && (longitude < -180 || longitude > 180)) {
+      throw new BadRequestException(
+        'Longitude must be between -180 and 180 degrees',
+      );
+    }
+
+    if (maxDistance && maxDistance <= 0) {
+      throw new BadRequestException('maxDistance must be greater than 0');
+    }
+
+    if (maxDistance && maxDistance > 100) {
+      throw new BadRequestException('maxDistance cannot exceed 100 kilometers');
+    }
+
+    // Validate store UUID format if provided
+    if (storeSk && !this.isValidUUID(storeSk)) {
+      throw new BadRequestException('Invalid store ID format');
+    }
+
+    this.logger.log(
+      `Searching for product with ID: ${productSk}${storeSk ? ` in store: ${storeSk}` : ''}${latitude && longitude ? ` near location: ${latitude}, ${longitude}` : ''}`,
+    );
+
+    try {
+      const product = await this.productRepository.findOne({
+        where: { productSk },
+        relations: ['categoryEntity'],
+      });
+
+      if (!product) {
+        throw new NotFoundException(`Product with ID ${productSk} not found`);
+      }
+
+      // Get prices for this product
+      let prices: Price[] = [];
+
+      if (storeSk) {
+        // Get prices from specific store
+        prices = await this.priceRepository.find({
+          where: { productSk: product.productSk, storeSk },
+          relations: ['store'],
+          order: { recordedAt: 'DESC' },
+          take: 10, // Limit to recent prices
+        });
+
+        this.logger.log(
+          `Found ${prices.length} prices for product ${product.productSk} in store ${storeSk}`,
+        );
+      } else if (latitude && longitude && maxDistance) {
+        // Get prices from nearby stores using location
+        prices = await this.getPricesFromNearbyStores(
+          product.productSk,
+          latitude,
+          longitude,
+          maxDistance,
+        );
+
+        this.logger.log(
+          `Found ${prices.length} prices for product ${product.productSk} within ${maxDistance}km of location`,
+        );
+      } else {
+        // Get all prices for this product
+        prices = await this.priceRepository.find({
+          where: { productSk: product.productSk },
+          relations: ['store'],
+          order: { recordedAt: 'DESC' },
+          take: 20, // Limit to prevent huge responses
+        });
+
+        this.logger.log(
+          `Found ${prices.length} total prices for product ${product.productSk}`,
+        );
+      }
+
+      return this.mapProductToEnhancedResponse(product, prices);
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      this.logger.error(`Error searching for product ${productSk}:`, error);
+      throw new NotFoundException(
+        `Unable to search for product with ID ${productSk}`,
+      );
+    }
+  }
+
+  async addProductPriceByProductSk(
+    productSk: string,
+    addPriceData: AddProductPriceDto,
+  ): Promise<AddProductPriceResponseDto> {
+    // Validate product ID format
+    if (!this.isValidUUID(productSk)) {
+      throw new BadRequestException('Invalid product ID format');
+    }
+
+    this.logger.log(
+      `Adding price info for product: ${productSk} at store: ${addPriceData.store.name}`,
+    );
+
+    try {
+      // Find the product by productSk
+      const product = await this.productRepository.findOne({
+        where: { productSk },
+      });
+      if (!product) {
+        throw new NotFoundException(`Product with ID ${productSk} not found`);
+      }
+
+      // Find or create store
+      const store = await this.findOrCreateStore(addPriceData.store);
+
+      // Create new price entry
+      const price = await this.createPrice(
+        product.productSk,
+        store.storeSk,
+        addPriceData.price,
+      );
+
+      this.logger.log(
+        `Successfully added price ${price.price} CAD for product ${product.productSk} at store ${store.storeSk}`,
+      );
+
+      return {
+        message: 'Successfully added price information for product',
+        store: {
+          storeSk: store.storeSk,
+          name: store.name,
+          isNew: store.isNew || false,
+        },
+        price: {
+          priceSk: price.priceSk,
+          price: Number(price.price),
+          currency: price.currency || 'CAD',
+          recordedAt: price.recordedAt,
+        },
+        product: {
+          productSk: product.productSk,
+          name: product.name,
+          barcode: product.barcode || '',
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      this.logger.error(`Error adding price for product ${productSk}:`, error);
+      throw new BadRequestException(
+        `Unable to add price information for product with ID ${productSk}`,
       );
     }
   }
@@ -551,9 +719,6 @@ export class BarcodeService {
       storeSk,
       price: priceData.price,
       currency: priceData.currency || 'CAD',
-      isDiscount: priceData.isDiscount || false,
-      originalPrice: priceData.originalPrice,
-      discountReason: priceData.discountReason,
       creditScore: 1.0, // Initial credit score for user-submitted prices
       verifiedCount: 0,
       flaggedCount: 0,

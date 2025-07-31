@@ -42,6 +42,11 @@ import { ReceiptPriceIntegrationService } from './receipt-price-integration.serv
 import { ProductConfirmationService } from './product-confirmation.service';
 import { EnhancedReceiptLinkingService } from './enhanced-receipt-linking.service';
 import { ReceiptWorkflowIntegrationService } from './receipt-workflow-integration.service';
+import { EnhancedProductResponseDto } from '../barcode/dto/enhanced-product-response.dto';
+import {
+  AddProductPriceDto,
+  AddProductPriceResponseDto,
+} from '../barcode/dto/add-product-price.dto';
 import {
   ProcessReceiptConfirmationDto,
   ReceiptConfirmationResponseDto,
@@ -284,6 +289,142 @@ export class ProductController {
   async deleteProduct(@Param('id') id: string): Promise<{ message: string }> {
     await this.productService.deleteProduct(id);
     return { message: 'Product deleted successfully' };
+  }
+
+  @Get(':productSk/enhanced')
+  // TODO: Add @UseGuards(JwtAuthGuard) when JWT authentication is implemented
+  @ApiOperation({
+    summary: 'Get product by product ID with store and price information',
+    description:
+      'Returns detailed product information including prices across different stores, location-based filtering, and price comparison data.',
+  })
+  @ApiQuery({
+    name: 'storeSk',
+    description: 'Filter prices from specific store (store UUID)',
+    required: false,
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  @ApiQuery({
+    name: 'latitude',
+    description: 'User latitude for location-based store filtering',
+    required: false,
+    type: Number,
+    example: 49.2827,
+  })
+  @ApiQuery({
+    name: 'longitude',
+    description: 'User longitude for location-based store filtering',
+    required: false,
+    type: Number,
+    example: -123.1207,
+  })
+  @ApiQuery({
+    name: 'maxDistance',
+    description:
+      'Maximum distance in kilometers for nearby stores (default: 10km)',
+    required: false,
+    type: Number,
+    example: 10,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product found with store and price information',
+    type: EnhancedProductResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request - invalid parameters (product ID, location coordinates, store ID format)',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: { type: 'string', example: 'Invalid product ID provided' },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 404 },
+        message: {
+          type: 'string',
+          example: 'Product with ID not found',
+        },
+        error: { type: 'string', example: 'Not Found' },
+      },
+    },
+  })
+  async getProductByIdEnhanced(
+    @Param('productSk') productSk: string,
+    @Query('storeSk') storeSk?: string,
+    @Query('latitude') latitude?: number,
+    @Query('longitude') longitude?: number,
+    @Query('maxDistance') maxDistance?: number,
+  ): Promise<EnhancedProductResponseDto> {
+    return this.productService.getProductByProductSkEnhanced(
+      productSk,
+      storeSk,
+      latitude,
+      longitude,
+      maxDistance || 10, // Default to 10km radius
+    );
+  }
+
+  @Post(':productSk/price')
+  // TODO: Add @UseGuards(JwtAuthGuard) when JWT authentication is implemented
+  @ApiOperation({
+    summary: 'Add store and price information to existing product',
+    description:
+      "Allows users to contribute price and store information for a product. The store will be created if it doesn't exist, or matched to an existing store if found.",
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Successfully added price and store information',
+    type: AddProductPriceResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - invalid product ID or price data',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: {
+          type: 'string',
+          example: 'Invalid product ID provided',
+        },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 404 },
+        message: {
+          type: 'string',
+          example: 'Product not found',
+        },
+        error: { type: 'string', example: 'Not Found' },
+      },
+    },
+  })
+  async addProductPrice(
+    @Param('productSk') productSk: string,
+    @Body() addPriceData: AddProductPriceDto,
+  ): Promise<AddProductPriceResponseDto> {
+    return this.productService.addProductPriceByProductSk(
+      productSk,
+      addPriceData,
+    );
   }
 
   @Post('search/embedding')

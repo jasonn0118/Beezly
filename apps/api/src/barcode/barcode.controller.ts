@@ -50,25 +50,18 @@ export class BarcodeController {
     return this.barcodeService.getProductByBarcode(barcode, barcodeType);
   }
 
-  @Get(':barcode/enhanced')
+  @Get(':productSk/enhanced')
   // TODO: Add @UseGuards(JwtAuthGuard) when JWT authentication is implemented
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Get product by barcode with store and price information',
+    summary: 'Get product by product ID with store and price information',
     description:
       'Returns detailed product information including prices across different stores, location-based filtering, and price comparison data.',
   })
   @ApiParam({
-    name: 'barcode',
-    description: 'The barcode string to lookup',
-    example: '0123456789012',
-  })
-  @ApiQuery({
-    name: 'type',
-    description: 'The type of barcode',
-    enum: BarcodeType,
-    required: false,
-    example: BarcodeType.EAN13,
+    name: 'productSk',
+    description: 'The product UUID to lookup',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
   })
   @ApiQuery({
     name: 'storeSk',
@@ -106,12 +99,12 @@ export class BarcodeController {
   @ApiResponse({
     status: 400,
     description:
-      'Bad request - invalid parameters (barcode, location coordinates, store ID format)',
+      'Bad request - invalid parameters (product ID, location coordinates, store ID format)',
     schema: {
       type: 'object',
       properties: {
         statusCode: { type: 'number', example: 400 },
-        message: { type: 'string', example: 'Invalid barcode provided' },
+        message: { type: 'string', example: 'Invalid product ID provided' },
         error: { type: 'string', example: 'Bad Request' },
       },
     },
@@ -176,15 +169,14 @@ export class BarcodeController {
   })
   @ApiResponse({
     status: 400,
-    description:
-      'Bad request - invalid barcode, price data, or discount validation failed',
+    description: 'Bad request - invalid barcode or price data',
     schema: {
       type: 'object',
       properties: {
         statusCode: { type: 'number', example: 400 },
         message: {
           type: 'string',
-          example: 'Original price is required when isDiscount is true',
+          example: 'Invalid barcode provided',
         },
         error: { type: 'string', example: 'Bad Request' },
       },
