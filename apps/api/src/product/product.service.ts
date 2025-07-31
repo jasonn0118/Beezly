@@ -599,8 +599,23 @@ export class ProductService {
       throw new BadRequestException('Invalid product ID format');
     }
 
+    // Validate that either store or storeSk is provided (handled by DTO validator, but add extra check)
+    if (!addPriceData.store && !addPriceData.storeSk) {
+      throw new BadRequestException(
+        'Either store information or storeSk must be provided',
+      );
+    }
+
+    if (addPriceData.store && addPriceData.storeSk) {
+      throw new BadRequestException(
+        'Cannot provide both store information and storeSk',
+      );
+    }
+
+    const storeIdentifier =
+      addPriceData.storeSk || addPriceData.store?.name || 'Unknown';
     this.logger.log(
-      `Adding price info for product: ${productSk} at store: ${addPriceData.store.name}`,
+      `Adding price info for product: ${productSk} at store: ${storeIdentifier}`,
     );
 
     try {
@@ -612,8 +627,33 @@ export class ProductService {
         throw new NotFoundException(`Product with ID ${productSk} not found`);
       }
 
-      // Find or create store
-      const store = await this.findOrCreateStoreAdvanced(addPriceData.store);
+      let store: Store & { isNew?: boolean };
+
+      if (addPriceData.storeSk) {
+        // Validate storeSk format
+        if (!this.isValidUUID(addPriceData.storeSk)) {
+          throw new BadRequestException('Invalid store ID format');
+        }
+
+        // Find existing store by storeSk
+        const existingStore = await this.storeRepository.findOne({
+          where: { storeSk: addPriceData.storeSk },
+        });
+
+        if (!existingStore) {
+          throw new NotFoundException(
+            `Store with ID ${addPriceData.storeSk} not found`,
+          );
+        }
+
+        store = { ...existingStore, isNew: false };
+        this.logger.log(
+          `Using existing store: ${store.name} (${store.storeSk})`,
+        );
+      } else {
+        // Find or create store using location data
+        store = await this.findOrCreateStoreAdvanced(addPriceData.store!);
+      }
 
       // Create new price entry
       const price = await this.createPrice(

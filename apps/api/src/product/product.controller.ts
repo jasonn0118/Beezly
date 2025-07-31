@@ -380,7 +380,43 @@ export class ProductController {
   @ApiOperation({
     summary: 'Add store and price information to existing product',
     description:
-      "Allows users to contribute price and store information for a product. The store will be created if it doesn't exist, or matched to an existing store if found.",
+      "Allows users to contribute price and store information for a product. You can either provide complete store location information (which will create a new store or match to an existing one) OR provide an existing storeSk to use an existing store. Only one of 'store' or 'storeSk' should be provided.",
+  })
+  @ApiBody({
+    description: 'Price and store information to add',
+    examples: {
+      withExistingStore: {
+        summary: 'Using existing store SK',
+        description: 'Add price using an existing store ID',
+        value: {
+          storeSk: 'f829b2f6-997e-4400-b3ba-5994753f3ef7',
+          price: {
+            price: 9.99,
+            currency: 'CAD',
+          },
+        },
+      },
+      withNewStore: {
+        summary: 'Creating/matching store by location',
+        description: 'Add price with store location information',
+        value: {
+          store: {
+            name: 'Walmart Supercentre',
+            fullAddress: '9855 Austin Rd, Burnaby, BC V3J 1N5',
+            city: 'Burnaby',
+            province: 'BC',
+            postalCode: 'V3J 1N5',
+            latitude: 49.2520495,
+            longitude: -122.8962265,
+            placeId: 'ChIJOYsF8jt4hlQRDjdIUr1JI2o',
+          },
+          price: {
+            price: 12.99,
+            currency: 'CAD',
+          },
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 201,
@@ -389,14 +425,20 @@ export class ProductController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad request - invalid product ID or price data',
+    description:
+      'Bad request - invalid product ID, price data, or missing/invalid store information',
     schema: {
       type: 'object',
       properties: {
         statusCode: { type: 'number', example: 400 },
         message: {
           type: 'string',
-          example: 'Invalid product ID provided',
+          examples: [
+            'Invalid product ID provided',
+            'Either store information or storeSk must be provided, but not both',
+            'Store with ID not found',
+            'Invalid store ID format',
+          ],
         },
         error: { type: 'string', example: 'Bad Request' },
       },

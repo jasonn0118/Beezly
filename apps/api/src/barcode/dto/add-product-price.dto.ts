@@ -146,12 +146,24 @@ export class PriceInfoSubmissionDto {
 
 export class AddProductPriceDto {
   @ApiProperty({
-    description: 'Store information where the price was observed',
+    description:
+      'Store information where the price was observed (required if storeSk is not provided)',
     type: StoreLocationDto,
+    required: false,
   })
+  @IsOptional()
   @ValidateNested()
   @Type(() => StoreLocationDto)
-  store: StoreLocationDto;
+  store?: StoreLocationDto;
+
+  @ApiProperty({
+    description: 'Existing store UUID (required if store is not provided)',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  storeSk?: string;
 
   @ApiProperty({
     description: 'Price information for the product at this store',
