@@ -19,6 +19,7 @@
 | **[Setup Guides](./docs/README.md)** | Database, authentication, and environment setup |
 | **[Database Guide](./docs/DATABASE.md)** | PostgreSQL setup, migrations, schema management |
 | **[Authentication Guide](./docs/AUTHENTICATION.md)** | Supabase JWT setup, API testing |
+| **[OAuth Setup Guide](./docs/OAUTH_SETUP.md)** | Google OAuth integration with Supabase |
 | **[Configuration Guide](./src/config/README.md)** | Service configuration and environment variables |
 
 ---
