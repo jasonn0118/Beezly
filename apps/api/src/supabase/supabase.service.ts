@@ -187,6 +187,6 @@ export class SupabaseService {
 // Legacy export for backward compatibility - deprecated
 // Use SupabaseService instead for new code
 export const supabase: SupabaseClient = createClient(
-  process.env.SUPABASE_URL || 'http://localhost:5000',
-  process.env.SUPABASE_ANON_KEY || 'dummy_key',
+  process.env.SUPABASE_URL || 'https://dummy-fallback.supabase.co',
+  process.env.SUPABASE_ANON_KEY || 'dummy-fallback-key',
 );
