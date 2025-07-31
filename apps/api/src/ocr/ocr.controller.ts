@@ -246,7 +246,7 @@ export class OcrController {
   @ApiOperation({
     summary: 'Process receipt image with product normalization',
     description:
-      'Upload a receipt image, extract data using OCR, and normalize product names to canonical forms. Includes discount detection and confidence scoring.',
+      'Upload a receipt image, extract data using OCR, normalize product names to canonical forms, and create receipt record in database. Always includes discount detection and confidence scoring.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -263,27 +263,14 @@ export class OcrController {
           type: 'string',
           description: 'User ID for file organization (optional)',
         },
-        store_id: {
-          type: 'string',
-          description: 'Store ID for file organization (optional)',
-        },
-        include_normalization: {
-          type: 'boolean',
-          description:
-            'Whether to include product normalization (default: true)',
-        },
-        create_receipt: {
-          type: 'boolean',
-          description:
-            'Whether to create receipt record in database (default: false)',
-        },
       },
       required: ['file'],
     },
   })
   @ApiResponse({
     status: 200,
-    description: 'Receipt processed with normalization successfully',
+    description:
+      'Receipt processed, normalized, and saved to database successfully',
     schema: {
       type: 'object',
       properties: {
@@ -414,26 +401,16 @@ export class OcrController {
         );
       }
 
-      let result: CleanOcrResult | OcrResult;
-
-      // Process with or without normalization based on the flag
-      if (body.include_normalization !== false) {
-        result = await this.ocrService.processReceiptEnhanced(
-          file.buffer,
-          azureEndpoint,
-          azureApiKey,
-        );
-      } else {
-        result = await this.ocrService.processReceipt(
-          file.buffer,
-          azureEndpoint,
-          azureApiKey,
-        );
-      }
+      // Always process with normalization
+      const result = await this.ocrService.processReceiptEnhanced(
+        file.buffer,
+        azureEndpoint,
+        azureApiKey,
+      );
 
       // Upload file to storage asynchronously (fire-and-forget)
       const userId = body.user_id || 'default_user';
-      const storeId = body.store_id || 'default_store';
+      const storeId = 'default_store'; // Always use default store
 
       console.log(`Starting async upload for user ${userId}, store ${storeId}`);
 
@@ -456,44 +433,38 @@ export class OcrController {
         // Continue without file path - not critical for OCR processing
       }
 
-      // Create receipt record in database if requested
+      // Always create receipt record in database
       let receiptId: string | undefined;
 
-      if (body.create_receipt) {
-        try {
-          // For receipt creation, we need to use the enhanced result if normalization was enabled
-          const receiptData =
-            body.include_normalization !== false
-              ? await this.ocrService.processReceiptWithNormalization(
-                  file.buffer,
-                  azureEndpoint,
-                  azureApiKey,
-                )
-              : (result as OcrResult); // Cast CleanOcrResult to OcrResult since it only contains base OcrResult when normalization is false
-
-          const receipt = await this.receiptService.createReceiptFromOcrResult(
-            receiptData,
-            body.user_id, // Pass actual user_id, not default
-            uploadedFilePath,
+      try {
+        // Use the enhanced result with normalization
+        const receiptData =
+          await this.ocrService.processReceiptWithNormalization(
+            file.buffer,
+            azureEndpoint,
+            azureApiKey,
           );
-          receiptId = receipt.receiptSk;
-          console.log(`Receipt created in database with ID: ${receiptId}`);
 
-          // Trigger normalization as a background process (fire-and-forget)
-          if (body.include_normalization !== false) {
-            this.normalizationService
-              .normalizeReceiptItems(receiptId)
-              .then(() => {
-                console.log(`Receipt ${receiptId} normalization completed`);
-              })
-              .catch((error) => {
-                console.error(`Error normalizing receipt ${receiptId}:`, error);
-              });
-          }
-        } catch (error) {
-          console.error('Error creating receipt in database:', error);
-          // Continue without receipt creation - OCR result still valid
-        }
+        const receipt = await this.receiptService.createReceiptFromOcrResult(
+          receiptData,
+          body.user_id, // Pass actual user_id, not default
+          uploadedFilePath,
+        );
+        receiptId = receipt.receiptSk;
+        console.log(`Receipt created in database with ID: ${receiptId}`);
+
+        // Trigger normalization as a background process (fire-and-forget)
+        this.normalizationService
+          .normalizeReceiptItems(receiptId)
+          .then(() => {
+            console.log(`Receipt ${receiptId} normalization completed`);
+          })
+          .catch((error) => {
+            console.error(`Error normalizing receipt ${receiptId}:`, error);
+          });
+      } catch (error) {
+        console.error('Error creating receipt in database:', error);
+        // Continue without receipt creation - OCR result still valid
       }
 
       return {
