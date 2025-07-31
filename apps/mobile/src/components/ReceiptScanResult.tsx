@@ -28,6 +28,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const [scanFailed, setScanFailed] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [productInfo, setProductInfo] = useState<ReceiptItem[]>([]);
+    const [receiptId, setReceiptId] = useState<string | null>(null);
     const [merchantName, setMerchantName] = useState<string | null>(null);
     const [storeAddress, setStoreAddress] = useState<string | null>(null);
     const [editingItem, setEditingItem] = useState<ReceiptItem | null>(null);
@@ -45,7 +46,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const handleOpenModal = (item: ReceiptItem) => {
         setEditingItem(item);
         setEditedName(item.normalized_name || item.name);
-        setEditedPrice(item.price.toString());
+        setEditedPrice(item.final_price.toString());
         setEditedBrand(item.brand || '');
         setIsModalVisible(true);
     };
@@ -85,8 +86,10 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
             formData.append('file', { uri: pictureData, name: 'receipt.jpg', type: 'image/jpeg' } as any);
             const response: any = await ReceiptService.processReceipt(formData);
             if (response.success && response.data) {
+                console.log("OCR API Response Data:", JSON.stringify(response.data, null, 2));
                 if (response.data.item_count > 0) {
-                    setProductInfo(response.data.items.map((item: any, index: number) => ({ ...item, id: item.id || `temp-${index}`, price: parseFloat(item.price) || 0 })) || []);
+                    setProductInfo(response.data.items.map((item: any, index: number) => ({ ...item, id: item.id || `temp-${index}`, price: parseFloat(item.final_price) || 0 })) || []);
+                    setReceiptId(response.data.receipt_id || null);
                     setMerchantName(response.data.merchant || null);
                     setStoreAddress(response.data.store_address || null);
                 } else {
@@ -111,8 +114,32 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         fetchProductData();
     }, [pictureData]);
 
-    const handleSaveReceipt = () => {
+    const handleSaveReceipt = async () => {
+        if (!receiptId || !productInfo) {
+            console.error("Receipt ID or product info is missing.");
+            return;
+        }
+
+        // TODO: 현재 로그인된 사용자의 ID를 가져와야 합니다.
+        const userId = "123e4567-e89b-12d3-a456-426614174000";
         console.log('Save button pressed');
+
+        const itemsToConfirm = productInfo.map(item => ({
+            normalizedProductSk: item.normalized_product_sk,
+            normalizedName: item.normalized_name,
+            brand: item.brand || '',
+        }))
+
+        console.log('Saving receipt with data:', { userId, receiptId, items: itemsToConfirm });
+
+        try {
+            const response = await ReceiptService.processConfirmations(userId, receiptId, itemsToConfirm);
+            console.log('Confirmation reponse:', response);
+            alert('영수증이 성공적으로 저장되었습니다!');
+        } catch (error) {
+            console.error('Failed to save receipt confirmation:', error);
+            alert('저장에 실패했습니다. 다시 시도해주세요.');
+        }
     };
 
     const getConfidenceColor = (score: number) => {
@@ -171,7 +198,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                                 <Text style={styles.productOriginalName}>{item.name}</Text>
                             </View>
                             <View style={styles.priceContainer}>
-                                <Text style={styles.productPrice}>{typeof item.price === 'number' ? "$"+ `${item.price.toFixed(2)}` : '$--.--'}</Text>
+                                <Text style={styles.productPrice}>{typeof item.final_price === 'number' ? "$"+ `${item.final_price.toFixed(2)}` : '$--.--'}</Text>
                                 <Text style={styles.confidenceScore}>{(item.confidence_score * 100).toFixed(0)}%</Text>
                             </View>
                             <FontAwesome name="chevron-right" size={16} color={COLORS.textTertiary} />

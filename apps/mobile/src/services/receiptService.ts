@@ -28,7 +28,6 @@ export interface Receipt {
 export interface ReceiptItem {
   id: string;
   name: string;
-  price: number;
   quantity: number;
   unit_price: number;
   item_number: number;
@@ -36,10 +35,9 @@ export interface ReceiptItem {
   brand: string;
   category: string;
   confidence_score: number;
-  is_discount: boolean;
-  is_adjustment: boolean;
-  normalization_method: string;
-  original_price_numeric: number;
+  normalized_product_sk: string;
+  linked_discounts:[];
+  original_price: number;
   final_price: number;
 }
 
@@ -73,6 +71,16 @@ export class ReceiptService {
 
   static async deleteReceipt(id: string): Promise<void> {
     return apiClient.delete<void>(`/receipt/${id}`);
+  }
+
+  static async processConfirmations(userId: string, receiptId: string, items: { normalizedProductSk: string, normalizedName: string, brand: string }[]): Promise<any> {
+    const processedItems = items.map(item => ({ ...item, isConfirmed: true }));
+    const payload = {
+      userId,
+      receiptId,
+      items: processedItems,
+    };
+    return apiClient.post<any>('/products/receipt/process-confirmations', payload);
   }
 }
 
