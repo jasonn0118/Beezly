@@ -12,6 +12,15 @@
 - [💻 Development Guide](#-development-guide)
 - [🏗️ Architecture](#️-architecture)
 
+## 📚 Documentation
+
+| Guide | Purpose |
+|-------|---------|
+| **[Setup Guides](./docs/README.md)** | Database, authentication, and environment setup |
+| **[Database Guide](./docs/DATABASE.md)** | PostgreSQL setup, migrations, schema management |
+| **[Authentication Guide](./docs/AUTHENTICATION.md)** | Supabase JWT setup, API testing |
+| **[Configuration Guide](./src/config/README.md)** | Service configuration and environment variables |
+
 ---
 
 ## ⚡ Quick Start
@@ -44,7 +53,7 @@ pnpm run dev:setup
 pnpm run migration:run --filter=api
 ```
 
-For detailed setup instructions, see [DATABASE_SETUP.md](./DATABASE_SETUP.md)
+📖 **[Complete Setup Guide](./docs/DATABASE.md)**
 </details>
 
 ---
@@ -500,6 +509,7 @@ curl -X POST http://localhost:3006/products/unprocessed/bulk-review \
 - **Azure Form Recognizer v4.0**: High-accuracy receipt text extraction
 - **Batch Embedding Lookups**: Process multiple items simultaneously 
 - **Smart Format Detection**: HEIC/HEIF conversion for compatibility
+- **Enhanced Performance**: 80% faster processing (15s → 2-3s)
 - **Endpoint**: `POST /ocr/process-receipt-enhanced`
 
 #### **🧠 Vector Embedding Service** (`src/product/vector-embedding.service.ts`)
@@ -581,42 +591,7 @@ if (
 
 ### ⚙️ **Environment Setup**
 
-<details>
-<summary>🔧 <strong>Environment Variables (.env file)</strong></summary>
-
-Create a `.env` file in the `apps/api` directory:
-
-```bash
-# 🚀 Application
-NODE_ENV=development
-PORT=3006
-
-# 🗄️ Database (PostgreSQL)
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=root
-DB_PASSWORD=root
-DB_NAME=beezly_local
-DB_SSL=false
-DB_LOGGING=false  # Set to 'verbose' for debugging
-
-# 🔐 Authentication
-JWT_SECRET=your_jwt_secret_here
-
-# 🤖 AI Services
-OPENAI_API_KEY=your_openai_key_here
-
-# 📄 Azure Form Recognizer (OCR)
-AZURE_FORM_RECOGNIZER_ENDPOINT=https://your-resource.cognitiveservices.azure.com
-AZURE_FORM_RECOGNIZER_API_KEY=your-azure-api-key
-
-# ☁️ Supabase (Optional - for cloud features)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-SUPABASE_ANON_KEY=your-supabase-anon-key
-```
-
-</details>
+📖 **[Complete Environment Guide](./docs/AUTHENTICATION.md#environment-configuration)** - Detailed .env setup with all required variables
 
 ### 📦 **Development Commands**
 
