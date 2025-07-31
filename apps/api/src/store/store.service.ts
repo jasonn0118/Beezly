@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { StoreDTO } from '../../../packages/types/dto/store';
@@ -42,6 +42,8 @@ interface StoreDataWithPlaceId extends Partial<StoreDTO> {
 
 @Injectable()
 export class StoreService {
+  private readonly logger = new Logger(StoreService.name);
+
   constructor(
     @InjectRepository(Store)
     private readonly storeRepository: Repository<Store>,
@@ -572,7 +574,7 @@ export class StoreService {
         .returning('*')
         .execute();
 
-      if (result.identifiers.length > 0) {
+      if (result.identifiers.length > 0 && result.identifiers[0]?.id) {
         // Successfully created new store
         const createdStore = await this.storeRepository.findOneBy({
           id: result.identifiers[0].id as number,
@@ -582,16 +584,47 @@ export class StoreService {
         }
         return createdStore;
       } else {
-        // Store already exists due to concurrent creation, try to find it
+        // Store already exists due to concurrent creation, or orIgnore() was triggered
+        this.logger.debug(
+          `Store creation ignored, attempting to find existing store. Name: ${normalizedName}, Address: ${store_address}`,
+        );
+
         const existingStore = await this.findExistingStoreByNameAndAddress(
           normalizedName,
           store_address,
         );
+
         if (!existingStore) {
+          // Try a more comprehensive search as final fallback
+          this.logger.warn(
+            `Initial fallback search failed, trying comprehensive search for store: ${normalizedName}`,
+          );
+
+          const fallbackStore = await this.storeRepository
+            .createQueryBuilder('store')
+            .where('store.name ILIKE :name', { name: `%${normalizedName}%` })
+            .andWhere(
+              store_address ? 'store.fullAddress ILIKE :address' : '1=1',
+              { address: `%${store_address}%` },
+            )
+            .orderBy('store.createdAt', 'DESC') // Get the most recent match
+            .getOne();
+
+          if (fallbackStore) {
+            this.logger.debug(
+              `Found store via comprehensive search: ${fallbackStore.storeSk || 'unknown-sk'}`,
+            );
+            return fallbackStore;
+          }
+
           throw new Error(
-            'Failed to find or create store after conflict resolution',
+            `Failed to find or create store after all attempts. Name: ${normalizedName}, Address: ${store_address}`,
           );
         }
+
+        this.logger.debug(
+          `Found existing store via fallback search: ${existingStore.storeSk}`,
+        );
         return existingStore;
       }
     } catch (error: unknown) {
@@ -625,8 +658,8 @@ export class StoreService {
         }
       }
 
-      // Log the error for debugging
-      console.error('Error creating store:', {
+      // Log the error for debugging with more context
+      this.logger.error('Error creating store:', {
         error: dbError.message || 'Unknown error',
         code: dbError.code || 'N/A',
         normalizedName,
