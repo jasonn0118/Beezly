@@ -1,7 +1,8 @@
 import { UserProfileDTO } from "./user";
 
 export interface AuthDTO {
-  accessToken: string;
+  accessToken: string | null;
   user: UserProfileDTO;
   expiresIn: number;
+  message?: string;
 }

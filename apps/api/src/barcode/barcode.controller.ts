@@ -5,20 +5,19 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
 import { BarcodeType } from '@beezly/types';
+import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('Barcodes')
 @Controller('barcode')
 export class BarcodeController {
   constructor(private readonly barcodeService: BarcodeService) {}
 
+  @Public()
   @Get(':barcode')
-  // TODO: Add @UseGuards(JwtAuthGuard) when JWT authentication is implemented
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get product by barcode' })
   @ApiParam({
     name: 'barcode',

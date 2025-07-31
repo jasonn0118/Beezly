@@ -1,6 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AppService } from './app.service';
+import { Public } from './auth/decorators/public.decorator';
+import { CurrentUser } from './auth/decorators/current-user.decorator';
+import { UserProfileDTO } from '../../packages/types/dto/user';
 
 @ApiTags('App')
 @Controller()
@@ -11,6 +14,7 @@ export class AppController {
    * Health check endpoint to confirm the API is running.
    * GET /
    */
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Health check endpoint' })
   @ApiResponse({ status: 200, description: 'API is running' })
@@ -22,6 +26,7 @@ export class AppController {
    * Retrieves all categories from the Category module.
    * GET /categories
    */
+  @Public()
   @Get('categories')
   @ApiOperation({ summary: 'Get all categories' })
   @ApiResponse({
@@ -37,13 +42,18 @@ export class AppController {
    * GET /me
    */
   @Get('me')
-  @ApiOperation({ summary: 'Get current user' })
+  @ApiOperation({ summary: 'Get current authenticated user' })
   @ApiResponse({
     status: 200,
     description: 'Successfully retrieved current user',
   })
-  getMe() {
-    return this.appService.getMe();
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  getMe(@CurrentUser() user: UserProfileDTO) {
+    return {
+      message: 'Current authenticated user',
+      user,
+      timestamp: new Date().toISOString(),
+    };
   }
 
   /**

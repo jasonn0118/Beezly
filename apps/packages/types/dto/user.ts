@@ -14,10 +14,16 @@ export class UserProfileDTO {
   email: string;
 
   @ApiPropertyOptional({
-    example: "John Doe",
-    description: "Optional display name of the user",
+    example: "John",
+    description: "User's first name",
   })
-  displayName?: string;
+  firstName?: string;
+
+  @ApiPropertyOptional({
+    example: "Doe",
+    description: "User's last name",
+  })
+  lastName?: string;
 
   @ApiProperty({
     example: 1500,
