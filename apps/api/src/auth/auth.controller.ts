@@ -368,7 +368,7 @@ User: \${JSON.stringify(authData.user, null, 2)}
                     
                     // Optional: Auto-redirect to your app
                     // setTimeout(() => {
-                    //     window.location.href = '${frontendUrl}/dashboard';
+                    //     window.location.href = 'http://localhost:3000/dashboard';
                     // }, 3000);
                     
                 } catch (error) {
