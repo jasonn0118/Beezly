@@ -1,6 +1,16 @@
 import { BarcodeType } from '@beezly/types/dto/barcode';
 import { apiClient } from './api';
 
+export interface Product {
+  id: string;
+  name: string;
+  barcode: string;
+  type?: BarcodeType;
+  category: string;
+  brandName: string;
+  image_url?: string;
+}
+
 export interface Barcode {
   id: string;
   name: string;
@@ -13,17 +23,41 @@ export interface Barcode {
   isVerified: boolean;
 }
 
-export interface Product {
+export interface ProductDetails {
   id: string;
   name: string;
   barcode: string;
   type?: BarcodeType;
   category: string;
   brandName: string;
+  image_url?: string;
+  price?: number;
   storeName?: string;
   storeAddress?: string;
+  storePostalCode?: string;
+  storeCity?: string;
+  storeProvince?: string;
+  storeLatitude?: string;
+  storeLongitude?:string;
+  storeStreetNumber?: string;
+  storeStreetAddress?: string;
+}
+
+export interface StoreData {
+    storeName?: string;
+    storeAddress: string;
+    storePostalCode: string;
+    storeCity : string;
+    storeProvince : string;
+    storeLatitude : string;
+    storeLongitude :string;
+    storeStreetNumber : string;
+    storeStreetAddress : string;
+}
+
+export interface PriceData {
   price?: number;
-  image_url?: string;
+
 }
 
 export interface ProductSearchResult {
@@ -80,6 +114,10 @@ export class ProductService {
 
   static async searchProducts(query: string): Promise<ProductSearchResult[]> {
     return apiClient.get<ProductSearchResult[]>('/products/search', { params: { q: query } });
+  }
+
+  static async getSearchStores(query: string): Promise<StoreData[]> {
+    return apiClient.get<StoreData[]>(`/stores/search/name`, { params: { q: query }} );
   }
 }
 

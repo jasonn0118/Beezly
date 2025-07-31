@@ -1,6 +1,6 @@
 import 'react-native-get-random-values';
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image, TextInput, Alert, ActivityIndicator, FlatList} from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image, TextInput, Alert, ActivityIndicator} from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -46,12 +46,6 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
         }
     }, [scannedData]);
 
-    // Store search related states
-    // The search query is kept separate from the productDetails.storeName to enable debouncing
-    const [storeSearchQuery, setStoreSearchQuery] = useState('');
-    const [storeSearchResults, setStoreSearchResults] = useState([]);
-    const [isSearching, setIsSearching] = useState(false);
-
     const [isCategoryModalVisible, setCategoryModalVisible] = useState(false);
     const [isFetchingLocation, setIsFetchingLocation] = useState(false);
     
@@ -72,6 +66,7 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
         });
 
         if (!result.canceled) {
+            //form.produ(rata({})
             const uri = result.assets[0].uri;
             setProductDetails(prev => ({
                 ...prev,
@@ -80,6 +75,19 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
             
         }
     };
+
+    // const getEnglishAddress = async (latitude: number, longitude: number) => {
+    // const response = await fetch(
+    //     `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&language=en&key=YOUR_GOOGLE_MAPS_API_KEY`
+    // );
+    // const data = await response.json();
+    // if (data.status === 'OK') {
+    //     const address = data.results[0].formatted_address;
+    //     return address;
+    // } else {
+    //     throw new Error('Failed to fetch address');
+    // }
+    // };
 
     // --- Function to get current location ---
     const handleGetLocation = async () => {
@@ -96,11 +104,17 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
             const { latitude, longitude } = location.coords;
             // Reverse geocode to get address from coordinates
             const placemarks = await Location.reverseGeocodeAsync({ latitude, longitude });
+            // const englishAddress = await getEnglishAddress(
+            //     location.coords.latitude,
+            //     location.coords.longitude
+            // )
+
+            // console.log(englishAddress);
             
             if (placemarks && placemarks.length > 0) {
                 const place = placemarks[0];
                 console.log(place);
-                // We use place.name as a primary store name, if not available, we create one.
+                // You can format the store name as you like
                 const formattedStoreName = place.name || `${place.street}, ${place.city}`;
                 const formattedAddress = `${place.street || ''}`;
                 const formattedStreetNumber = `${place.streetNumber || ''}`;
@@ -110,20 +124,19 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
                 const formattedLatitude = `${location.coords.latitude || ''}`;
                 const formattedLongitude = `${location.coords.longitude || ''}`;
 
+                console.log(formattedLatitude);
                 setProductDetails(prev => ({
                     ...prev,
                     storePostalCode : formattedPostalCode,
-                    storeName : formattedStoreName, // Correctly update store name in the product details
+                    storeName : formattedStoreName,
                     storeCity : formattedCity,
                     storeProvince : formattedRegion,
                     storeLatitude : formattedLatitude,
                     storeLongitude :formattedLongitude,
                     storeStreetNumber : formattedStreetNumber,
                     storeStreetAddress : formattedAddress
+
                 }));
-                // After getting the location, clear the search results and query to clean up the UI
-                setStoreSearchResults([]);
-                setStoreSearchQuery('');
             }
         } catch (error) {
             Alert.alert('Error', 'Could not fetch location. Please enter it manually.');
@@ -131,70 +144,6 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
         } finally {
             setIsFetchingLocation(false);
         }
-    };
-
-    // --- Store Search Logic ---
-    // Mock DB and Google API data
-    const dbData = [
-        { name: '우리매장1호점', source: 'DB' },
-        { name: '우리매장본점', source: 'DB' },
-        { name: '우리매장강남점', source: 'DB' },
-    ];
-    
-    const googleData = [
-        { name: '스타벅스 강남점', source: 'Google' },
-        { name: '이디야커피 본점', source: 'Google' },
-        { name: '우리매장강남점', source: 'Google' }, // 중복 제거를 위한 예시
-        { name: '빽다방', source: 'Google' },
-    ];
-
-    // Debounced search logic
-    useEffect(() => {
-        const handleSearch = async (query) => {
-            if (query.length < 2) {
-                setStoreSearchResults([]);
-                setIsSearching(false);
-                return;
-            }
-
-            setIsSearching(true);
-
-            // 1. 내부 DB 검색 (모의 데이터 사용)
-            const dbResults = dbData.filter(store => store.name.toLowerCase().includes(query.toLowerCase()));
-            
-            // 2. Google API 검색 (모의 데이터 사용)
-            const googleResults = googleData.filter(store => store.name.toLowerCase().includes(query.toLowerCase()));
-            
-            // 3. 결과 합치기 및 중복 제거
-            const uniqueResults = new Map();
-            dbResults.forEach(item => uniqueResults.set(item.name, item));
-            googleResults.forEach(item => {
-                if (!uniqueResults.has(item.name)) {
-                    uniqueResults.set(item.name, item);
-                }
-            });
-
-            const allResults = Array.from(uniqueResults.values());
-            setStoreSearchResults(allResults);
-            setIsSearching(false);
-        };
-
-        const timer = setTimeout(() => {
-            if (storeSearchQuery) {
-                handleSearch(storeSearchQuery);
-            } else {
-                setStoreSearchResults([]);
-            }
-        }, 500);
-
-        return () => clearTimeout(timer);
-    }, [storeSearchQuery]);
-
-    const handleSelectStore = (store) => {
-        // When a store is selected, update both the final product details and the search query state
-        setProductDetails(prev => ({ ...prev, storeName: store.name }));
-        setStoreSearchQuery(store.name); // Update search bar text to match the selected store
-        setStoreSearchResults([]); // Hide search results list
     };
 
     const handleChange = (key: keyof ProductDetails, value: string | number) => {
@@ -311,6 +260,12 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
                     {<View>
                         <Text style={styles.inputLabel}>Category</Text>
                         <TextInput style={styles.inputField} placeholder="e.g., Seoul Milk 1L" value={productDetails.category} onChangeText={(text) => handleChange('category', text)} />
+
+                        {/* <TouchableOpacity style={styles.inputField} onPress={() => setCategoryModalVisible(true)}>
+                            <Text style={productDetails.category ? styles.inputText : styles.placeholderText}>
+                                {productDetails.category || 'Select a category'}
+                            </Text>
+                        </TouchableOpacity> */}
                     </View>}
                 </View>
                 
@@ -319,7 +274,7 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
                     <View style={styles.inputGroup}>
                         <View style={styles.labelWithButton}>
                             <Text style={styles.inputLabel}>Store Name</Text>
-                            <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isFetchingLocation}>
+                            <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation}>
                                 {isFetchingLocation ? (
                                     <ActivityIndicator size="small" color="#4b5563" />
                                 ) : (
@@ -330,39 +285,16 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
                                 )}
                             </TouchableOpacity>
                         </View>
-                        <TextInput
-                            style={styles.inputField}
-                            placeholder="e.g., Super Saver"
-                            // FIX: Bind the value to `productDetails.storeName`
-                            value={productDetails.storeName}
-                            onChangeText={(text) => {
-                                // When the user types, update both the search query and the product details
-                                setStoreSearchQuery(text);
-                                setProductDetails(prev => ({ ...prev, storeName: text }));
-                            }}
-                        />
-                        {/* 검색 결과 표시 */}
-                        {isSearching ? (
-                            <ActivityIndicator size="small" color="#4b5563" style={styles.searchLoader} />
-                        ) : storeSearchResults.length > 0 && storeSearchQuery.length > 0 && (
-                            <View style={styles.searchResultsContainer}>
-                                <FlatList
-                                    data={storeSearchResults}
-                                    keyExtractor={(item) => item.name}
-                                    renderItem={({ item }) => (
-                                        <TouchableOpacity style={styles.resultItem} onPress={() => handleSelectStore(item)}>
-                                            <View style={styles.resultContent}>
-                                                <Text style={styles.resultText}>{item.name}</Text>
-                                                <Text style={styles.resultSourceText}>{`(${item.source})`}</Text>
-                                            </View>
-                                        </TouchableOpacity>
-                                    )}
-                                    // 키보드 가림 현상 방지를 위해 FlatList 높이를 제한합니다.
-                                    style={{ maxHeight: 150 }} 
-                                />
-                            </View>
-                        )}
+                        <TextInput style={styles.inputField} placeholder="e.g., Super Saver" value={productDetails?.storeName} onChangeText={(text) => handleChange('storeName', text)} />
                     </View>
+                    {/* <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Street address</Text>
+                        <TextInput style={styles.inputField} placeholder="e.g., Street address" value={`${productDetails?.storeStreetNumber || ''} ${productDetails?.storeStreetAddress || ''}`.trim()} onChangeText={(text) => handleChange('storePostalCode', text)} />
+                        <Text style={styles.inputLabel}>City,Province</Text>
+                        <TextInput style={styles.inputField} placeholder="e.g., City,Province" value={`${productDetails?.storeCity || ''} ${productDetails?.storeProvince || ''}`.trim()} onChangeText={(text) => handleChange('storePostalCode', text)} />
+                        <Text style={styles.inputLabel}>Postal code</Text>
+                        <TextInput style={styles.inputField} placeholder="e.g., Postal Code" value={productDetails?.storePostalCode} onChangeText={(text) => handleChange('storePostalCode', text)} />
+                    </View> */}
                     <View>
                         <Text style={styles.inputLabel}>Price</Text>
                         <TextInput style={styles.inputField} placeholder="e.g., 3.85" value={String(productDetails.price)} onChangeText={(text) => handleChange('price', Number(text))} keyboardType="numeric" />
@@ -391,7 +323,7 @@ const styles = StyleSheet.create({
     scrollContent: {
         padding: 20,
         paddingTop: 60,
-        paddingBottom: 120, // 스크롤 여유 공간 추가
+        paddingBottom: 120,
     },
     headerSection: {
         alignItems: 'center',
@@ -497,40 +429,4 @@ const styles = StyleSheet.create({
     },
     inputText: { fontSize: 16, color: '#1f2937' },
     placeholderText: { fontSize: 16, color: '#9ca3af' },
-    searchResultsContainer: {
-        backgroundColor: 'white',
-        borderColor: '#e5e7eb',
-        borderWidth: 1,
-        borderRadius: 12,
-        marginTop: 4,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 5,
-        elevation: 5,
-    },
-    searchLoader: {
-        position: 'absolute',
-        right: 15,
-        top: 50,
-    },
-    resultItem: {
-        paddingVertical: 15,
-        paddingHorizontal: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
-    },
-    resultContent: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    resultText: {
-        fontSize: 16,
-        color: '#1f2937',
-    },
-    resultSourceText: {
-        fontSize: 12,
-        color: '#6b7280',
-    },
 });
