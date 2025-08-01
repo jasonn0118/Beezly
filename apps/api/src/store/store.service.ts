@@ -1899,7 +1899,8 @@ export class StoreService {
               'bar',
               'cafe',
               'gas_station',
-              'pharmacy',
+              'hospital',
+              'doctor',
             ],
           });
         } else if (hasQuery) {
@@ -1931,6 +1932,51 @@ export class StoreService {
         );
         googleStores = [];
       }
+    }
+
+    // Apply final radius filtering if location is provided (ensure strict radius enforcement)
+    if (hasLocation) {
+      // Filter local stores by radius (double-check database results)
+      localStores = localStores.filter((store) => {
+        const distance =
+          store.distance ||
+          this.calculateDistance(
+            latitude,
+            longitude,
+            store.latitude || 0,
+            store.longitude || 0,
+          );
+        const withinRadius = distance <= radiusKm;
+        if (!withinRadius) {
+          this.logger.debug(
+            `🚫 Filtered out local store: ${store.name} (${distance.toFixed(2)}km > ${radiusKm}km)`,
+          );
+        }
+        return withinRadius;
+      });
+
+      // Filter Google stores by radius (Google API sometimes returns results slightly outside radius)
+      googleStores = googleStores.filter((store) => {
+        const distance =
+          store.distance ||
+          this.calculateDistance(
+            latitude,
+            longitude,
+            store.latitude,
+            store.longitude,
+          );
+        const withinRadius = distance <= radiusKm;
+        if (!withinRadius) {
+          this.logger.debug(
+            `🚫 Filtered out Google store: ${store.name} (${distance.toFixed(2)}km > ${radiusKm}km)`,
+          );
+        }
+        return withinRadius;
+      });
+
+      this.logger.debug(
+        `📍 After radius filtering (${radiusKm}km): Local=${localStores.length}, Google=${googleStores.length}`,
+      );
     }
 
     // Apply sorting if specified

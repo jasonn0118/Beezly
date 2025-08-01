@@ -79,10 +79,10 @@ export class GooglePlacesService {
   ];
 
   // Store types we want to exclude (non-grocery businesses)
+  // Note: 'pharmacy' and 'health' removed because many grocery stores have pharmacies
   private readonly excludedTypes = [
     'hospital',
     'doctor',
-    'pharmacy',
     'bank',
     'atm',
     'gas_station',
@@ -202,43 +202,108 @@ export class GooglePlacesService {
 
     try {
       const searchUrl = `${this.baseUrl}/nearbysearch/json`;
+      let response: AxiosResponse<GooglePlacesSearchResponse> | null = null;
 
-      // Use the most relevant included type for the API call
-      const primaryType = includedTypes.includes('supermarket')
-        ? 'supermarket'
-        : includedTypes[0] || 'establishment';
+      // Try specific brand search first if keyword provided
+      if (keyword) {
+        // Use the most relevant included type for the API call
+        const primaryType = includedTypes.includes('supermarket')
+          ? 'supermarket'
+          : includedTypes[0] || 'establishment';
 
-      const searchParams = {
-        key: this.apiKey,
-        location: `${location.lat},${location.lng}`,
-        radius: Math.min(radius, 50000), // Max 50km per Google API limits
-        type: primaryType,
-        keyword: keyword || undefined,
-      };
+        // Try multiple search strategies for better brand matching
+        const searchStrategies = [
+          { keyword: keyword, type: 'establishment' }, // Original query with broader type (most likely to succeed)
+          { keyword: keyword, type: primaryType }, // Original query with primary type
+          { keyword: keyword.replace(/\s+/g, '-'), type: 'establishment' }, // Replace spaces with hyphens: "save on foods" → "save-on-foods"
+          { keyword: keyword.replace(/\s+/g, ''), type: 'establishment' }, // Remove spaces: "save on foods" → "saveonfoods"
+        ];
 
-      this.logger.debug(
-        `🔍 Google Places findStoresNearby: ${searchUrl} with params: ${JSON.stringify(searchParams)}`,
-      );
+        // Multiple search strategies for better brand matching
 
-      const response: AxiosResponse<GooglePlacesSearchResponse> =
-        await axios.get(searchUrl, {
+        // Try each strategy until we get results
+        for (const strategy of searchStrategies) {
+          const searchParams = {
+            key: this.apiKey,
+            location: `${location.lat},${location.lng}`,
+            radius: Math.min(radius, 50000), // Max 50km per Google API limits
+            type: strategy.type,
+            keyword: strategy.keyword,
+          };
+
+          // Try current search strategy
+
+          const tempResponse: AxiosResponse<GooglePlacesSearchResponse> =
+            await axios.get(searchUrl, {
+              params: searchParams,
+              timeout: 10000,
+            });
+
+          // Check strategy results
+
+          // If this strategy succeeds and returns results, use it
+          if (
+            tempResponse.data.status === 'OK' &&
+            tempResponse.data.results?.length > 0
+          ) {
+            response = tempResponse;
+            // Found results with this strategy
+            break;
+          }
+        }
+
+        // If no brand search strategy worked, try general grocery search
+        if (
+          !response ||
+          response.data.status !== 'OK' ||
+          response.data.results.length === 0
+        ) {
+          // All brand strategies failed, try general search
+
+          const generalSearchParams = {
+            key: this.apiKey,
+            location: `${location.lat},${location.lng}`,
+            radius: Math.min(radius, 50000),
+            type: 'supermarket',
+            keyword: 'grocery supermarket',
+          };
+
+          response = await axios.get(searchUrl, {
+            params: generalSearchParams,
+            timeout: 10000,
+          });
+        }
+      } else {
+        // No keyword provided, do general search with primary type
+        const primaryType = includedTypes.includes('supermarket')
+          ? 'supermarket'
+          : includedTypes[0] || 'establishment';
+
+        const searchParams = {
+          key: this.apiKey,
+          location: `${location.lat},${location.lng}`,
+          radius: Math.min(radius, 50000), // Max 50km per Google API limits
+          type: primaryType,
+        };
+
+        // General search without specific keyword
+
+        response = await axios.get(searchUrl, {
           params: searchParams,
           timeout: 10000,
         });
+      }
 
-      if (response.data.status !== 'OK') {
+      // Check if we have a valid response
+      if (!response || response.data.status !== 'OK') {
         this.logger.warn(
-          `Google Places API returned status: ${response.data.status}`,
-          response.data.error_message,
+          `Google Places API returned status: ${response?.data.status || 'NO_RESPONSE'}`,
+          response?.data.error_message,
         );
         return [];
       }
 
-      // 🔍 DEBUG: Log raw Google API response to see what we're actually getting
-      this.logger.debug(
-        `🔍 Raw Google Places API response:`,
-        JSON.stringify(response.data, null, 2),
-      );
+      // Process Google Places API response
 
       // Apply includedTypes/excludedTypes filtering AND keyword relevance filtering
       const filteredResults = response.data.results.filter((place) => {
@@ -252,15 +317,18 @@ export class GooglePlacesService {
           excludedTypes.includes(type),
         );
 
-        // If we have a keyword, ensure the place name actually contains it (case-insensitive)
+        // If we have a keyword, use flexible matching for brand names
         let matchesKeyword = true;
         if (keyword) {
-          const placeName = place.name.toLowerCase();
-          const searchKeyword = keyword.toLowerCase();
-          matchesKeyword = placeName.includes(searchKeyword);
+          matchesKeyword = this.isRelevantStore(place.name, keyword);
         }
 
-        return hasIncludedType && !hasExcludedType && matchesKeyword;
+        const isRelevant =
+          hasIncludedType && !hasExcludedType && matchesKeyword;
+
+        // Filter out irrelevant places
+
+        return isRelevant;
       });
 
       // Simplify results to only essential fields and calculate distance
@@ -287,11 +355,7 @@ export class GooglePlacesService {
         }),
       );
 
-      // 🔍 DEBUG: Log simplified results to see what we're returning
-      this.logger.debug(
-        `🔍 Simplified Google Places results:`,
-        JSON.stringify(simplifiedResults, null, 2),
-      );
+      // Results processed and simplified
 
       // Sort by distance (nearest first)
       simplifiedResults.sort((a, b) => a.distance - b.distance);
@@ -327,37 +391,57 @@ export class GooglePlacesService {
     const radiusMeters = radiusKm * 1000; // Convert km to meters
 
     try {
-      let response: AxiosResponse<GooglePlacesSearchResponse>;
+      let response: AxiosResponse<GooglePlacesSearchResponse> | null = null;
 
       // Try specific brand search first if query provided
       if (query) {
         const searchUrl = `${this.baseUrl}/nearbysearch/json`;
-        const brandSearchParams = {
-          key: this.apiKey,
-          location: `${latitude},${longitude}`,
-          radius: Math.min(radiusMeters, 50000), // Max 50km
-          keyword: query,
-          type: 'establishment', // Broader type for brand searches
-        };
 
-        this.logger.debug(
-          `🔍 Google Places brand search: ${searchUrl} with params: ${JSON.stringify(brandSearchParams)}`,
-        );
+        // Try multiple search strategies for better brand matching
+        const searchStrategies = [
+          { keyword: query, type: 'establishment' }, // Original query with broader type (most likely to succeed)
+          { keyword: query, type: 'supermarket' }, // Original query with supermarket type
+          { keyword: query.replace(/\s+/g, '-'), type: 'establishment' }, // Replace spaces with hyphens: "save on foods" → "save-on-foods"
+          { keyword: query.replace(/\s+/g, ''), type: 'establishment' }, // Remove spaces: "save on foods" → "saveonfoods"
+        ];
 
-        response = await axios.get(searchUrl, {
-          params: brandSearchParams,
-          timeout: 10000,
-        });
+        // Try each strategy until we get results
+        for (const strategy of searchStrategies) {
+          const brandSearchParams = {
+            key: this.apiKey,
+            location: `${latitude},${longitude}`,
+            radius: Math.min(radiusMeters, 50000), // Max 50km
+            keyword: strategy.keyword,
+            type: strategy.type,
+          };
 
-        // If brand search fails or returns no results, try general grocery search
+          // Try current search strategy
+
+          const tempResponse: AxiosResponse<GooglePlacesSearchResponse> =
+            await axios.get(searchUrl, {
+              params: brandSearchParams,
+              timeout: 10000,
+            });
+
+          // Check strategy results
+
+          // If this strategy succeeds and returns results, use it
+          if (
+            tempResponse.data.status === 'OK' &&
+            tempResponse.data.results?.length > 0
+          ) {
+            response = tempResponse;
+            // Found results with this strategy
+            break;
+          }
+        }
+
+        // If no brand search strategy worked, try general grocery search
         if (
+          !response ||
           response.data.status !== 'OK' ||
           response.data.results.length === 0
         ) {
-          this.logger.debug(
-            `Brand search for "${query}" returned no results, trying general search`,
-          );
-
           const generalSearchParams = {
             key: this.apiKey,
             location: `${latitude},${longitude}`,
@@ -382,20 +466,17 @@ export class GooglePlacesService {
           keyword: 'grocery supermarket',
         };
 
-        this.logger.debug(
-          `🔍 Google Places general search: ${searchUrl} with params: ${JSON.stringify(generalSearchParams)}`,
-        );
-
         response = await axios.get(searchUrl, {
           params: generalSearchParams,
           timeout: 10000,
         });
       }
 
-      if (response.data.status !== 'OK') {
+      // Check if we have a valid response
+      if (!response || response.data.status !== 'OK') {
         this.logger.warn(
-          `Google Places API returned status: ${response.data.status}`,
-          response.data.error_message,
+          `Google Places API returned status: ${response?.data.status || 'NO_RESPONSE'}`,
+          response?.data.error_message,
         );
         return [];
       }
@@ -466,10 +547,6 @@ export class GooglePlacesService {
         searchParams.radius = Math.min(radiusMeters, 50000);
       }
 
-      this.logger.debug(
-        `🔍 Google Places text search: ${searchUrl} with params: ${JSON.stringify(searchParams)}`,
-      );
-
       const response: AxiosResponse<GooglePlacesSearchResponse> =
         await axios.get(searchUrl, {
           params: searchParams,
@@ -538,8 +615,6 @@ export class GooglePlacesService {
         ].join(','),
       };
 
-      this.logger.debug(`📍 Getting place details for: ${placeId}`);
-
       const response: AxiosResponse<GooglePlaceDetailsResponse> =
         await axios.get(detailsUrl, {
           params: detailsParams,
@@ -573,6 +648,46 @@ export class GooglePlacesService {
   }
 
   /**
+   * Check if a store name is relevant to the search keyword (flexible brand matching)
+   */
+  private isRelevantStore(storeName: string, keyword: string): boolean {
+    // Normalize function: remove spaces, hyphens, apostrophes, make lowercase
+    const normalize = (text: string) =>
+      text
+        .toLowerCase()
+        .replace(/[-\s'&.]/g, '') // Remove hyphens, spaces, apostrophes, ampersands, dots
+        .replace(/foods?$/i, '') // Remove trailing "food" or "foods"
+        .replace(/stores?$/i, '') // Remove trailing "store" or "stores"
+        .replace(/markets?$/i, ''); // Remove trailing "market" or "markets"
+
+    const normalizedStoreName = normalize(storeName);
+    const normalizedKeyword = normalize(keyword);
+
+    // Direct contains check
+    if (normalizedStoreName.includes(normalizedKeyword)) {
+      return true;
+    }
+
+    // Split keyword into words and check if any significant word matches
+    const keywordWords = normalizedKeyword
+      .split(/\s+/)
+      .filter((word) => word.length > 2);
+    const storeWords = normalizedStoreName
+      .split(/\s+/)
+      .filter((word) => word.length > 2);
+
+    // Check if any keyword word appears in store name
+    const hasWordMatch = keywordWords.some((keywordWord) =>
+      storeWords.some(
+        (storeWord) =>
+          storeWord.includes(keywordWord) || keywordWord.includes(storeWord),
+      ),
+    );
+
+    return hasWordMatch;
+  }
+
+  /**
    * Check if a place is a grocery store/supermarket
    */
   private isGroceryStore(place: GooglePlaceApiResult): boolean {
@@ -601,17 +716,22 @@ export class GooglePlacesService {
       'kroger',
       'whole foods',
       'trader joe',
+      'save on foods', // Canadian chain
+      'save-on-foods',
+      'loblaws',
+      'metro',
+      'iga',
+      'sobeys',
+      'freshco',
+      'no frills',
+      'real canadian superstore',
+      'superstore',
+      'provigo',
     ].some((keyword) => nameOrAddress.includes(keyword));
 
     // Final decision: must have included type OR grocery keywords, AND not have excluded type
     const isGrocery =
       (hasIncludedType || hasGroceryKeywords) && !hasExcludedType;
-
-    if (!isGrocery) {
-      this.logger.debug(
-        `🚫 Filtered out: ${place.name} (types: ${place.types.join(', ')})`,
-      );
-    }
 
     return isGrocery;
   }
