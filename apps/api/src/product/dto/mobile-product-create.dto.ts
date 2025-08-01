@@ -119,6 +119,12 @@ export class MobileProductResponseDto {
   })
   barcode: string;
 
+  @ApiPropertyOptional({
+    example: 'Cheil Jedang',
+    description: 'Brand name (optional, for future use)',
+  })
+  brandName?: string;
+
   @ApiProperty({
     example: 101001,
     description: 'Category ID',

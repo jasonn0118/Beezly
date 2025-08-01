@@ -728,7 +728,7 @@ export class ProductService {
       barcode_type: product.barcodeType,
       category: product.category,
       image_url: product.imageUrl,
-      brand_name: product.brandName,
+      brandName: product.brandName,
       created_at: product.createdAt.toISOString(),
       updated_at: product.updatedAt.toISOString(),
       credit_score: product.creditScore ?? 0,
@@ -743,7 +743,7 @@ export class ProductService {
     return {
       product_sk: product.productSk,
       name: product.name,
-      brand_name: product.brandName,
+      brandName: product.brandName,
       image_url: product.imageUrl,
     };
   }
@@ -797,6 +797,7 @@ export class ProductService {
         name: productData.name,
         barcode: productData.barcode,
         barcodeType: productData.barcodeType,
+        brandName: productData.brandName,
         category: productData.category,
         imageUrl: imageUrl,
         creditScore: 0,
@@ -841,6 +842,7 @@ export class ProductService {
     return {
       product_sk: product.productSk,
       name: product.name,
+      brandName: product.brandName || '',
       barcode: product.barcode || '',
       category: product.category || 0,
       image_url: product.imageUrl || '',
