@@ -12,10 +12,7 @@ import { Category } from '../entities/category.entity';
 import { Store } from '../entities/store.entity';
 import { Price } from '../entities/price.entity';
 import { upload_product } from '../utils/storage.util';
-import {
-  MobileProductCreateDto,
-  MobileProductResponseDto,
-} from './dto/mobile-product-create.dto';
+import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
 import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 import {
   EnhancedProductResponseDto,
@@ -748,20 +745,26 @@ export class ProductService {
     };
   }
 
-  // Mobile-specific method for creating product with store and price
+  // Method for creating product with optional store and price information
   async createProductWithPriceAndStore(
-    productData: MobileProductCreateDto,
+    productData: ProductCreateDto,
     imageFile: Buffer,
-    userSk: string = 'mobile_user',
-  ): Promise<MobileProductResponseDto> {
-    // 1. Find or create store
-    const store = await this.findOrCreateStore(
-      productData.storeName,
-      productData.storeAddress,
-      productData.storeCity,
-      productData.storeProvince,
-      productData.storePostalCode,
-    );
+    mimeType: string = 'image/png',
+    userSk: string = 'default_user',
+  ): Promise<ProductResponseDto> {
+    let store: Store | null = null;
+    let price: Price | null = null;
+
+    // 1. Find or create store only if store data is provided
+    if (productData.storeName && productData.storeAddress) {
+      store = await this.findOrCreateStore(
+        productData.storeName,
+        productData.storeAddress,
+        productData.storeCity,
+        productData.storeProvince,
+        productData.storePostalCode,
+      );
+    }
 
     // 2. Check if product already exists by barcode
     let product = await this.productRepository.findOne({
@@ -770,7 +773,14 @@ export class ProductService {
     });
 
     // 3. Upload image to Supabase storage
-    const imagePath = await upload_product(userSk, store.storeSk, imageFile);
+    // Use store ID if available, otherwise use a generic product folder
+    const storageKey = store ? store.storeSk : 'products';
+    const imagePath = await upload_product(
+      userSk,
+      storageKey,
+      imageFile,
+      mimeType,
+    );
     let imageUrl: string | undefined;
 
     if (imagePath) {
@@ -798,6 +808,7 @@ export class ProductService {
         barcode: productData.barcode,
         barcodeType: productData.barcodeType,
         category: productData.category,
+        brandName: productData.brandName,
         imageUrl: imageUrl,
         creditScore: 0,
         verifiedCount: 0,
@@ -807,57 +818,78 @@ export class ProductService {
       product = await this.productRepository.save(product);
     } else {
       // Update existing product if needed
+      let needsUpdate = false;
+
       if (imageUrl && !product.imageUrl) {
         product.imageUrl = imageUrl;
+        needsUpdate = true;
+      }
+
+      if (productData.brandName && !product.brandName) {
+        product.brandName = productData.brandName;
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
         product = await this.productRepository.save(product);
       }
     }
 
-    // 5. Create or update price entry
-    let price = await this.priceRepository.findOne({
-      where: {
-        productSk: product.productSk,
-        storeSk: store.storeSk,
-      },
-      order: { recordedAt: 'DESC' },
-    });
-
-    // Only create new price if doesn't exist or price changed
-    if (!price || price.price !== productData.price) {
-      price = this.priceRepository.create({
-        productSk: product.productSk,
-        storeSk: store.storeSk,
-        price: productData.price,
-        currency: 'CAD',
-        creditScore: 0,
-        verifiedCount: 0,
-        flaggedCount: 0,
+    // 5. Create or update price entry only if store and price are provided
+    if (store && productData.price !== undefined) {
+      price = await this.priceRepository.findOne({
+        where: {
+          productSk: product.productSk,
+          storeSk: store.storeSk,
+        },
+        order: { recordedAt: 'DESC' },
       });
 
-      price = await this.priceRepository.save(price);
+      // Only create new price if doesn't exist or price changed
+      if (!price || price.price !== productData.price) {
+        price = this.priceRepository.create({
+          productSk: product.productSk,
+          storeSk: store.storeSk,
+          price: productData.price,
+          currency: 'CAD',
+          creditScore: 0,
+          verifiedCount: 0,
+          flaggedCount: 0,
+        });
+
+        price = await this.priceRepository.save(price);
+      }
     }
 
-    // 6. Return enriched response
-    return {
+    // 6. Return response based on available data
+    const response: ProductResponseDto = {
       product_sk: product.productSk,
       name: product.name,
       barcode: product.barcode || '',
       category: product.category || 0,
       image_url: product.imageUrl || '',
-      store: {
-        store_sk: store.storeSk,
-        name: store.name,
-        address: store.fullAddress || '',
-        city: store.city,
-        province: store.province,
-      },
-      price: {
-        price_sk: price.priceSk,
-        price: Number(price.price),
-        currency: price.currency || 'CAD',
-        recorded_at: price.recordedAt.toISOString(),
-      },
+      store: store
+        ? {
+            store_sk: store.storeSk,
+            name: store.name,
+            address: store.fullAddress || '',
+            city: store.city,
+            province: store.province,
+          }
+        : undefined,
+      price: price
+        ? {
+            price_sk: price.priceSk,
+            price: Number(price.price),
+            currency: price.currency || 'CAD',
+            recorded_at: price.recordedAt.toISOString(),
+          }
+        : undefined,
     };
+
+    // TypeScript will handle undefined values properly in the response
+
+    return response;
   }
 
   private async findOrCreateStore(

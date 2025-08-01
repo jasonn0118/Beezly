@@ -23,10 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
-import {
-  MobileProductCreateDto,
-  MobileProductResponseDto,
-} from './dto/mobile-product-create.dto';
+import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
 import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 import {
   EmbeddingSearchRequestDto,
@@ -175,11 +172,14 @@ export class ProductController {
 
   @Post()
   @ApiOperation({
-    summary: 'Create a new product with image, store, and price',
+    summary: 'Create a new product with image',
+    description:
+      'Creates a new product with required image. Store and price information are optional.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    description: 'Product data with image file',
+    description:
+      'Product data with required image file. Store and price information are optional.',
     schema: {
       type: 'object',
       properties: {
@@ -201,18 +201,40 @@ export class ProductController {
           ],
         },
         category: { type: 'number', example: 101001 },
-        storeName: { type: 'string', example: 'Homeplus' },
-        storeAddress: { type: 'string', example: '123 Main St, Seoul' },
-        price: { type: 'number', example: 5000 },
-        brandName: { type: 'string', example: 'Cheil Jedang' },
-        storeCity: { type: 'string', example: 'Seoul' },
+        storeName: {
+          type: 'string',
+          example: 'Homeplus',
+          description: 'Store name (optional)',
+        },
+        storeAddress: {
+          type: 'string',
+          example: '123 Main St, Seoul',
+          description: 'Store address (optional)',
+        },
+        price: {
+          type: 'number',
+          example: 5000,
+          description: 'Product price (optional)',
+        },
+        brandName: {
+          type: 'string',
+          example: 'Cheil Jedang',
+          description: 'Brand name (optional)',
+        },
+        storeCity: {
+          type: 'string',
+          example: 'Seoul',
+          description: 'Store city (optional)',
+        },
         storeProvince: {
           type: 'string',
           example: 'Seoul',
+          description: 'Store province (optional)',
         },
         storePostalCode: {
           type: 'string',
           example: '12345',
+          description: 'Store postal code (optional)',
         },
         image: {
           type: 'string',
@@ -220,21 +242,13 @@ export class ProductController {
           description: 'Product image file',
         },
       },
-      required: [
-        'name',
-        'barcode',
-        'category',
-        'storeName',
-        'storeAddress',
-        'price',
-        'image',
-      ],
+      required: ['name', 'barcode', 'category', 'image'],
     },
   })
   @ApiResponse({
     status: 201,
-    description: 'Product successfully created with store and price info',
-    type: MobileProductResponseDto,
+    description: 'Product successfully created',
+    type: ProductResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -242,19 +256,22 @@ export class ProductController {
   })
   @UseInterceptors(FileInterceptor('image'))
   async createProduct(
-    @Body() productData: MobileProductCreateDto,
+    @Body() productData: ProductCreateDto,
     @UploadedFile() imageFile: Express.Multer.File,
-  ): Promise<MobileProductResponseDto> {
+  ): Promise<ProductResponseDto> {
     if (!imageFile) {
       throw new BadRequestException('Image file is required');
     }
 
     // Convert Express.Multer.File to Buffer
     const imageBuffer = imageFile.buffer;
+    const mimeType = imageFile.mimetype;
 
     return this.productService.createProductWithPriceAndStore(
       productData,
       imageBuffer,
+      mimeType,
+      'default_user', // userSk
     );
   }
 
@@ -777,7 +794,7 @@ export class ProductController {
     return this.receiptPriceIntegrationService.getPriceSyncStatistics();
   }
 
-  // Receipt Confirmation Endpoints (Mobile Frontend Integration)
+  // Receipt Confirmation Endpoints (Frontend Integration)
 
   @Get('receipt/confirmation-candidates')
   @ApiOperation({

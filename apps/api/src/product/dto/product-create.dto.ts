@@ -9,7 +9,7 @@ import {
 } from 'class-validator';
 import { BarcodeType } from '@beezly/types';
 
-export class MobileProductCreateDto {
+export class ProductCreateDto {
   @ApiProperty({
     example: 'Organic Apple',
     description: 'Name of the product',
@@ -43,29 +43,30 @@ export class MobileProductCreateDto {
   @IsNotEmpty()
   category: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'Homeplus',
     description: 'Name of the store',
   })
   @IsString()
-  @IsNotEmpty()
-  storeName: string;
+  @IsOptional()
+  storeName?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '123 Main St, Seoul',
     description: 'Store address',
   })
   @IsString()
-  @IsNotEmpty()
-  storeAddress: string;
+  @IsOptional()
+  storeAddress?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 5000,
     description: 'Product price in the store',
   })
   @IsNumber()
   @Min(0)
-  price: number;
+  @IsOptional()
+  price?: number;
 
   @ApiPropertyOptional({
     example: 'Cheil Jedang',
@@ -100,7 +101,7 @@ export class MobileProductCreateDto {
   storePostalCode?: string;
 }
 
-export class MobileProductResponseDto {
+export class ProductResponseDto {
   @ApiProperty({
     example: 'd290f1ee-6c54-4b01-90e6-d701748f0851',
     description: 'Product UUID',
@@ -131,7 +132,7 @@ export class MobileProductResponseDto {
   })
   image_url: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: {
       store_sk: 'e290f1ee-6c54-4b01-90e6-d701748f0852',
       name: 'Homeplus',
@@ -139,9 +140,9 @@ export class MobileProductResponseDto {
       city: 'Seoul',
       province: 'Seoul',
     },
-    description: 'Store information',
+    description: 'Store information (optional)',
   })
-  store: {
+  store?: {
     store_sk: string;
     name: string;
     address: string;
@@ -149,16 +150,16 @@ export class MobileProductResponseDto {
     province?: string;
   };
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: {
       price_sk: 'f290f1ee-6c54-4b01-90e6-d701748f0853',
       price: 5000,
       currency: 'CAD',
       recorded_at: '2025-07-22T10:00:00Z',
     },
-    description: 'Price information',
+    description: 'Price information (optional)',
   })
-  price: {
+  price?: {
     price_sk: string;
     price: number;
     currency: string;
