@@ -3,6 +3,16 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { StoreDTO } from '../../../packages/types/dto/store';
 import { Store } from '../entities/store.entity';
+import { StoreCacheService } from './cache/store-cache.service';
+import {
+  LocationSearchDto,
+  NameSearchDto,
+  CitySearchDto,
+  ProvinceSearchDto,
+  AdvancedSearchDto,
+  PopularStoresDto,
+  PaginatedResponse,
+} from './dto/store-search.dto';
 
 export interface LocationSearch {
   latitude: number;
@@ -45,6 +55,7 @@ export class StoreService {
   constructor(
     @InjectRepository(Store)
     private readonly storeRepository: Repository<Store>,
+    private readonly cacheService: StoreCacheService,
   ) {}
 
   async getAllStores(): Promise<StoreDTO[]> {
@@ -172,7 +183,17 @@ export class StoreService {
       ])
       .where('store.latitude IS NOT NULL')
       .andWhere('store.longitude IS NOT NULL')
-      .having('distance <= :radiusKm')
+      .andWhere(
+        `(
+          6371 * acos(
+            cos(radians(:latitude)) * 
+            cos(radians(store.latitude)) * 
+            cos(radians(store.longitude) - radians(:longitude)) + 
+            sin(radians(:latitude)) * 
+            sin(radians(store.latitude))
+          )
+        ) <= :radiusKm`
+      )
       .orderBy('distance', 'ASC')
       .limit(limit)
       .setParameters({ latitude, longitude, radiusKm })
@@ -180,7 +201,7 @@ export class StoreService {
 
     return stores.map((store: RawStoreQueryResult) => ({
       ...this.mapRawStoreToDTO(store),
-      distance: parseFloat(store.distance || '0'),
+      distance: parseFloat((parseFloat(store.distance || '0')).toFixed(2)),
     }));
   }
 
@@ -310,7 +331,17 @@ export class StoreService {
       query = query
         .andWhere('store.latitude IS NOT NULL')
         .andWhere('store.longitude IS NOT NULL')
-        .having('distance <= :radiusKm')
+        .andWhere(
+          `(
+            6371 * acos(
+              cos(radians(:latitude)) * 
+              cos(radians(store.latitude)) * 
+              cos(radians(store.longitude) - radians(:longitude)) + 
+              sin(radians(:latitude)) * 
+              sin(radians(store.latitude))
+            )
+          ) <= :radiusKm`
+        )
         .setParameter('radiusKm', radiusKm)
         .orderBy('distance', 'ASC');
     } else {
@@ -321,7 +352,7 @@ export class StoreService {
 
     return stores.map((store: RawStoreQueryResult) => ({
       ...this.mapRawStoreToDTO(store),
-      distance: store.distance ? parseFloat(store.distance) : 0,
+      distance: store.distance ? parseFloat((parseFloat(store.distance)).toFixed(2)) : 0,
     }));
   }
 
@@ -1051,5 +1082,389 @@ export class StoreService {
     }
 
     return { fullAddress: address };
+  }
+
+  // 🚀 ENHANCED PAGINATED SEARCH METHODS WITH CACHING
+
+  /**
+   * Find stores near location with pagination and caching
+   */
+  async findStoresNearLocationPaginated(
+    params: LocationSearchDto,
+  ): Promise<PaginatedResponse<StoreDistance>> {
+    return this.cacheService.getOrSetPaginated(
+      'findStoresNearLocation',
+      params,
+      async () => {
+        const {
+          latitude,
+          longitude,
+          radiusKm = 10,
+          page = 1,
+          limit = 20,
+        } = params;
+        const offset = (page - 1) * limit;
+
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .select([
+            'store.*',
+            `(
+              6371 * acos(
+                cos(radians(:latitude)) * 
+                cos(radians(store.latitude)) * 
+                cos(radians(store.longitude) - radians(:longitude)) + 
+                sin(radians(:latitude)) * 
+                sin(radians(store.latitude))
+              )
+            ) AS distance`,
+          ])
+          .where('store.latitude IS NOT NULL')
+          .andWhere('store.longitude IS NOT NULL')
+          .andWhere(
+            `(
+              6371 * acos(
+                cos(radians(:latitude)) * 
+                cos(radians(store.latitude)) * 
+                cos(radians(store.longitude) - radians(:longitude)) + 
+                sin(radians(:latitude)) * 
+                sin(radians(store.latitude))
+              )
+            ) <= :radiusKm`
+          )
+          .orderBy('distance', 'ASC')
+          .setParameters({ latitude, longitude, radiusKm });
+
+        // Get total count for pagination
+        const totalQuery = this.storeRepository
+          .createQueryBuilder('store')
+          .select('COUNT(*)')
+          .where('store.latitude IS NOT NULL')
+          .andWhere('store.longitude IS NOT NULL')
+          .andWhere(
+            `(6371 * acos(cos(radians(:latitude)) * cos(radians(store.latitude)) * cos(radians(store.longitude) - radians(:longitude)) + sin(radians(:latitude)) * sin(radians(store.latitude)))) <= :radiusKm`,
+          )
+          .setParameters({ latitude, longitude, radiusKm });
+
+        const [stores, totalResult] = await Promise.all([
+          query.offset(offset).limit(limit).getRawMany(),
+          totalQuery.getRawOne(),
+        ]);
+        const total = totalResult as { count: string };
+
+        const data = (stores as RawStoreQueryResult[]).map((store: RawStoreQueryResult) => ({
+          ...this.mapRawStoreToDTO(store),
+          distance: parseFloat((parseFloat(store.distance || '0')).toFixed(2)),
+        }));
+
+        return this.buildPaginatedResponse(
+          data,
+          page,
+          limit,
+          parseInt(total.count),
+        );
+      },
+    );
+  }
+
+  /**
+   * Search stores by name with pagination and caching
+   */
+  async searchStoresByNamePaginated(
+    params: NameSearchDto,
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.cacheService.getOrSetPaginated(
+      'searchStoresByName',
+      params,
+      async () => {
+        const { name, page = 1, limit = 20 } = params;
+        const offset = (page - 1) * limit;
+
+        // Use trigram similarity for better fuzzy matching
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.name % :name OR store.name ILIKE :namePattern', {
+            name,
+            namePattern: `%${name}%`,
+          })
+          .orderBy('similarity(store.name, :name)', 'DESC')
+          .addOrderBy('store.name', 'ASC')
+          .setParameter('name', name);
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getMany(),
+          query.getCount(),
+        ]);
+
+        const data = stores.map((store) => this.mapStoreToDTO(store));
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Find stores by city with pagination and caching
+   */
+  async findStoresByCityPaginated(
+    params: CitySearchDto & { page?: number; limit?: number },
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.cacheService.getOrSetPaginated(
+      'findStoresByCity',
+      params,
+      async () => {
+        const { city, page = 1, limit = 20 } = params;
+        const offset = (page - 1) * limit;
+
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.city ILIKE :city', { city: `%${city}%` })
+          .orderBy('store.name', 'ASC');
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getMany(),
+          query.getCount(),
+        ]);
+
+        const data = stores.map((store) => this.mapStoreToDTO(store));
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Find stores by province with pagination and caching
+   */
+  async findStoresByProvincePaginated(
+    params: ProvinceSearchDto & { page?: number; limit?: number },
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.cacheService.getOrSetPaginated(
+      'findStoresByProvince',
+      params,
+      async () => {
+        const { province, page = 1, limit = 20 } = params;
+        const offset = (page - 1) * limit;
+
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.province ILIKE :province', {
+            province: `%${province}%`,
+          })
+          .orderBy('store.city', 'ASC')
+          .addOrderBy('store.name', 'ASC');
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getMany(),
+          query.getCount(),
+        ]);
+
+        const data = stores.map((store) => this.mapStoreToDTO(store));
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Get popular stores with pagination and caching
+   */
+  async getPopularStoresPaginated(
+    params: PopularStoresDto,
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.cacheService.getOrSetPaginated(
+      'getPopularStores',
+      params,
+      async () => {
+        const { minReceipts = 1, page = 1, limit = 20 } = params;
+        const offset = (page - 1) * limit;
+
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .leftJoin('store.receipts', 'receipt')
+          .loadRelationCountAndMap('store.receiptCount', 'store.receipts')
+          .having('COUNT(receipt.id) >= :minReceipts', { minReceipts })
+          .groupBy('store.id')
+          .orderBy('COUNT(receipt.id)', 'DESC')
+          .addOrderBy('store.name', 'ASC');
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getMany(),
+          query.getCount(),
+        ]);
+
+        const data = stores.map((store) => this.mapStoreToDTO(store));
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Advanced search with pagination and caching
+   */
+  async advancedStoreSearchPaginated(
+    params: AdvancedSearchDto,
+  ): Promise<PaginatedResponse<StoreDistance>> {
+    return this.cacheService.getOrSetPaginated(
+      'advancedStoreSearch',
+      params,
+      async () => {
+        const {
+          name,
+          city,
+          province,
+          latitude,
+          longitude,
+          radiusKm = 10,
+          page = 1,
+          limit = 20,
+        } = params;
+        const offset = (page - 1) * limit;
+
+        let query = this.storeRepository.createQueryBuilder('store');
+
+        // Add distance calculation if coordinates provided
+        if (latitude !== undefined && longitude !== undefined) {
+          query = query
+            .select([
+              'store.*',
+              `(
+                6371 * acos(
+                  cos(radians(:latitude)) * 
+                  cos(radians(store.latitude)) * 
+                  cos(radians(store.longitude) - radians(:longitude)) + 
+                  sin(radians(:latitude)) * 
+                  sin(radians(store.latitude))
+                )
+              ) AS distance`,
+            ])
+            .setParameters({ latitude, longitude });
+        } else {
+          query = query.select('store.*');
+        }
+
+        // Add text filters
+        if (name) {
+          query = query.andWhere(
+            'store.name % :name OR store.name ILIKE :namePattern',
+            {
+              name,
+              namePattern: `%${name}%`,
+            },
+          );
+        }
+        if (city) {
+          query = query.andWhere('store.city ILIKE :city', {
+            city: `%${city}%`,
+          });
+        }
+        if (province) {
+          query = query.andWhere('store.province ILIKE :province', {
+            province: `%${province}%`,
+          });
+        }
+
+        // Add distance filter if coordinates provided
+        if (latitude !== undefined && longitude !== undefined) {
+          query = query
+            .andWhere('store.latitude IS NOT NULL')
+            .andWhere('store.longitude IS NOT NULL')
+            .andWhere(
+              `(
+                6371 * acos(
+                  cos(radians(:latitude)) * 
+                  cos(radians(store.latitude)) * 
+                  cos(radians(store.longitude) - radians(:longitude)) + 
+                  sin(radians(:latitude)) * 
+                  sin(radians(store.latitude))
+                )
+              ) <= :radiusKm`
+            )
+            .setParameter('radiusKm', radiusKm)
+            .orderBy('distance', 'ASC');
+        } else if (name) {
+          query = query
+            .orderBy('similarity(store.name, :name)', 'DESC')
+            .addOrderBy('store.name', 'ASC');
+        } else {
+          query = query.orderBy('store.name', 'ASC');
+        }
+
+        // Get total count (simpler query for count)
+        let countQuery = this.storeRepository.createQueryBuilder('store');
+        if (name) {
+          countQuery = countQuery.andWhere(
+            'store.name % :name OR store.name ILIKE :namePattern',
+            {
+              name,
+              namePattern: `%${name}%`,
+            },
+          );
+        }
+        if (city) {
+          countQuery = countQuery.andWhere('store.city ILIKE :city', {
+            city: `%${city}%`,
+          });
+        }
+        if (province) {
+          countQuery = countQuery.andWhere('store.province ILIKE :province', {
+            province: `%${province}%`,
+          });
+        }
+        if (latitude !== undefined && longitude !== undefined) {
+          countQuery = countQuery
+            .andWhere('store.latitude IS NOT NULL')
+            .andWhere('store.longitude IS NOT NULL')
+            .andWhere(
+              `(6371 * acos(cos(radians(:latitude)) * cos(radians(store.latitude)) * cos(radians(store.longitude) - radians(:longitude)) + sin(radians(:latitude)) * sin(radians(store.latitude)))) <= :radiusKm`,
+            )
+            .setParameters({ latitude, longitude, radiusKm });
+        }
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getRawMany(),
+          countQuery.getCount(),
+        ]);
+
+        const data = stores.map((store: RawStoreQueryResult) => ({
+          ...this.mapRawStoreToDTO(store),
+          distance: store.distance ? parseFloat((parseFloat(store.distance)).toFixed(2)) : 0,
+        }));
+
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Build paginated response with metadata
+   */
+  private buildPaginatedResponse<T>(
+    data: T[],
+    page: number,
+    limit: number,
+    total: number,
+  ): PaginatedResponse<T> {
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+      meta: {
+        queryTime: 0, // Will be set by cache service
+        indexesUsed: ['idx_store_name_gin_trgm', 'idx_store_coordinates'], // Placeholder
+      },
+    };
+  }
+
+  /**
+   * Clear search cache when stores are modified
+   */
+  invalidateSearchCache(): void {
+    this.cacheService.invalidate('store:');
   }
 }

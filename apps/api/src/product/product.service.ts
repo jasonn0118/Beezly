@@ -809,7 +809,6 @@ export class ProductService {
         barcodeType: productData.barcodeType,
         brandName: productData.brandName,
         category: productData.category,
-        brandName: productData.brandName,
         imageUrl: imageUrl,
         creditScore: 0,
         verifiedCount: 0,

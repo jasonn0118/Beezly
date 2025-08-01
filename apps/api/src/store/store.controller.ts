@@ -7,10 +7,19 @@ import {
   Param,
   Body,
   Query,
+  ValidationPipe,
+  UsePipes,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { StoreService, LocationSearch, StoreDistance } from './store.service';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { StoreService, StoreDistance } from './store.service';
 import { StoreDTO } from '../../../packages/types/dto/store';
+import {
+  LocationSearchDto,
+  NameSearchDto,
+  AdvancedSearchDto,
+  PopularStoresDto,
+  PaginatedResponse,
+} from './dto/store-search.dto';
 
 @ApiTags('Stores')
 @Controller('stores')
@@ -90,196 +99,92 @@ export class StoreController {
   // 🌍 GEOSPATIAL ENDPOINTS
 
   @Get('search/nearby')
-  @ApiOperation({ summary: 'Find stores near a location' })
-  @ApiQuery({
-    name: 'latitude',
-    description: 'Latitude coordinate',
-    example: 43.6532,
-  })
-  @ApiQuery({
-    name: 'longitude',
-    description: 'Longitude coordinate',
-    example: -79.3832,
-  })
-  @ApiQuery({
-    name: 'radius',
-    description: 'Search radius in km',
-    example: 10,
-    required: false,
-  })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Maximum number of results',
-    example: 50,
-    required: false,
-  })
+  @ApiOperation({ summary: 'Find stores near a location with pagination' })
   @ApiResponse({
     status: 200,
-    description: 'List of nearby stores with distances',
+    description: 'Paginated list of nearby stores with distances',
+    type: PaginatedResponse<StoreDistance>,
   })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async findStoresNearby(
-    @Query('latitude') latitude: string,
-    @Query('longitude') longitude: string,
-    @Query('radius') radius?: string,
-    @Query('limit') limit?: string,
-  ): Promise<StoreDistance[]> {
-    const location: LocationSearch = {
-      latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude),
-      radiusKm: radius ? parseFloat(radius) : 10,
-      limit: limit ? parseInt(limit) : 50,
-    };
-
-    return this.storeService.findStoresNearLocation(location);
+    @Query() params: LocationSearchDto,
+  ): Promise<PaginatedResponse<StoreDistance>> {
+    return this.storeService.findStoresNearLocationPaginated(params);
   }
 
   @Get('search/city/:city')
-  @ApiOperation({ summary: 'Find stores in a city' })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Maximum number of results',
-    example: 50,
-    required: false,
-  })
+  @ApiOperation({ summary: 'Find stores in a city with pagination' })
   @ApiResponse({
     status: 200,
-    description: 'List of stores in the specified city',
-    type: [StoreDTO],
+    description: 'Paginated list of stores in the specified city',
+    type: PaginatedResponse<StoreDTO>,
   })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async findStoresByCity(
     @Param('city') city: string,
-    @Query('limit') limit?: string,
-  ): Promise<StoreDTO[]> {
-    return this.storeService.findStoresByCity(
-      city,
-      limit ? parseInt(limit) : 50,
-    );
+    @Query() queryParams: { page?: number; limit?: number },
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    const params = { city, ...queryParams };
+    return this.storeService.findStoresByCityPaginated(params);
   }
 
   @Get('search/province/:province')
-  @ApiOperation({ summary: 'Find stores in a province' })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Maximum number of results',
-    example: 50,
-    required: false,
-  })
+  @ApiOperation({ summary: 'Find stores in a province with pagination' })
   @ApiResponse({
     status: 200,
-    description: 'List of stores in the specified province',
-    type: [StoreDTO],
+    description: 'Paginated list of stores in the specified province',
+    type: PaginatedResponse<StoreDTO>,
   })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async findStoresByProvince(
     @Param('province') province: string,
-    @Query('limit') limit?: string,
-  ): Promise<StoreDTO[]> {
-    return this.storeService.findStoresByProvince(
-      province,
-      limit ? parseInt(limit) : 50,
-    );
+    @Query() queryParams: { page?: number; limit?: number },
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    const params = { province, ...queryParams };
+    return this.storeService.findStoresByProvincePaginated(params);
   }
 
   @Get('search/name')
-  @ApiOperation({ summary: 'Search stores by name' })
-  @ApiQuery({
-    name: 'name',
-    description: 'Store name to search for',
-    example: 'Walmart',
-  })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Maximum number of results',
-    example: 50,
-    required: false,
-  })
+  @ApiOperation({ summary: 'Search stores by name with pagination' })
   @ApiResponse({
     status: 200,
-    description: 'List of stores matching the name search',
-    type: [StoreDTO],
+    description: 'Paginated list of stores matching the name search',
+    type: PaginatedResponse<StoreDTO>,
   })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async searchStoresByName(
-    @Query('name') name: string,
-    @Query('limit') limit?: string,
-  ): Promise<StoreDTO[]> {
-    return this.storeService.searchStoresByName(
-      name,
-      limit ? parseInt(limit) : 50,
-    );
+    @Query() params: NameSearchDto,
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.storeService.searchStoresByNamePaginated(params);
   }
 
   @Get('popular')
-  @ApiOperation({ summary: 'Get popular stores (most receipts)' })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Maximum number of results',
-    example: 20,
-    required: false,
-  })
+  @ApiOperation({ summary: 'Get popular stores with pagination' })
   @ApiResponse({
     status: 200,
-    description: 'List of popular stores',
-    type: [StoreDTO],
+    description: 'Paginated list of popular stores',
+    type: PaginatedResponse<StoreDTO>,
   })
-  async getPopularStores(@Query('limit') limit?: string): Promise<StoreDTO[]> {
-    return this.storeService.getPopularStores(limit ? parseInt(limit) : 20);
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async getPopularStores(
+    @Query() params: PopularStoresDto,
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.storeService.getPopularStoresPaginated(params);
   }
 
   @Get('search/advanced')
-  @ApiOperation({ summary: 'Advanced store search with multiple criteria' })
-  @ApiQuery({
-    name: 'name',
-    description: 'Store name to search for',
-    required: false,
-  })
-  @ApiQuery({ name: 'city', description: 'City to search in', required: false })
-  @ApiQuery({
-    name: 'province',
-    description: 'Province to search in',
-    required: false,
-  })
-  @ApiQuery({
-    name: 'latitude',
-    description: 'Latitude coordinate',
-    required: false,
-  })
-  @ApiQuery({
-    name: 'longitude',
-    description: 'Longitude coordinate',
-    required: false,
-  })
-  @ApiQuery({
-    name: 'radius',
-    description: 'Search radius in km',
-    required: false,
-  })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Maximum number of results',
-    required: false,
+  @ApiOperation({
+    summary: 'Advanced store search with multiple criteria and pagination',
   })
   @ApiResponse({
     status: 200,
-    description: 'List of stores matching the search criteria',
+    description: 'Paginated list of stores matching the search criteria',
+    type: PaginatedResponse<StoreDistance>,
   })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async advancedStoreSearch(
-    @Query('name') name?: string,
-    @Query('city') city?: string,
-    @Query('province') province?: string,
-    @Query('latitude') latitude?: string,
-    @Query('longitude') longitude?: string,
-    @Query('radius') radius?: string,
-    @Query('limit') limit?: string,
-  ): Promise<StoreDistance[]> {
-    const params = {
-      name,
-      city,
-      province,
-      latitude: latitude ? parseFloat(latitude) : undefined,
-      longitude: longitude ? parseFloat(longitude) : undefined,
-      radiusKm: radius ? parseFloat(radius) : 10,
-      limit: limit ? parseInt(limit) : 50,
-    };
-
-    return this.storeService.advancedStoreSearch(params);
+    @Query() params: AdvancedSearchDto,
+  ): Promise<PaginatedResponse<StoreDistance>> {
+    return this.storeService.advancedStoreSearchPaginated(params);
   }
 }
