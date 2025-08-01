@@ -23,6 +23,13 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 
 
+// Define a new type that extends the original interface to include the new fields
+interface StoreSearchResultWithDisplay extends UnifiedStoreSearchResult {
+    key: string;
+    source: 'DB' | 'Google';
+    displayAddress: string;
+}
+
 export default function RegisterProduct({ scannedData}: { scannedData: { barcode: string; type: BarcodeType;} | null }) {
     // State for form inputs
     const [productDetails, setProductDetails] = useState<ProductDetails>({
@@ -64,7 +71,7 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
 
     // Store search related states
     const [storeSearchQuery, setStoreSearchQuery] = useState('');
-    const [storeSearchResults, setStoreSearchResults] = useState<UnifiedStoreSearchResult[]>([]);
+    const [storeSearchResults, setStoreSearchResults] = useState<StoreSearchResultWithDisplay[]>([]);
     const [isSearching, setIsSearching] = useState(false);
 
     const [isCategoryModalVisible, setCategoryModalVisible] = useState(false);
@@ -117,7 +124,7 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
                 const place = placemarks[0];
                 console.log(place);
                 // We use place.name as a primary store name, if not available, we create one.
-                const formattedStoreName = place.name || `${place.street}, ${place.city}`;
+                const formattedStoreName = `${place.name}, ${place.street}, ${place.city}` || `${place.street}, ${place.city}`;
                 const formattedAddress = `${place.street || ''}`;
                 const formattedStreetNumber = `${place.streetNumber || ''}`;
                 const formattedCity = `${place.city || ''}`;
@@ -166,21 +173,25 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
                     ProductService.searchGooglePlaces(query, lat, lon)
                 ]);
 
-                const uniqueResults = new Map<string, UnifiedStoreSearchResult>();
+                // DB 결과에 storeSk를 키로 사용하고, 필요한 정보를 조합하여 표시
+                const dbResultsWithKey: StoreSearchResultWithDisplay[] = dbResults.map(item => ({
+                    ...item,
+                    source: 'DB',
+                    key: item.storeId || uuidv4(), // DB 항목의 고유 키 사용. 만약 storeSk가 없다면 uuidv4() 사용
+                    displayAddress: `${item.storeStreetAddress || ''}, ${item.storeCity || ''}`,
+                }));
 
-                dbResults.forEach(item => {
-                    if(item.storeName) {
-                        console.log(item.storeName);
-                        uniqueResults.set(item.storeName, { ...item, source: 'DB' })
-                    }
-                });
-                googleResults.forEach(item => {
-                    if(item.storeName && !uniqueResults.has(item.storeName)) {
-                        uniqueResults.set(item.storeName, { ...item, source: 'Google' });
-                    }
-                });
+                // Google 결과에 고유 ID를 키로 사용
+                const googleResultsWithKey: StoreSearchResultWithDisplay[] = googleResults.map(item => ({
+                    ...item,
+                    source: 'Google',
+                    key: uuidv4(), // 고유 ID 생성
+                    displayAddress: `${item.storeStreetAddress || ''}, ${item.storeCity || ''}`,
+                }));
 
-                setStoreSearchResults(Array.from(uniqueResults.values()));
+                const combinedResults = [...dbResultsWithKey, ...googleResultsWithKey];
+
+                setStoreSearchResults(combinedResults);
             } catch (error) {
                 console.error('Failed to search stores:', error);
                 Alert.alert('Error', 'Failed to search for stores.');
@@ -200,7 +211,7 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
         return () => clearTimeout(timer);
     }, [storeSearchQuery]);
 
-    const handleSelectStore = (store: UnifiedStoreSearchResult) => {
+    const handleSelectStore = (store: StoreSearchResultWithDisplay) => {
         setCanSearch(false);
         setProductDetails(prev => ({
             ...prev,
@@ -214,7 +225,9 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
             storeStreetNumber: store.storeStreetNumber,
             storeStreetAddress: store.storeStreetAddress,
         }));
-        setStoreSearchQuery(store.storeName || '');
+        // Update the store search query to show the full address for user convenience
+        const fullAddress = [store.storeName, store.storeStreetAddress, store.storeCity].filter(Boolean).join(', ');
+        setStoreSearchQuery(fullAddress);
         setStoreSearchResults([]);
     };
 
@@ -299,7 +312,7 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
         >
-            <ScrollView 
+            <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 keyboardShouldPersistTaps="handled"
             >
@@ -377,18 +390,18 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
                             <ActivityIndicator size="small" color="#4b5563" style={styles.searchLoader} />
                         ) : storeSearchResults.length > 0 && (
                             <View style={styles.searchResultsWrapper}>
-                                <ScrollView 
+                                <ScrollView
                                     style={[styles.searchResultsContainer, { maxHeight: 150 }]}
                                     keyboardShouldPersistTaps="handled"
                                 >
                                     {storeSearchResults.map((item) => (
                                         <TouchableOpacity
-                                            key={`${item.storeName}-${item.source}`}
+                                            key={item.key} // 고유 키 사용 (DB 항목은 storeSk, Google 항목은 uuid)
                                             style={styles.resultItem}
                                             onPress={() => handleSelectStore(item)}
                                         >
                                             <View style={styles.resultContent}>
-                                                <Text style={styles.resultText}>{item.storeName}</Text>
+                                                <Text style={styles.resultText}>{item.storeName+', '+ (item.storeStreetAddress || '') +', '+ (item.storeCity || '')}</Text>
                                                 <Text style={styles.resultSourceText}>{`(${item.source})`}</Text>
                                             </View>
                                         </TouchableOpacity>

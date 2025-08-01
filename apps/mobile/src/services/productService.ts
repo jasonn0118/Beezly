@@ -44,6 +44,7 @@ export interface ProductDetails {
 }
 
 export interface StoreData {
+    storeId?: string;
     storeName?: string;
     storeAddress: string;
     storePostalCode: string;
@@ -123,6 +124,7 @@ export class ProductService {
   static async getSearchStores(query: string): Promise<StoreData[]> {
     const results = await apiClient.get<any[]>(`/stores/search/name`, { params: { name: query }});
     return results.map(item => ({
+      storeId: item.storeSk,
       storeName: item.name,
       storeAddress: item.fullAddress || '',
       storePostalCode: item.postalCode || '',
@@ -139,9 +141,9 @@ export class ProductService {
     // This is a mock implementation. In a real app, you would call the Google Places API.
     console.log(`Searching Google Places for "${query}" near (${lat}, ${lon})`);
     const googleData: StoreData[] = [
-        { storeName: 'Starbucks', storeAddress: '123 Main St', storePostalCode: 'A1A 1A1', storeCity: 'Toronto', storeProvince: 'ON', storeLatitude: '43.6532', storeLongitude: '-79.3832', storeStreetNumber: '123', storeStreetAddress: 'Main St' },
-        { storeName: 'Tim Hortons', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
-        { storeName: 'Homeplus seoul', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
+        { storeId: '9999', storeName: 'Starbucks', storeAddress: '123 Main St', storePostalCode: 'A1A 1A1', storeCity: 'Toronto', storeProvince: 'ON', storeLatitude: '43.6532', storeLongitude: '-79.3832', storeStreetNumber: '123', storeStreetAddress: 'Main St' },
+        { storeId: '9998', storeName: 'Tim Hortons', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
+        { storeId: '9997', storeName: 'Homeplus seoul', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
     ];
     return Promise.resolve(googleData.filter(store => store.storeName && store.storeName.toLowerCase().includes(query.toLowerCase())));
   }
