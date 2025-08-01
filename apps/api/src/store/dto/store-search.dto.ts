@@ -8,6 +8,29 @@ import {
   IsString,
   Length,
 } from 'class-validator';
+import { StoreDTO } from '../../../../packages/types/dto/store';
+
+// Forward declaration for GooglePlaceResult (will be imported in service)
+interface GooglePlaceResult {
+  place_id: string;
+  name: string;
+  formatted_address: string;
+
+  // Address fields matching Store entity structure
+  streetNumber?: string;
+  road?: string;
+  streetAddress?: string; // Combined street number + road
+  fullAddress?: string; // Complete formatted address (same as formatted_address)
+  city?: string;
+  province?: string;
+  postalCode?: string;
+  countryRegion?: string;
+  latitude: number;
+  longitude: number;
+
+  types: string[];
+  distance?: number;
+}
 
 export class PaginationDto {
   @ApiPropertyOptional({
@@ -241,4 +264,120 @@ export interface SearchPerformanceMetrics {
   resultCount: number;
   searchTerm?: string;
   filters?: Record<string, unknown>;
+}
+
+// Unified search DTO for all store search scenarios
+export class UnifiedStoreSearchDto extends PaginationDto {
+  @ApiPropertyOptional({
+    description: 'Search query (store name, address, or keyword)',
+    example: 'costco',
+    minLength: 1,
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 100)
+  @Transform(({ value }: { value: string }) => value?.trim())
+  query?: string;
+
+  @ApiPropertyOptional({
+    description: 'User latitude for nearby search',
+    example: 49.1398,
+    minimum: -90,
+    maximum: 90,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude?: number;
+
+  @ApiPropertyOptional({
+    description: 'User longitude for nearby search',
+    example: -122.6705,
+    minimum: -180,
+    maximum: 180,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude?: number;
+
+  @ApiPropertyOptional({
+    description: 'Search radius in kilometers (when lat/lng provided)',
+    minimum: 0.1,
+    maximum: 100,
+    default: 25,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.1)
+  @Max(100)
+  radiusKm?: number = 25;
+
+  @ApiPropertyOptional({
+    description: 'Include Google Places results alongside local results',
+    default: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return value.toLowerCase() === 'true';
+    }
+    return Boolean(value);
+  })
+  includeGoogle?: boolean = true;
+
+  @ApiPropertyOptional({
+    description: 'Maximum number of Google results to include',
+    minimum: 0,
+    maximum: 20,
+    default: 10,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(20)
+  maxGoogleResults?: number = 10;
+
+  @ApiPropertyOptional({
+    description: 'Sort order for results',
+    enum: ['relevance', 'distance', 'name'],
+    default: 'relevance',
+  })
+  @IsOptional()
+  @IsString()
+  sortBy?: 'relevance' | 'distance' | 'name' = 'relevance';
+}
+
+// Unified search response interface
+export interface UnifiedStoreSearchResponse {
+  localStores: (StoreDTO & { distance?: number })[];
+  googleStores: GooglePlaceResult[];
+  summary: {
+    totalResults: number;
+    localCount: number;
+    googleCount: number;
+    searchType: 'query_only' | 'location_only' | 'query_and_location';
+    hasMoreGoogle: boolean;
+  };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
+  meta?: {
+    queryTime: number;
+    cacheHit?: boolean;
+    searchStrategy: string;
+    googleApiCalled: boolean;
+  };
 }

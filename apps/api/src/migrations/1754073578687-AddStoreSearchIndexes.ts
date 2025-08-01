@@ -68,35 +68,17 @@ export class AddStoreSearchIndexes1754073578687 implements MigrationInterface {
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Drop all indexes in reverse order
     // Note: Using regular DROP INDEX (not CONCURRENTLY) for migration compatibility
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_store_created_at"`,
-    );
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_store_created_at"`);
     await queryRunner.query(
       `DROP INDEX IF EXISTS "idx_store_name_city_province"`,
     );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_store_full_address"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_store_coordinates"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_store_city_province"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_store_postal_code"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_store_province"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_store_city"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_store_name_btree"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_store_name_gin_trgm"`,
-    );
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_store_full_address"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_store_coordinates"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_store_city_province"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_store_postal_code"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_store_province"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_store_city"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_store_name_btree"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_store_name_gin_trgm"`);
   }
 }
