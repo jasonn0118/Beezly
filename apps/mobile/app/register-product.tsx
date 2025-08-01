@@ -16,11 +16,12 @@ import {
 import { FontAwesome } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import ProductService, { Product, ProductDetails, UnifiedStoreSearchResult } from "../services/productService";
+import ProductService, { Product, ProductDetails, UnifiedStoreSearchResult } from "../src/services/productService";
 import { BarcodeType } from '@beezly/types/dto/barcode';
-import CategoryPicker from '../components/scan/CategoryPicker';
+import CategoryPicker from '../src/components/scan/CategoryPicker';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
+import { useLocalSearchParams } from 'expo-router';
 
 
 // Define a new type that extends the original interface to include the new fields
@@ -30,10 +31,14 @@ interface StoreSearchResultWithDisplay extends UnifiedStoreSearchResult {
     displayAddress: string;
 }
 
-export default function RegisterProduct({ scannedData}: { scannedData: { barcode: string; type: BarcodeType;} | null }) {
+export default function RegisterProductScreen() {
+    const { productSk, scannedData: scannedDataString } = useLocalSearchParams<{ productSk?: string, scannedData?: string }>();
+    const scannedData = scannedDataString ? JSON.parse(scannedDataString) : null;
+
     // State for form inputs
     const [productDetails, setProductDetails] = useState<ProductDetails>({
         //product info
+        product_sk: '',
         id: '',
         name: '',
         barcode: '',
@@ -56,18 +61,38 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
     });
 
     useEffect(() => {
-        if (scannedData?.barcode) {
-            setProductDetails(prev => ({
-                ...prev,
-                barcode : scannedData.barcode,
-                type : scannedData.type
-            }));
-        }
-    }, [scannedData]);
+        const fetchProductData = async () => {
+            if (productSk) {
+                try {
+                    const productData = await ProductService.getProduct(productSk);
+                    setProductDetails(productData);
+                } catch (error) {
+                    console.error('Failed to fetch product data:', error);
+                    Alert.alert('Error', 'Failed to load product data.');
+                }
+            }
+        };
+
+        fetchProductData();
+    }, [productSk]);
+
 
     useEffect(() => {
-        handleGetLocation();
-    }, []);
+        if (scannedDataString) {
+            const scannedData = JSON.parse(scannedDataString);
+            if (scannedData?.barcode) {
+                setProductDetails(prev => ({
+                    ...prev,
+                    barcode : scannedData.barcode,
+                    type : scannedData.type
+                }));
+            }
+        }
+    }, [scannedDataString]);
+
+    // useEffect(() => {
+    //     handleGetLocation();
+    // }, []);
 
     // Store search related states
     const [storeSearchQuery, setStoreSearchQuery] = useState('');
@@ -122,7 +147,6 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
 
             if (placemarks && placemarks.length > 0) {
                 const place = placemarks[0];
-                console.log(place);
                 // We use place.name as a primary store name, if not available, we create one.
                 const formattedStoreName = `${place.name}, ${place.street}, ${place.city}` || `${place.street}, ${place.city}`;
                 const formattedAddress = `${place.street || ''}`;
@@ -203,8 +227,6 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
         const timer = setTimeout(() => {
             if (storeSearchQuery && canSearch) {
                 handleSearch(storeSearchQuery);
-            } else {
-                setStoreSearchResults([]);
             }
         }, 500);
 
@@ -255,7 +277,6 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
             return;
         }
         try {
-            const newId = uuidv4();
             const formData = new FormData();
 
             if (!finalProductDetails) {
@@ -264,33 +285,38 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
                 return;
             }
 
-            const newProductData: Product = {
-                ...finalProductDetails,
-                id: newId,
-            };
+            if (productSk) {
+                // Update existing product
+                await ProductService.updateProduct(productSk, finalProductDetails);
+                Alert.alert('Product Updated', 'Product information has been successfully updated.');
+            } else {
+                // Create new product
+                const newId = uuidv4();
+                const newProductData: Product = {
+                    ...finalProductDetails,
+                    id: newId,
+                };
 
-            Object.keys(newProductData).forEach(key => {
-            const typedKey = key as keyof Product;
-                if (typedKey !== 'image_url') {
-                formData.append(typedKey, String(newProductData[typedKey]));
+                Object.keys(newProductData).forEach(key => {
+                const typedKey = key as keyof Product;
+                    if (typedKey !== 'image_url') {
+                    formData.append(typedKey, String(newProductData[typedKey]));
+                    }
+                });
+
+                if (newProductData.image_url) {
+                const uri = newProductData.image_url;
+                const uriParts = uri.split('.');
+                const fileType = uriParts[uriParts.length - 1];
+                formData.append('image', {
+                    uri,
+                    name: `photo.${fileType}`,
+                    type: `image/${fileType}`,
+                } as any);
                 }
-            });
-
-            if (newProductData.image_url) {
-            const uri = newProductData.image_url;
-            const uriParts = uri.split('.');
-            const fileType = uriParts[uriParts.length - 1];
-            formData.append('image', {
-                uri,
-                name: `photo.${fileType}`,
-                type: `image/${fileType}`,
-            } as any);
+                await ProductService.createProduct(formData);
+                Alert.alert('Product Submitted', 'Thank you for contributing!');
             }
-            // Append data to formData...
-
-            const result = await ProductService.createProduct(formData);
-            console.log("success:", result);
-            Alert.alert('Product Submitted', 'Thank you for contributing!');
         } catch (err) {
             if (axios.isAxiosError(err) && err.response) {
                 console.log('server response data:', err.response.data);
@@ -321,8 +347,8 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
                     <View style={styles.iconContainer}>
                         <FontAwesome name="leaf" size={32} color="#fbbf24" />
                     </View>
-                    <Text style={styles.title}>Found New Honey!</Text>
-                    <Text style={styles.subtitle}>Get bonus points for the first entry!</Text>
+                    <Text style={styles.title}>{productSk ? 'Update Honey' : 'Found New Honey!'}</Text>
+                    <Text style={styles.subtitle}>{productSk ? 'Update the details below.' : 'Get bonus points for the first entry!'}</Text>
                 </View>
 
                 {/* Image Upload Card */}
@@ -419,7 +445,7 @@ export default function RegisterProduct({ scannedData}: { scannedData: { barcode
 
                 {/* Submit Button */}
                 <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                    <Text style={styles.submitButtonText}>Submit & Earn Points</Text>
+                    <Text style={styles.submitButtonText}>{productSk ? 'Update Product' : 'Submit & Earn Points'}</Text>
                 </TouchableOpacity>
             </ScrollView>
             <CategoryPicker

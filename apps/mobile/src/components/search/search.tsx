@@ -59,6 +59,12 @@ export default function SearchScreen() {
         }
     };
 
+    const handleClearSearch = () => {
+        setSearchText('');
+        setResults([]);
+        setHasSearched(false);
+    };
+
     // Helper to render content based on state
     const renderContent = () => {
         if (loading) {
@@ -110,6 +116,11 @@ export default function SearchScreen() {
                     onSubmitEditing={handleSearchSubmit}
                     returnKeyType="search"
                 />
+                {searchText.length > 0 && (
+                    <TouchableOpacity onPress={handleClearSearch} style={styles.clearIconContainer}>
+                        <FontAwesome name="times-circle" size={20} color="#9ca3af" />
+                    </TouchableOpacity>
+                )}
             </View>
 
             <View style={styles.contentArea}>
@@ -152,6 +163,9 @@ const styles = StyleSheet.create({
         height: 56,
         fontSize: 16,
         color: '#1f2937',
+    },
+    clearIconContainer: {
+        padding: 8,
     },
     contentArea: {
         flex: 1,

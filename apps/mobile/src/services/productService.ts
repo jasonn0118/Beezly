@@ -2,6 +2,7 @@ import { BarcodeType } from '@beezly/types/dto/barcode';
 import { apiClient } from './api';
 
 export interface Product {
+  product_sk: string;
   id: string;
   name: string;
   barcode: string;
@@ -12,6 +13,7 @@ export interface Product {
 }
 
 export interface Barcode {
+  product_sk: string;
   id: string;
   name: string;
   barcode: string;
@@ -24,6 +26,7 @@ export interface Barcode {
 }
 
 export interface ProductDetails {
+  product_sk: string;
   id: string;
   name: string;
   barcode: string;
@@ -68,7 +71,7 @@ export interface PriceData {
 export interface ProductSearchResult {
   product_sk: string;
   name: string;
-  brand_name: string | null;
+  brandName: string | null;
   image_url: string;
 }
 
