@@ -4,7 +4,6 @@ import { FontAwesome } from '@expo/vector-icons';
 import ProductService, { ProductSearchResult } from '../../services/productService';
  import { useNavigation } from '@react-navigation/native';
  import {useRouter} from 'expo-router';
- import ProductDetailScreen from '../../screens/ProductDetailScreen';
 
 const ResultCard = ({ item, onPress }: { item: ProductSearchResult, onPress: () => void }) => (
     <TouchableOpacity style={styles.cardContainer} onPress={onPress}>
@@ -15,7 +14,7 @@ const ResultCard = ({ item, onPress }: { item: ProductSearchResult, onPress: () 
             //defaultSource={require('./path/to/your/default/placeholder.png')} // Make sure to have a local placeholder image
         />
         <View style={styles.cardInfo}>
-            <Text style={styles.cardBrand}>{item.brand_name || 'Unknown Brand'}</Text>
+            <Text style={styles.cardBrand}>{item.brandName || 'Unknown Brand'}</Text>
             <Text style={styles.cardName}>{item.name}</Text>
         </View>
         <FontAwesome name="chevron-right" size={16} color="#d1d5db" />
