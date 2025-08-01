@@ -55,6 +55,10 @@ export interface StoreData {
     storeStreetAddress : string;
 }
 
+export interface UnifiedStoreSearchResult extends StoreData {
+    source: 'DB' | 'Google';
+}
+
 export interface PriceData {
   price?: number;
 
@@ -117,7 +121,29 @@ export class ProductService {
   }
 
   static async getSearchStores(query: string): Promise<StoreData[]> {
-    return apiClient.get<StoreData[]>(`/stores/search/name`, { params: { q: query }} );
+    const results = await apiClient.get<any[]>(`/stores/search/name`, { params: { name: query }});
+    return results.map(item => ({
+      storeName: item.name,
+      storeAddress: item.fullAddress || '',
+      storePostalCode: item.postalCode || '',
+      storeCity: item.city || '',
+      storeProvince: item.province || '',
+      storeLatitude: String(item.latitude || ''),
+      storeLongitude: String(item.longitude || ''),
+      storeStreetNumber: item.streetNumber || '',
+      storeStreetAddress: item.streetAddress || '',
+    }));
+  }
+
+  static async searchGooglePlaces(query: string, lat?: number, lon?: number): Promise<StoreData[]> {
+    // This is a mock implementation. In a real app, you would call the Google Places API.
+    console.log(`Searching Google Places for "${query}" near (${lat}, ${lon})`);
+    const googleData: StoreData[] = [
+        { storeName: 'Starbucks', storeAddress: '123 Main St', storePostalCode: 'A1A 1A1', storeCity: 'Toronto', storeProvince: 'ON', storeLatitude: '43.6532', storeLongitude: '-79.3832', storeStreetNumber: '123', storeStreetAddress: 'Main St' },
+        { storeName: 'Tim Hortons', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
+        { storeName: 'Homeplus seoul', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
+    ];
+    return Promise.resolve(googleData.filter(store => store.storeName && store.storeName.toLowerCase().includes(query.toLowerCase())));
   }
 }
 
