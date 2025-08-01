@@ -265,10 +265,13 @@ export class ProductController {
 
     // Convert Express.Multer.File to Buffer
     const imageBuffer = imageFile.buffer;
+    const mimeType = imageFile.mimetype;
 
     return this.productService.createProductWithPriceAndStore(
       productData,
       imageBuffer,
+      mimeType,
+      'default_user', // userSk
     );
   }
 

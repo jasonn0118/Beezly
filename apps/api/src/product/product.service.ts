@@ -749,6 +749,7 @@ export class ProductService {
   async createProductWithPriceAndStore(
     productData: ProductCreateDto,
     imageFile: Buffer,
+    mimeType: string = 'image/png',
     userSk: string = 'default_user',
   ): Promise<ProductResponseDto> {
     let store: Store | null = null;
@@ -774,7 +775,12 @@ export class ProductService {
     // 3. Upload image to Supabase storage
     // Use store ID if available, otherwise use a generic product folder
     const storageKey = store ? store.storeSk : 'products';
-    const imagePath = await upload_product(userSk, storageKey, imageFile);
+    const imagePath = await upload_product(
+      userSk,
+      storageKey,
+      imageFile,
+      mimeType,
+    );
     let imageUrl: string | undefined;
 
     if (imagePath) {
@@ -923,66 +929,6 @@ export class ProductService {
     }
 
     return store;
-  }
-
-  // Simplified product creation method (without store and price)
-  async createSimpleProduct(
-    productData: Pick<
-      ProductCreateDto,
-      'name' | 'barcode' | 'barcodeType' | 'category' | 'brandName'
-    >,
-    imageFile?: Buffer,
-    userSk: string = 'default_user',
-  ): Promise<Product> {
-    // Check if product already exists by barcode
-    let product = await this.productRepository.findOne({
-      where: { barcode: productData.barcode },
-      relations: ['categoryEntity'],
-    });
-
-    if (product) {
-      this.logger.log(
-        `Product with barcode ${productData.barcode} already exists`,
-      );
-      return product;
-    }
-
-    // Validate category exists
-    const categoryExists = await this.categoryRepository.findOne({
-      where: { id: productData.category },
-    });
-
-    if (!categoryExists) {
-      throw new NotFoundException(
-        `Category with ID ${productData.category} not found`,
-      );
-    }
-
-    // Upload image if provided
-    let imageUrl: string | undefined;
-    if (imageFile) {
-      const imagePath = await upload_product(userSk, 'products', imageFile);
-      if (imagePath) {
-        const supabaseUrl =
-          process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-        imageUrl = `${supabaseUrl}/storage/v1/object/public/product/${imagePath}`;
-      }
-    }
-
-    // Create product
-    product = this.productRepository.create({
-      name: productData.name,
-      barcode: productData.barcode,
-      barcodeType: productData.barcodeType,
-      category: productData.category,
-      brandName: productData.brandName,
-      imageUrl: imageUrl,
-      creditScore: 0,
-      verifiedCount: 0,
-      flaggedCount: 0,
-    });
-
-    return await this.productRepository.save(product);
   }
 
   // Helper methods for enhanced product functionality
