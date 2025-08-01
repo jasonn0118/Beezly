@@ -23,6 +23,7 @@ export function useProductInfo({ scannedData, productId }: UseProductInfoProps) 
                 }
                 
                 if (response) { 
+                    console.log(response);
                     setProductInfo(response);
                 }
             } catch (err) {

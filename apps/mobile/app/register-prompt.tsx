@@ -1,17 +1,26 @@
+
 import React from 'react';
 import { View, Text, Button, StyleSheet } from 'react-native';
-import { BarcodeType } from '@beezly/types/dto/barcode';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
-interface RegisterProductPromptProps {
-  scannedData: {barcode: string; type: BarcodeType;};
-  onRegisterPress: () => void; // onRegisterPress prop 추가
-}
-
-const RegisterProductPrompt: React.FC<RegisterProductPromptProps> = ({ scannedData, onRegisterPress }) => {
+export default function RegisterProductPromptScreen() {
+  const router = useRouter();
+  const { scannedData: scannedDataString } = useLocalSearchParams<{ scannedData?: string }>();
+  const scannedData = scannedDataString ? JSON.parse(scannedDataString) : null;
 
   const handleRegisterPress = () => {
-    onRegisterPress();
+    if (scannedData) {
+      router.push(`/register-product?scannedData=${JSON.stringify(scannedData)}`);
+    }
   };
+
+  if (!scannedData) {
+    return (
+      <View style={styles.container}>
+        <Text>Error: No scanned data provided.</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -47,5 +56,3 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
 });
-
-export default RegisterProductPrompt;

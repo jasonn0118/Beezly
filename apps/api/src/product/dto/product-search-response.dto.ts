@@ -18,7 +18,7 @@ export class ProductSearchResponseDto {
     description: 'Product brand name',
     required: false,
   })
-  brand_name?: string;
+  brandName?: string;
 
   @ApiProperty({
     example: 'https://example.com/images/apple.jpg',
