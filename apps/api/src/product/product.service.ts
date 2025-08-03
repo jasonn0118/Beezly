@@ -12,7 +12,12 @@ import { Category } from '../entities/category.entity';
 import { Store } from '../entities/store.entity';
 import { Price } from '../entities/price.entity';
 import { upload_product } from '../utils/storage.util';
-import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
+import {
+  ProductCreateDto,
+  ProductResponseDto,
+  ProductWithStoreCreateDto,
+  ProductWithStoreResponseDto,
+} from './dto/product-create.dto';
 import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 import {
   EnhancedProductResponseDto,
@@ -25,6 +30,7 @@ import {
   StoreLocationDto,
   PriceInfoSubmissionDto,
 } from '../barcode/dto/add-product-price.dto';
+import { StoreService } from '../store/store.service';
 
 export interface ProductSearchParams {
   name?: string;
@@ -48,6 +54,7 @@ export class ProductService {
     private readonly storeRepository: Repository<Store>,
     @InjectRepository(Price)
     private readonly priceRepository: Repository<Price>,
+    private readonly storeService: StoreService,
   ) {}
 
   async getAllProducts(limit: number = 100): Promise<NormalizedProductDTO[]> {
@@ -748,188 +755,387 @@ export class ProductService {
   // Method for creating product with optional store and price information
   async createProductWithPriceAndStore(
     productData: ProductCreateDto,
-    imageFile: Buffer,
+    imageFile?: Buffer,
     mimeType: string = 'image/png',
     userSk: string = 'default_user',
   ): Promise<ProductResponseDto> {
     let store: Store | null = null;
     let price: Price | null = null;
 
-    // 1. Find or create store only if store data is provided
-    if (productData.storeName && productData.storeAddress) {
-      store = await this.findOrCreateStore(
-        productData.storeName,
-        productData.storeAddress,
-        productData.storeCity,
-        productData.storeProvince,
-        productData.storePostalCode,
-      );
-    }
+    try {
+      // 1. Handle store selection (enhanced logic)
+      if (productData.storeSk) {
+        // Scenario 1: Use existing store
+        store = await this.storeRepository.findOne({
+          where: { storeSk: productData.storeSk },
+        });
 
-    // 2. Check if product already exists by barcode
-    let product = await this.productRepository.findOne({
-      where: { barcode: productData.barcode },
-      relations: ['categoryEntity'],
-    });
+        if (!store) {
+          throw new BadRequestException(
+            `Store with ID ${productData.storeSk} not found`,
+          );
+        }
 
-    // 3. Upload image to Supabase storage
-    // Use store ID if available, otherwise use a generic product folder
-    const storageKey = store ? store.storeSk : 'products';
-    const imagePath = await upload_product(
-      userSk,
-      storageKey,
-      imageFile,
-      mimeType,
-    );
-    let imageUrl: string | undefined;
-
-    if (imagePath) {
-      // Construct the public URL for the uploaded image
-      const supabaseUrl =
-        process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-      imageUrl = `${supabaseUrl}/storage/v1/object/public/product/${imagePath}`;
-    }
-
-    // 4. Create or update product
-    if (!product) {
-      // Validate category exists
-      const categoryExists = await this.categoryRepository.findOne({
-        where: { id: productData.category },
-      });
-
-      if (!categoryExists) {
-        throw new NotFoundException(
-          `Category with ID ${productData.category} not found`,
+        this.logger.log(
+          `Using existing store: ${store.name} (${store.storeSk})`,
         );
+      } else if (productData.googlePlacesStore) {
+        // Scenario 2: Create store from Google Places data
+        const googleStoreData = productData.googlePlacesStore;
+
+        // Use the StoreService to create the store from Google Places data
+        const createdStore =
+          await this.storeService.createStoreFromGoogleData(googleStoreData);
+        store = await this.storeRepository.findOne({
+          where: { storeSk: createdStore.storeSk },
+        });
+
+        if (!store) {
+          throw new BadRequestException(
+            'Failed to create store from Google Places data',
+          );
+        }
+
+        this.logger.log(`Created new store: ${store.name} (${store.storeSk})`);
       }
 
-      product = this.productRepository.create({
-        name: productData.name,
-        barcode: productData.barcode,
-        barcodeType: productData.barcodeType,
-        brandName: productData.brandName,
-        category: productData.category,
-        imageUrl: imageUrl,
-        creditScore: 0,
-        verifiedCount: 0,
-        flaggedCount: 0,
+      // 2. Check if product already exists by barcode
+      let product = await this.productRepository.findOne({
+        where: { barcode: productData.barcode },
+        relations: ['categoryEntity'],
       });
 
-      product = await this.productRepository.save(product);
-    } else {
-      // Update existing product if needed
-      let needsUpdate = false;
+      // 3. Upload image to Supabase storage (only if image is provided)
+      let imagePath: string | undefined;
+      if (imageFile) {
+        // Use store ID if available, otherwise use a generic product folder
+        const storageKey = store ? store.storeSk : 'products';
+        const uploadResult = await upload_product(
+          userSk,
+          storageKey,
+          imageFile,
+          mimeType || 'image/png',
+        );
+        imagePath = uploadResult || undefined;
+      }
+      let imageUrl: string | undefined;
 
-      if (imageUrl && !product.imageUrl) {
-        product.imageUrl = imageUrl;
-        needsUpdate = true;
+      if (imagePath) {
+        // Construct the public URL for the uploaded image
+        const supabaseUrl =
+          process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+        imageUrl = `${supabaseUrl}/storage/v1/object/public/product/${imagePath}`;
       }
 
-      if (productData.brandName && !product.brandName) {
-        product.brandName = productData.brandName;
-        needsUpdate = true;
-      }
+      // 4. Create or update product
+      if (!product) {
+        // Validate category exists
+        const categoryExists = await this.categoryRepository.findOne({
+          where: { id: productData.category },
+        });
 
-      if (needsUpdate) {
-        product = await this.productRepository.save(product);
-      }
-    }
+        if (!categoryExists) {
+          throw new NotFoundException(
+            `Category with ID ${productData.category} not found`,
+          );
+        }
 
-    // 5. Create or update price entry only if store and price are provided
-    if (store && productData.price !== undefined) {
-      price = await this.priceRepository.findOne({
-        where: {
-          productSk: product.productSk,
-          storeSk: store.storeSk,
-        },
-        order: { recordedAt: 'DESC' },
-      });
-
-      // Only create new price if doesn't exist or price changed
-      if (!price || price.price !== productData.price) {
-        price = this.priceRepository.create({
-          productSk: product.productSk,
-          storeSk: store.storeSk,
-          price: productData.price,
-          currency: 'CAD',
+        product = this.productRepository.create({
+          name: productData.name,
+          barcode: productData.barcode,
+          barcodeType: productData.barcodeType,
+          brandName: productData.brandName,
+          category: productData.category,
+          imageUrl: imageUrl,
           creditScore: 0,
           verifiedCount: 0,
           flaggedCount: 0,
         });
 
-        price = await this.priceRepository.save(price);
+        product = await this.productRepository.save(product);
+      } else {
+        // Update existing product if needed
+        let needsUpdate = false;
+
+        if (imageUrl && !product.imageUrl) {
+          product.imageUrl = imageUrl;
+          needsUpdate = true;
+        }
+
+        if (productData.brandName && !product.brandName) {
+          product.brandName = productData.brandName;
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          product = await this.productRepository.save(product);
+        }
       }
+
+      // 5. Create or update price entry only if store and price are provided
+      if (store && productData.price !== undefined) {
+        price = await this.priceRepository.findOne({
+          where: {
+            productSk: product.productSk,
+            storeSk: store.storeSk,
+          },
+          order: { recordedAt: 'DESC' },
+        });
+
+        // Only create new price if doesn't exist or price changed
+        if (!price || price.price !== productData.price) {
+          price = this.priceRepository.create({
+            productSk: product.productSk,
+            storeSk: store.storeSk,
+            price: productData.price,
+            currency: 'CAD',
+            creditScore: 0,
+            verifiedCount: 0,
+            flaggedCount: 0,
+          });
+
+          price = await this.priceRepository.save(price);
+        }
+      }
+
+      // 6. Return response based on available data
+      const response: ProductResponseDto = {
+        product_sk: product.productSk,
+        name: product.name,
+        brandName: product.brandName || '',
+        barcode: product.barcode || '',
+        category: product.category || 0,
+        image_url: product.imageUrl || '',
+        store: store
+          ? {
+              store_sk: store.storeSk,
+              name: store.name,
+              address: store.fullAddress || '',
+              city: store.city,
+              province: store.province,
+            }
+          : undefined,
+        price: price
+          ? {
+              price_sk: price.priceSk,
+              price: Number(price.price),
+              currency: price.currency || 'CAD',
+              recorded_at: price.recordedAt.toISOString(),
+            }
+          : undefined,
+      };
+
+      // TypeScript will handle undefined values properly in the response
+
+      return response;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      this.logger.error(
+        `Failed to create product with price and store: ${errorMessage}`,
+        errorStack,
+      );
+      throw error;
     }
-
-    // 6. Return response based on available data
-    const response: ProductResponseDto = {
-      product_sk: product.productSk,
-      name: product.name,
-      brandName: product.brandName || '',
-      barcode: product.barcode || '',
-      category: product.category || 0,
-      image_url: product.imageUrl || '',
-      store: store
-        ? {
-            store_sk: store.storeSk,
-            name: store.name,
-            address: store.fullAddress || '',
-            city: store.city,
-            province: store.province,
-          }
-        : undefined,
-      price: price
-        ? {
-            price_sk: price.priceSk,
-            price: Number(price.price),
-            currency: price.currency || 'CAD',
-            recorded_at: price.recordedAt.toISOString(),
-          }
-        : undefined,
-    };
-
-    // TypeScript will handle undefined values properly in the response
-
-    return response;
   }
 
-  private async findOrCreateStore(
-    name: string,
-    address: string,
-    city?: string,
-    province?: string,
-    postalCode?: string,
-  ): Promise<Store> {
-    // Try to find existing store by name and address (exact match first)
-    let store = await this.storeRepository.findOne({
-      where: { name, fullAddress: address },
-    });
+  /**
+   * Create a product with store selection (existing store ID or Google Places data)
+   */
+  async createProductWithStoreSelection(
+    productData: ProductWithStoreCreateDto,
+  ): Promise<ProductWithStoreResponseDto> {
+    let store: Store | null = null;
+    let price: Price | null = null;
+    let isNewStore = false;
 
-    // If not found with exact match, try case-insensitive search
-    if (!store) {
-      store = await this.storeRepository
-        .createQueryBuilder('store')
-        .where('LOWER(store.name) = LOWER(:name)', { name })
-        .andWhere('LOWER(store.fullAddress) = LOWER(:address)', { address })
-        .getOne();
-    }
+    try {
+      // 1. Handle store selection
+      if (productData.storeSk) {
+        // Scenario 1: Use existing store
+        store = await this.storeRepository.findOne({
+          where: { storeSk: productData.storeSk },
+        });
 
-    // Create new store only if no existing store found
-    if (!store) {
-      store = this.storeRepository.create({
-        name: name.trim(), // Trim whitespace
-        fullAddress: address.trim(),
-        city,
-        province,
-        postalCode,
+        if (!store) {
+          throw new BadRequestException(
+            `Store with ID ${productData.storeSk} not found`,
+          );
+        }
+
+        this.logger.log(
+          `Using existing store: ${store.name} (${store.storeSk})`,
+        );
+      } else if (productData.googlePlacesStore) {
+        // Scenario 2: Create store from Google Places data
+        const googleStoreData = productData.googlePlacesStore;
+
+        // Use the StoreService to create the store from Google Places data
+        const createdStore =
+          await this.storeService.createStoreFromGoogleData(googleStoreData);
+        store = await this.storeRepository.findOne({
+          where: { storeSk: createdStore.storeSk },
+        });
+
+        if (!store) {
+          throw new BadRequestException(
+            'Failed to create store from Google Places data',
+          );
+        }
+
+        isNewStore = true;
+        this.logger.log(`Created new store: ${store.name} (${store.storeSk})`);
+      }
+
+      // 2. Check if product already exists by barcode
+      let product = await this.productRepository.findOne({
+        where: { barcode: productData.barcode },
+        relations: ['categoryEntity'],
       });
-      store = await this.storeRepository.save(store);
-      console.log(`Created new store: ${store.name} at ${store.fullAddress}`);
-    } else {
-      console.log(`Found existing store: ${store.name} (ID: ${store.storeSk})`);
-    }
 
-    return store;
+      // 3. Create or update product
+      if (!product) {
+        // Validate category exists
+        const categoryExists = await this.categoryRepository.findOne({
+          where: { id: productData.category },
+        });
+        if (!categoryExists) {
+          throw new BadRequestException(
+            `Category with ID ${productData.category} not found`,
+          );
+        }
+
+        // Create new product with default image URL since no image upload
+        const defaultImageUrl =
+          process.env.DEFAULT_PRODUCT_IMAGE_URL ||
+          'https://via.placeholder.com/300x300?text=Product';
+
+        product = this.productRepository.create({
+          name: productData.name,
+          barcode: productData.barcode,
+          barcodeType: productData.barcodeType,
+          brandName: productData.brandName,
+          category: productData.category,
+          imageUrl: defaultImageUrl,
+          creditScore: 0,
+          verifiedCount: 0,
+          flaggedCount: 0,
+        });
+        product = await this.productRepository.save(product);
+
+        this.logger.log(
+          `Created new product: ${product.name} (${product.productSk})`,
+        );
+      } else {
+        // Update existing product if needed
+        let needsUpdate = false;
+        if (productData.brandName && !product.brandName) {
+          product.brandName = productData.brandName;
+          needsUpdate = true;
+        }
+        if (needsUpdate) {
+          product = await this.productRepository.save(product);
+          this.logger.log(
+            `Updated existing product: ${product.name} (${product.productSk})`,
+          );
+        } else {
+          this.logger.log(
+            `Using existing product: ${product.name} (${product.productSk})`,
+          );
+        }
+      }
+
+      // 4. Create price entry if store and price are provided
+      let priceCreated = false;
+      if (store && productData.price !== undefined && productData.price > 0) {
+        // Check if price already exists
+        const existingPrice = await this.priceRepository.findOne({
+          where: {
+            productSk: product.productSk,
+            storeSk: store.storeSk,
+          },
+          order: { recordedAt: 'DESC' },
+        });
+
+        // Only create new price if doesn't exist or price changed significantly
+        const priceChanged =
+          !existingPrice ||
+          Math.abs(existingPrice.price - productData.price) > 0.01;
+
+        if (priceChanged) {
+          price = this.priceRepository.create({
+            productSk: product.productSk,
+            storeSk: store.storeSk,
+            price: productData.price,
+            currency: productData.currency || 'CAD',
+            recordedAt: new Date(),
+          });
+          price = await this.priceRepository.save(price);
+          priceCreated = true;
+
+          this.logger.log(
+            `Created price entry: ${price.price} ${price.currency} for product ${product.productSk} at store ${store.storeSk}`,
+          );
+        }
+      }
+
+      // Store should not be null at this point - validation ensures either storeSk or googlePlacesStore is provided
+      if (!store) {
+        throw new BadRequestException('No store was selected or created');
+      }
+
+      // 5. Build response
+      const response: ProductWithStoreResponseDto = {
+        product_sk: product.productSk,
+        name: product.name,
+        barcode: product.barcode || '',
+        brandName: product.brandName,
+        category: product.category || 0,
+        image_url: product.imageUrl || '',
+        store: {
+          store_sk: store.storeSk,
+          name: store.name,
+          fullAddress: store.fullAddress,
+          city: store.city,
+          province: store.province,
+          countryRegion: store.countryRegion,
+          latitude: store.latitude,
+          longitude: store.longitude,
+          placeId: store.placeId,
+          isNew: isNewStore,
+        },
+        price: price
+          ? {
+              price_sk: price.priceSk,
+              price: Number(price.price),
+              currency: price.currency || 'CAD',
+              recorded_at: price.recordedAt.toISOString(),
+            }
+          : undefined,
+        summary: {
+          productCreated:
+            !product.createdAt ||
+            Date.now() - product.createdAt.getTime() < 60000, // Created within last minute
+          storeCreated: isNewStore,
+          storeLinked: true,
+          priceAdded: priceCreated,
+        },
+      };
+
+      return response;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      this.logger.error(
+        `Failed to create product with store selection: ${errorMessage}`,
+        errorStack,
+      );
+      throw error;
+    }
   }
 
   // Helper methods for enhanced product functionality

@@ -7,6 +7,7 @@ import {
   Max,
   IsString,
   Length,
+  IsArray,
 } from 'class-validator';
 import { StoreDTO } from '../../../../packages/types/dto/store';
 
@@ -221,6 +222,77 @@ export class PopularStoresDto extends PaginationDto {
   @IsNumber()
   @Min(1)
   minReceipts?: number = 1;
+}
+
+// DTO for creating store from Google Places data sent by frontend
+export class CreateStoreFromGoogleDataDto {
+  @ApiProperty({ description: 'Google Places unique identifier' })
+  @IsString()
+  place_id: string;
+
+  @ApiProperty({ description: 'Store name' })
+  @IsString()
+  name: string;
+
+  @ApiProperty({ description: 'Complete formatted address from Google' })
+  @IsString()
+  formatted_address: string;
+
+  @ApiPropertyOptional({ description: 'Street number (e.g., "1766")' })
+  @IsOptional()
+  @IsString()
+  streetNumber?: string;
+
+  @ApiPropertyOptional({ description: 'Road name (e.g., "Robson St")' })
+  @IsOptional()
+  @IsString()
+  road?: string;
+
+  @ApiPropertyOptional({ description: 'Combined street number + road' })
+  @IsOptional()
+  @IsString()
+  streetAddress?: string;
+
+  @ApiPropertyOptional({ description: 'Complete formatted address' })
+  @IsOptional()
+  @IsString()
+  fullAddress?: string;
+
+  @ApiPropertyOptional({ description: 'City name' })
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @ApiPropertyOptional({ description: 'Province/state code' })
+  @IsOptional()
+  @IsString()
+  province?: string;
+
+  @ApiPropertyOptional({ description: 'Postal/ZIP code' })
+  @IsOptional()
+  @IsString()
+  postalCode?: string;
+
+  @ApiPropertyOptional({ description: 'Country name' })
+  @IsOptional()
+  @IsString()
+  countryRegion?: string;
+
+  @ApiProperty({ description: 'Latitude coordinate' })
+  @IsNumber()
+  latitude: number;
+
+  @ApiProperty({ description: 'Longitude coordinate' })
+  @IsNumber()
+  longitude: number;
+
+  @ApiProperty({
+    type: [String],
+    description: 'Google Places types (e.g., supermarket, store)',
+  })
+  @IsArray()
+  @IsString({ each: true })
+  types: string[];
 }
 
 // Response DTOs

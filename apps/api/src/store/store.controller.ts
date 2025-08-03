@@ -18,6 +18,7 @@ import { StoreDTO } from '../../../packages/types/dto/store';
 import {
   UnifiedStoreSearchDto,
   UnifiedStoreSearchResponse,
+  CreateStoreFromGoogleDataDto,
 } from './dto/store-search.dto';
 
 @ApiTags('Stores')
@@ -268,18 +269,135 @@ export class StoreController {
 
   // 🌍 GOOGLE PLACES INTEGRATION ENDPOINTS
 
-  @Post('create-from-google-place/:placeId')
+  @Post('create-from-google-data')
   @ApiOperation({
-    summary: 'Create a new store from Google Places data',
+    summary: 'Create a new store from Google Places data sent by frontend',
+    description: `
+    **Create a store from Google Places data when user clicks on a search result**
+    
+    🔍 **Use Case:**
+    - User searches for stores using the unified search endpoint
+    - User sees Google Places results alongside local database results
+    - User clicks on a Google Places result → Frontend captures the full data
+    - Frontend sends the complete Google Places result data to this endpoint
+    
+    🛡️ **Duplicate Prevention:**
+    - Primary check: Google Places placeId (most reliable)
+    - Secondary check: Store name + location proximity (within 100m radius)
+    - Returns existing store info if duplicate found instead of creating new one
+    
+    📊 **Response:**
+    - **201 Created**: New store successfully added to database
+    - **200 OK**: Store already exists, returns existing store data
+    - **400 Bad Request**: Invalid or missing data
+    `,
   })
   @ApiResponse({
     status: 201,
-    description: 'Store successfully created from Google Places',
+    description: 'New store successfully created from Google Places data',
+    type: StoreDTO,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Store already exists in database, returns existing store',
     type: StoreDTO,
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid place ID or store already exists',
+    description: 'Invalid or missing Google Places data',
+  })
+  async createStoreFromGoogleData(
+    @Body() googlePlaceData: CreateStoreFromGoogleDataDto,
+  ): Promise<StoreDTO> {
+    // Validate required fields
+    if (
+      !googlePlaceData.place_id ||
+      !googlePlaceData.name ||
+      googlePlaceData.latitude === undefined ||
+      googlePlaceData.longitude === undefined
+    ) {
+      throw new BadRequestException(
+        'Missing required Google Places data: place_id, name, latitude, longitude are required',
+      );
+    }
+
+    // Check if store already exists by placeId (fastest check)
+    const existingStoreByPlaceId = await this.storeService.checkStoreExists({
+      name: '', // Not needed for placeId check - service will skip name check if empty
+      placeId: googlePlaceData.place_id,
+    });
+
+    if (existingStoreByPlaceId) {
+      // Store already exists, return existing store data
+      return this.storeService.mapStoreToDTO(existingStoreByPlaceId);
+    }
+
+    // Double-check for duplicates using name and location (secondary check)
+    const existingStoreByLocation = await this.storeService.checkStoreExists({
+      name: googlePlaceData.name,
+      latitude: googlePlaceData.latitude,
+      longitude: googlePlaceData.longitude,
+      placeId: googlePlaceData.place_id,
+    });
+
+    if (existingStoreByLocation) {
+      // Store exists but doesn't have placeId - update it with placeId for future reference
+      if (!existingStoreByLocation.placeId) {
+        await this.storeService.updateStore(
+          existingStoreByLocation.id.toString(),
+          {
+            placeId: googlePlaceData.place_id,
+          },
+        );
+        existingStoreByLocation.placeId = googlePlaceData.place_id;
+      }
+
+      return this.storeService.mapStoreToDTO(existingStoreByLocation);
+    }
+
+    // Create new store from frontend-provided Google Places data
+    const createdStore =
+      await this.storeService.createStoreFromGoogleData(googlePlaceData);
+
+    return this.storeService.mapStoreToDTO(createdStore);
+  }
+
+  @Post('create-from-google-place/:placeId')
+  @ApiOperation({
+    summary: 'Create a new store from Google Places search result',
+    description: `
+    **Create a store from Google Places data when user clicks on a search result**
+    
+    🔍 **Use Case:**
+    - User searches for stores using the unified search endpoint
+    - User sees Google Places results alongside local database results
+    - User clicks on a Google Places result to add it to the local database
+    
+    🛡️ **Duplicate Prevention:**
+    - Primary check: Google Places placeId (most reliable)
+    - Secondary check: Store name + location proximity (within 100m radius)
+    - Returns existing store info if duplicate found instead of creating new one
+    
+    📊 **Response:**
+    - **201 Created**: New store successfully added to database
+    - **200 OK**: Store already exists, returns existing store data
+    - **404 Not Found**: Google Place ID not found or invalid
+    - **400 Bad Request**: Invalid request data
+    `,
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'New store successfully created from Google Places',
+    type: StoreDTO,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Store already exists in database, returns existing store',
+    type: StoreDTO,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid place ID format',
   })
   @ApiResponse({
     status: 404,
@@ -288,29 +406,56 @@ export class StoreController {
   async createStoreFromGooglePlace(
     @Param('placeId') placeId: string,
   ): Promise<StoreDTO> {
-    // First, get place details from Google
+    // Validate placeId format (basic validation)
+    if (!placeId || placeId.trim().length === 0) {
+      throw new BadRequestException('Place ID is required');
+    }
+
+    // First, check if store already exists by placeId (fastest check)
+    const existingStoreByPlaceId = await this.storeService.checkStoreExists({
+      name: '', // Not needed for placeId check
+      placeId: placeId,
+    });
+
+    if (existingStoreByPlaceId) {
+      // Store already exists, return existing store data instead of error
+      return this.storeService.mapStoreToDTO(existingStoreByPlaceId);
+    }
+
+    // Get place details from Google Places API
     const googlePlace =
       await this.storeService['googlePlacesService'].getPlaceDetails(placeId);
 
     if (!googlePlace) {
-      throw new NotFoundException(`Google Place with ID ${placeId} not found`);
+      throw new NotFoundException(
+        `Google Place with ID '${placeId}' not found. Please verify the place ID is correct.`,
+      );
     }
 
-    // Check if store already exists
-    const existingStore = await this.storeService.checkStoreExists({
+    // Double-check for duplicates using name and location (secondary check)
+    const existingStoreByLocation = await this.storeService.checkStoreExists({
       name: googlePlace.name,
       latitude: googlePlace.latitude,
       longitude: googlePlace.longitude,
       placeId: googlePlace.place_id,
     });
 
-    if (existingStore) {
-      throw new BadRequestException(
-        `Store ${googlePlace.name} already exists in database`,
-      );
+    if (existingStoreByLocation) {
+      // Store exists but doesn't have placeId - update it with placeId for future reference
+      if (!existingStoreByLocation.placeId) {
+        await this.storeService.updateStore(
+          existingStoreByLocation.id.toString(),
+          {
+            placeId: googlePlace.place_id,
+          },
+        );
+        existingStoreByLocation.placeId = googlePlace.place_id;
+      }
+
+      return this.storeService.mapStoreToDTO(existingStoreByLocation);
     }
 
-    // Create the store
+    // Create new store from Google Places data
     const createdStore =
       await this.storeService.createStoreFromGooglePlace(googlePlace);
 
@@ -320,27 +465,52 @@ export class StoreController {
   @Post('bulk-create-from-google')
   @ApiOperation({
     summary: 'Bulk create stores from Google Places search results',
+    description: `
+    **Create multiple stores from Google Places data in a single request**
+    
+    🔍 **Use Case:**
+    - User selects multiple Google Places results from search
+    - Bulk operation to add multiple stores to local database efficiently
+    
+    🛡️ **Duplicate Prevention:**
+    - Same logic as single creation: placeId + location checking
+    - Existing stores are returned in 'existing' array instead of being skipped
+    - Updates existing stores with placeId if missing
+    
+    📊 **Response Categories:**
+    - **created**: Newly created stores
+    - **existing**: Stores that already existed (with updated placeId if needed)
+    - **failed**: Stores that couldn't be processed (with error details)
+    `,
   })
   @ApiResponse({
     status: 201,
-    description: 'Stores successfully created from Google Places',
+    description: 'Bulk operation completed with detailed results',
     schema: {
       type: 'object',
       properties: {
         created: {
           type: 'array',
           items: { $ref: '#/components/schemas/StoreDTO' },
+          description: 'Newly created stores',
         },
-        skipped: {
+        existing: {
+          type: 'array',
+          items: { $ref: '#/components/schemas/StoreDTO' },
+          description: 'Stores that already existed',
+        },
+        failed: {
           type: 'array',
           items: { type: 'string' },
+          description: 'Failed operations with error details',
         },
         summary: {
           type: 'object',
           properties: {
             totalRequested: { type: 'number' },
             created: { type: 'number' },
-            skipped: { type: 'number' },
+            existing: { type: 'number' },
+            failed: { type: 'number' },
           },
         },
       },
@@ -350,19 +520,43 @@ export class StoreController {
     @Body() body: { placeIds: string[] },
   ): Promise<{
     created: StoreDTO[];
-    skipped: string[];
+    existing: StoreDTO[];
+    failed: string[];
     summary: {
       totalRequested: number;
       created: number;
-      skipped: number;
+      existing: number;
+      failed: number;
     };
   }> {
     const { placeIds } = body;
     const created: StoreDTO[] = [];
-    const skipped: string[] = [];
+    const existing: StoreDTO[] = [];
+    const failed: string[] = [];
 
     for (const placeId of placeIds) {
       try {
+        // Validate placeId
+        if (!placeId || placeId.trim().length === 0) {
+          failed.push(`Empty place ID provided`);
+          continue;
+        }
+
+        // Check if store already exists by placeId (fastest check)
+        const existingStoreByPlaceId = await this.storeService.checkStoreExists(
+          {
+            name: '', // Not needed for placeId check
+            placeId: placeId,
+          },
+        );
+
+        if (existingStoreByPlaceId) {
+          existing.push(
+            this.storeService.mapStoreToDTO(existingStoreByPlaceId),
+          );
+          continue;
+        }
+
         // Get place details from Google
         const googlePlace =
           await this.storeService['googlePlacesService'].getPlaceDetails(
@@ -370,29 +564,43 @@ export class StoreController {
           );
 
         if (!googlePlace) {
-          skipped.push(`${placeId}: Not found in Google Places`);
+          failed.push(`${placeId}: Not found in Google Places`);
           continue;
         }
 
-        // Check if store already exists
-        const existingStore = await this.storeService.checkStoreExists({
-          name: googlePlace.name,
-          latitude: googlePlace.latitude,
-          longitude: googlePlace.longitude,
-          placeId: googlePlace.place_id,
-        });
+        // Double-check for duplicates using name and location
+        const existingStoreByLocation =
+          await this.storeService.checkStoreExists({
+            name: googlePlace.name,
+            latitude: googlePlace.latitude,
+            longitude: googlePlace.longitude,
+            placeId: googlePlace.place_id,
+          });
 
-        if (existingStore) {
-          skipped.push(`${placeId}: ${googlePlace.name} already exists`);
+        if (existingStoreByLocation) {
+          // Store exists but doesn't have placeId - update it
+          if (!existingStoreByLocation.placeId) {
+            await this.storeService.updateStore(
+              existingStoreByLocation.id.toString(),
+              {
+                placeId: googlePlace.place_id,
+              },
+            );
+            existingStoreByLocation.placeId = googlePlace.place_id;
+          }
+
+          existing.push(
+            this.storeService.mapStoreToDTO(existingStoreByLocation),
+          );
           continue;
         }
 
-        // Create the store
+        // Create new store
         const createdStore =
           await this.storeService.createStoreFromGooglePlace(googlePlace);
         created.push(this.storeService.mapStoreToDTO(createdStore));
       } catch (error) {
-        skipped.push(
+        failed.push(
           `${placeId}: ${error instanceof Error ? error.message : 'Unknown error'}`,
         );
       }
@@ -400,11 +608,13 @@ export class StoreController {
 
     return {
       created,
-      skipped,
+      existing,
+      failed,
       summary: {
         totalRequested: placeIds.length,
         created: created.length,
-        skipped: skipped.length,
+        existing: existing.length,
+        failed: failed.length,
       },
     };
   }

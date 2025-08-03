@@ -112,7 +112,7 @@ export class StoreService {
       city: storeData.city,
       province: storeData.province,
       postalCode: storeData.postalCode,
-      countryRegion: storeData.countryRegion,
+      countryRegion: this.normalizeCountryCode(storeData.countryRegion),
       latitude: storeData.latitude,
       longitude: storeData.longitude,
       placeId: (storeData as StoreDataWithPlaceId).placeId,
@@ -145,7 +145,7 @@ export class StoreService {
     if (storeData.postalCode !== undefined)
       store.postalCode = storeData.postalCode;
     if (storeData.countryRegion !== undefined)
-      store.countryRegion = storeData.countryRegion;
+      store.countryRegion = this.normalizeCountryCode(storeData.countryRegion);
     if (storeData.latitude !== undefined) store.latitude = storeData.latitude;
     if (storeData.longitude !== undefined)
       store.longitude = storeData.longitude;
@@ -383,6 +383,36 @@ export class StoreService {
     }
 
     return store;
+  }
+
+  /**
+   * Normalize country names to standardized codes
+   * Canada -> CAN, United States -> USA
+   */
+  private normalizeCountryCode(countryRegion?: string): string | undefined {
+    if (!countryRegion) {
+      return undefined;
+    }
+
+    const country = countryRegion.toLowerCase().trim();
+
+    // Canada variations
+    if (country === 'canada' || country === 'ca') {
+      return 'CAN';
+    }
+
+    // United States variations
+    if (
+      country === 'united states' ||
+      country === 'united states of america' ||
+      country === 'usa' ||
+      country === 'us'
+    ) {
+      return 'USA';
+    }
+
+    // Return original value if no normalization needed
+    return countryRegion;
   }
 
   public mapStoreToDTO(store: Store): StoreDTO {
@@ -1647,7 +1677,64 @@ export class StoreService {
   }
 
   /**
-   * Create a new store from Google Places data
+   * Create a new store from Google Places data sent by frontend
+   */
+  async createStoreFromGoogleData(googlePlaceData: {
+    place_id: string;
+    name: string;
+    formatted_address: string;
+    streetNumber?: string;
+    road?: string;
+    streetAddress?: string;
+    fullAddress?: string;
+    city?: string;
+    province?: string;
+    postalCode?: string;
+    countryRegion?: string;
+    latitude: number;
+    longitude: number;
+    types: string[];
+  }): Promise<Store> {
+    try {
+      // Create store entity using data from frontend (Google Places result)
+      const storeData: Partial<Store> = {
+        name: googlePlaceData.name,
+        fullAddress:
+          googlePlaceData.fullAddress || googlePlaceData.formatted_address,
+        streetNumber: googlePlaceData.streetNumber,
+        road: googlePlaceData.road,
+        streetAddress: googlePlaceData.streetAddress,
+        city: googlePlaceData.city,
+        province: googlePlaceData.province,
+        postalCode: googlePlaceData.postalCode,
+        countryRegion: this.normalizeCountryCode(googlePlaceData.countryRegion),
+        latitude: googlePlaceData.latitude,
+        longitude: googlePlaceData.longitude,
+        placeId: googlePlaceData.place_id,
+      };
+
+      const store = this.storeRepository.create(storeData);
+      const savedStore = await this.storeRepository.save(store);
+
+      this.logger.log(
+        `✅ Created new store from frontend Google Places data: ${savedStore.name} (${savedStore.storeSk})`,
+      );
+
+      // Invalidate cache after creating new store
+      this.invalidateSearchCache();
+
+      return savedStore;
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to create store from frontend Google Places data: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new store from Google Places data (legacy method - calls Google API)
    */
   async createStoreFromGooglePlace(
     googlePlace: GooglePlaceResult,
@@ -1665,7 +1752,7 @@ export class StoreService {
         city: googlePlace.city,
         province: googlePlace.province,
         postalCode: googlePlace.postalCode,
-        countryRegion: googlePlace.countryRegion,
+        countryRegion: this.normalizeCountryCode(googlePlace.countryRegion),
         latitude: googlePlace.latitude,
         longitude: googlePlace.longitude,
         placeId: googlePlace.place_id,
@@ -1731,11 +1818,10 @@ export class StoreService {
     const { name, latitude, longitude, placeId } = params;
 
     try {
-      const query = this.storeRepository.createQueryBuilder('store');
-
       // First check by place ID (most reliable)
       if (placeId) {
-        const storeByPlaceId = await query
+        const storeByPlaceId = await this.storeRepository
+          .createQueryBuilder('store')
           .where('store.placeId = :placeId', { placeId })
           .getOne();
 
@@ -1745,8 +1831,9 @@ export class StoreService {
       }
 
       // Then check by name and location (fuzzy matching)
-      if (latitude && longitude) {
-        const stores = await query
+      if (latitude && longitude && name) {
+        const stores = await this.storeRepository
+          .createQueryBuilder('store')
           .where('store.name ILIKE :name', { name: `%${name}%` })
           .andWhere('store.latitude IS NOT NULL')
           .andWhere('store.longitude IS NOT NULL')
@@ -1769,13 +1856,17 @@ export class StoreService {
         }
       }
 
-      // Finally check by name only (exact match)
-      const storeByName = await this.storeRepository
-        .createQueryBuilder('store')
-        .where('store.name ILIKE :name', { name: `%${name}%` })
-        .getOne();
+      // Finally check by name only (exact match) - but only if name is provided and not empty
+      if (name && name.trim().length > 0) {
+        const storeByName = await this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.name ILIKE :name', { name: `%${name}%` })
+          .getOne();
 
-      return storeByName;
+        return storeByName;
+      }
+
+      return null;
     } catch (error) {
       this.logger.error(
         `❌ Error checking store existence: ${error instanceof Error ? error.message : String(error)}`,
