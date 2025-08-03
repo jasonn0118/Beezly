@@ -88,8 +88,6 @@ export class ReceiptService {
     };
     return apiClient.post<ConfirmationResponse>('/products/receipt/process-confirmations', payload, { timeout: 300000 });
   }
-
-  
 }
 
 export default ReceiptService;
