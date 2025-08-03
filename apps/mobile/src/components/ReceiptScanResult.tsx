@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Animated, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import ReceiptService, { ReceiptItem } from "../services/receiptService";
 import { Swipeable } from 'react-native-gesture-handler';
@@ -22,6 +23,7 @@ const COLORS = {
 };
 
 export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictureData: string | null, onScanAgain: () => void }) {
+    const router = useRouter();
     const [loading, setLoading] = useState(true);
     const swipeableRefs = useRef<Swipeable[]>([]);
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -86,7 +88,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
             formData.append('file', { uri: pictureData, name: 'receipt.jpg', type: 'image/jpeg' } as any);
             const response: any = await ReceiptService.processReceipt(formData);
             if (response.success && response.data) {
-                console.log("OCR API Response Data:", JSON.stringify(response.data, null, 2));
+                // console.log("OCR API Response Data:", JSON.stringify(response.data, null, 2));
                 if (response.data.item_count > 0) {
                     setProductInfo(response.data.items.map((item: any, index: number) => ({ ...item, id: item.id || `temp-${index}`, price: parseFloat(item.final_price) || 0 })) || []);
                     setReceiptId(response.data.receipt_id || null);
@@ -102,7 +104,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                 setScanFailed(true);
             }
         } catch (err: any) {
-            console.error("Error processing receipt:", JSON.stringify(err, null, 2));
+            // console.error("Error processing receipt:", JSON.stringify(err, null, 2));
             setError(err.response?.data?.message || err.message || 'A network error occurred.');
             setScanFailed(true);
         } finally {
@@ -116,13 +118,13 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
 
     const handleSaveReceipt = async () => {
         if (!receiptId || !productInfo) {
-            console.error("Receipt ID or product info is missing.");
+            // console.error("Receipt ID or product info is missing.");
             return;
         }
 
         // TODO: 현재 로그인된 사용자의 ID를 가져와야 합니다.
         const userId = "123e4567-e89b-12d3-a456-426614174000";
-        console.log('Save button pressed');
+        // console.log('Save button pressed');
 
         const itemsToConfirm = productInfo.map(item => ({
             normalizedProductSk: item.normalized_product_sk,
@@ -130,14 +132,28 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
             brand: item.brand || '',
         }))
 
-        console.log('Saving receipt with data:', { userId, receiptId, items: itemsToConfirm });
+        // console.log('Saving receipt with data:', { userId, receiptId, items: itemsToConfirm });
 
         try {
             const response = await ReceiptService.processConfirmations(userId, receiptId, itemsToConfirm);
-            console.log('Confirmation reponse:', response);
-            alert('영수증이 성공적으로 저장되었습니다!');
+            // console.log('Confirmation reponse:', response);
+
+            
+
+            if (response.pendingSelectionProducts && response.pendingSelectionProducts.length > 0) {
+
+                // console.log("response.pendingSelectionProducts : "+ response.pendingSelectionProducts[0].topMatches);
+
+                router.push({
+                    pathname: '/product-selection',
+                    params: { pendingSelectionProductsString: JSON.stringify(response.pendingSelectionProducts) },
+                });
+            } else {
+                alert('영수증이 성공적으로 저장되었습니다!');
+            }
+            
         } catch (error) {
-            console.error('Failed to save receipt confirmation:', error);
+            // console.error('Failed to save receipt confirmation:', error);
             alert('저장에 실패했습니다. 다시 시도해주세요.');
         }
     };

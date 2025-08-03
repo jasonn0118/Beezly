@@ -47,6 +47,12 @@ export interface UploadReceiptResponse {
   message?: string;
 }
 
+export interface ConfirmationResponse {
+  success: boolean;
+  message?: string;
+  pendingSelectionProducts?: any[];
+}
+
 export class ReceiptService {
   static async processReceipt(formData: FormData): Promise<UploadReceiptResponse> {
     return apiClient.post<UploadReceiptResponse>('/ocr/process-receipt-enhanced', formData, {
@@ -73,15 +79,17 @@ export class ReceiptService {
     return apiClient.delete<void>(`/receipt/${id}`);
   }
 
-  static async processConfirmations(userId: string, receiptId: string, items: { normalizedProductSk: string, normalizedName: string, brand: string }[]): Promise<any> {
+  static async processConfirmations(userId: string, receiptId: string, items: { normalizedProductSk: string, normalizedName: string, brand: string }[]): Promise<ConfirmationResponse> {
     const processedItems = items.map(item => ({ ...item, isConfirmed: true }));
     const payload = {
       userId,
       receiptId,
       items: processedItems,
     };
-    return apiClient.post<any>('/products/receipt/process-confirmations', payload);
+    return apiClient.post<ConfirmationResponse>('/products/receipt/process-confirmations', payload, { timeout: 300000 });
   }
+
+  
 }
 
 export default ReceiptService;
