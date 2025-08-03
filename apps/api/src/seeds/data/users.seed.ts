@@ -23,22 +23,26 @@ export async function seedUsers(dataSource: DataSource) {
     {
       email: 'admin@beezly.com',
       passwordHash: hashedPassword,
-      displayName: 'Admin User',
+      firstName: 'Admin',
+      lastName: 'User',
     },
     {
       email: 'john.doe@example.com',
       passwordHash: hashedPassword,
-      displayName: 'John Doe',
+      firstName: 'John',
+      lastName: 'Doe',
     },
     {
       email: 'jane.smith@example.com',
       passwordHash: hashedPassword,
-      displayName: 'Jane Smith',
+      firstName: 'Jane',
+      lastName: 'Smith',
     },
     {
       email: 'test.user@example.com',
       passwordHash: hashedPassword,
-      displayName: 'Test User',
+      firstName: 'Test',
+      lastName: 'User',
     },
   ];
 

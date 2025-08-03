@@ -1,11 +1,8 @@
-import React, {useState} from 'react';
+import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { Product, Barcode, ScannedDataParam} from '../../services/productService';
-import RegisterProductPrompt from '../../screens/RegisterProductPrompt';
-import RegisterProduct from '../../screens/RegisterProduct';
 import { useRouter } from 'expo-router';
-import { useForegroundPermissions } from 'expo-location';
 
 interface ProductDetailViewProps {
   productInfo: Product | Barcode | null;
@@ -15,8 +12,8 @@ interface ProductDetailViewProps {
 
 export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInfo, loading, scannedData}) => {
   const router = useRouter();
-  const [showProductRegistrationForm, setShowProductRegistrationForm] = useState(false);
-  if (loading) {
+  console.log(productInfo)
+  if (loading || !productInfo) {
     return (
       <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" color="#FFC107" />
@@ -24,19 +21,11 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
       </View>
     );
   }
-  
-  if (showProductRegistrationForm && scannedData) {
-      return <RegisterProduct scannedData={scannedData} />;
-  }
 
-  if(!productInfo){  
-    if(scannedData){
-      return <RegisterProductPrompt scannedData={scannedData} onRegisterPress={() => setShowProductRegistrationForm(true)} />;
-    }
-    else{
-      return;
-    }
-  }
+  const handleProductDetail = (product_sk: string) => {
+    console.log(product_sk);
+    router.push(`/register-product?productSk=${product_sk}`);
+  };
 
   return (
     <View style={styles.container}>
@@ -51,14 +40,16 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.productCard}>
-          <Image source={{ uri: productInfo.image_url }} style={styles.productImage} />
-          <View style={styles.productDetails}>
-            <Text style={styles.productBrand}>{productInfo.brandName}</Text>
-            <Text style={styles.productName}>{productInfo.name}</Text>
-            {/* <Text style={styles.pointsText}>Points Earned: <Text style={styles.pointsValue}>+ 10 P</Text></Text> */}
+        <TouchableOpacity onPress={() => handleProductDetail(productInfo.product_sk || productInfo.id)}>
+          <View style={styles.productCard}>
+            <Image source={{ uri: productInfo.image_url }} style={styles.productImage} />
+            <View style={styles.productDetails}>
+              <Text style={styles.productBrand}>{productInfo.brandName}</Text>
+              <Text style={styles.productName}>{productInfo.name}</Text>
+              {/* <Text style={styles.pointsText}>Points Earned: <Text style={styles.pointsValue}>+ 10 P</Text></Text> */}
+            </View>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Add New Price Section */}
         <View style={styles.addPriceContainer}>

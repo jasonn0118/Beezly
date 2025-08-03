@@ -47,6 +47,9 @@ export class UserService {
   }
 
   async createUser(userData: Partial<UserProfileDTO>): Promise<UserProfileDTO> {
+    // Parse displayName into firstName and lastName
+    const { firstName, lastName } = this.parseDisplayName(userData.displayName);
+
     const user = this.userRepository.create({
       email: userData.email,
       passwordHash: '', // This should be handled by auth service
@@ -139,6 +142,27 @@ export class UserService {
     }
 
     return user;
+  }
+
+  private parseDisplayName(displayName?: string): {
+    firstName?: string;
+    lastName?: string;
+  } {
+    if (!displayName?.trim()) {
+      return { firstName: undefined, lastName: undefined };
+    }
+
+    const nameParts = displayName.trim().split(/\s+/);
+    if (nameParts.length === 1) {
+      return { firstName: nameParts[0], lastName: undefined };
+    } else if (nameParts.length >= 2) {
+      return {
+        firstName: nameParts[0],
+        lastName: nameParts.slice(1).join(' '),
+      };
+    }
+
+    return { firstName: undefined, lastName: undefined };
   }
 
   private mapUserToDTO(user: User): UserProfileDTO {

@@ -5,6 +5,7 @@ import { Product } from '../entities/product.entity';
 import { Store } from '../entities/store.entity';
 import { Price } from '../entities/price.entity';
 import { ProductService } from './product.service';
+import { StoreService } from '../store/store.service';
 
 describe('ProductService', () => {
   let service: ProductService;
@@ -37,6 +38,13 @@ describe('ProductService', () => {
     save: jest.fn(),
   };
 
+  const mockStoreService = {
+    findStoreByLocation: jest.fn(),
+    createStore: jest.fn(),
+    updateStore: jest.fn(),
+    findOrCreateStore: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -58,6 +66,10 @@ describe('ProductService', () => {
         {
           provide: getRepositoryToken(Price),
           useValue: mockPriceRepository,
+        },
+        {
+          provide: StoreService,
+          useValue: mockStoreService,
         },
       ],
     }).compile();

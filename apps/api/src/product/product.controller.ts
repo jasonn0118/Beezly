@@ -23,10 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
-import {
-  MobileProductCreateDto,
-  MobileProductResponseDto,
-} from './dto/mobile-product-create.dto';
+import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
 import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 import {
   EmbeddingSearchRequestDto,
@@ -69,7 +66,6 @@ import { Product } from '../entities/product.entity';
 @ApiTags('Products')
 @Controller('products')
 export class ProductController {
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.8;
   constructor(
     private readonly productService: ProductService,
     private readonly vectorEmbeddingService: VectorEmbeddingService,
@@ -175,14 +171,30 @@ export class ProductController {
 
   @Post()
   @ApiOperation({
-    summary: 'Create a new product with image, store, and price',
+    summary: 'Create a new product with optional image and store linking',
+    description: `
+      **Unified Product Creation Endpoint**
+      
+      Creates a new product with flexible store linking options. Supports multiple scenarios:
+      
+      🖼️ **Image Upload**: Optional image file upload
+      🏪 **Store Selection**: Choose from three options:
+      - **No Store**: Create product without store linkage
+      - **Existing Store**: Link to existing database store using 'storeSk'
+      - **Google Places Store**: Create new store from Google Places data using 'googlePlacesStore'
+      
+      💰 **Price Information**: Optional price and currency data
+      
+      **Note**: Either 'storeSk' OR 'googlePlacesStore' can be provided, not both.
+    `,
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    description: 'Product data with image file',
+    description: 'Product data with optional image and store selection',
     schema: {
       type: 'object',
       properties: {
+        // Core product fields
         name: { type: 'string', example: 'Organic Apple' },
         barcode: { type: 'string', example: '1234567890123' },
         barcodeType: {
@@ -201,60 +213,133 @@ export class ProductController {
           ],
         },
         category: { type: 'number', example: 101001 },
-        storeName: { type: 'string', example: 'Homeplus' },
-        storeAddress: { type: 'string', example: '123 Main St, Seoul' },
-        price: { type: 'number', example: 5000 },
-        brandName: { type: 'string', example: 'Cheil Jedang' },
-        storeCity: { type: 'string', example: 'Seoul' },
-        storeProvince: {
+        brandName: {
           type: 'string',
-          example: 'Seoul',
+          example: 'Cheil Jedang',
+          description: 'Brand name (optional)',
         },
-        storePostalCode: {
+
+        // Price information
+        price: {
+          type: 'number',
+          example: 5000,
+          description: 'Product price at selected store (optional)',
+        },
+        currency: {
           type: 'string',
-          example: '12345',
+          example: 'CAD',
+          description: 'Currency code (default: CAD)',
         },
+
+        // Store selection (choose ONE)
+        storeSk: {
+          type: 'string',
+          format: 'uuid',
+          example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+          description:
+            'Existing store UUID (use if user selected database store)',
+        },
+        googlePlacesStore: {
+          type: 'object',
+          description:
+            'Google Places store data (use if user selected Google Places result) - matches store search response format',
+          properties: {
+            place_id: {
+              type: 'string',
+              example: 'ChIJ_xkgOm5xhlQRzCy7fF5HHqY',
+            },
+            name: { type: 'string', example: 'Save-On-Foods' },
+            formatted_address: {
+              type: 'string',
+              example: '1234 Main St, Vancouver, BC V6B 2L2, Canada',
+            },
+            streetNumber: { type: 'string', example: '1766' },
+            road: { type: 'string', example: 'Robson St' },
+            streetAddress: { type: 'string', example: '1766 Robson St' },
+            fullAddress: {
+              type: 'string',
+              example: '1234 Main St, Vancouver, BC V6B 2L2, Canada',
+            },
+            city: { type: 'string', example: 'Vancouver' },
+            province: { type: 'string', example: 'BC' },
+            postalCode: { type: 'string', example: 'V6B 2L2' },
+            countryRegion: { type: 'string', example: 'Canada' },
+            latitude: { type: 'number', example: 49.1398 },
+            longitude: { type: 'number', example: -122.6705 },
+            types: {
+              type: 'array',
+              items: { type: 'string' },
+              example: ['supermarket', 'store'],
+            },
+          },
+        },
+
+        // Image upload
         image: {
           type: 'string',
           format: 'binary',
-          description: 'Product image file',
+          description:
+            'Product image file (optional - default placeholder used if not provided)',
         },
       },
-      required: [
-        'name',
-        'barcode',
-        'category',
-        'storeName',
-        'storeAddress',
-        'price',
-        'image',
-      ],
+      required: ['name', 'barcode', 'category'],
     },
   })
   @ApiResponse({
     status: 201,
-    description: 'Product successfully created with store and price info',
-    type: MobileProductResponseDto,
+    description: 'Product successfully created with optional store linkage',
+    type: ProductResponseDto,
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid input data or missing image file',
+    description: 'Bad request - validation errors or conflicting store data',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: {
+          type: 'array',
+          items: { type: 'string' },
+          example: [
+            'Either storeSk or googlePlacesStore can be provided, not both',
+            'Store with ID not found',
+            'Invalid Google Places data',
+            'Category not found',
+          ],
+        },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
   })
   @UseInterceptors(FileInterceptor('image'))
   async createProduct(
-    @Body() productData: MobileProductCreateDto,
-    @UploadedFile() imageFile: Express.Multer.File,
-  ): Promise<MobileProductResponseDto> {
-    if (!imageFile) {
-      throw new BadRequestException('Image file is required');
+    @Body() productData: ProductCreateDto,
+    @UploadedFile() imageFile?: Express.Multer.File,
+  ): Promise<ProductResponseDto> {
+    // Validate store selection logic - either storeSk OR googlePlacesStore, not both
+    const hasStoreSk = !!productData.storeSk;
+    const hasGoogleStore = !!productData.googlePlacesStore;
+
+    if (hasStoreSk && hasGoogleStore) {
+      throw new BadRequestException(
+        'Provide either storeSk OR googlePlacesStore, not both',
+      );
     }
 
-    // Convert Express.Multer.File to Buffer
-    const imageBuffer = imageFile.buffer;
+    // Handle optional image upload
+    let imageBuffer: Buffer | undefined;
+    let mimeType: string | undefined;
+
+    if (imageFile) {
+      imageBuffer = imageFile.buffer;
+      mimeType = imageFile.mimetype;
+    }
 
     return this.productService.createProductWithPriceAndStore(
       productData,
       imageBuffer,
+      mimeType,
+      'default_user', // userSk
     );
   }
 
@@ -777,7 +862,7 @@ export class ProductController {
     return this.receiptPriceIntegrationService.getPriceSyncStatistics();
   }
 
-  // Receipt Confirmation Endpoints (Mobile Frontend Integration)
+  // Receipt Confirmation Endpoints (Frontend Integration)
 
   @Get('receipt/confirmation-candidates')
   @ApiOperation({

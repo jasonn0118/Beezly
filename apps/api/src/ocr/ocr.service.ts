@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import * as sharp from 'sharp';
 import * as heicConvert from 'heic-convert';
 import { OcrAzureService } from './ocr-azure.service';
@@ -10,7 +8,6 @@ import {
   NormalizationResult,
 } from '../product/product-normalization.service';
 import { VectorEmbeddingService } from '../product/vector-embedding.service';
-import { NormalizedProduct } from '../entities/normalized-product.entity';
 
 export interface OcrItem {
   name: string;
@@ -127,8 +124,6 @@ export class OcrService {
     private readonly ocrAzureService: OcrAzureService,
     private readonly productNormalizationService: ProductNormalizationService,
     private readonly vectorEmbeddingService: VectorEmbeddingService,
-    @InjectRepository(NormalizedProduct)
-    private readonly normalizedProductRepository: Repository<NormalizedProduct>,
   ) {}
 
   /**
@@ -582,28 +577,6 @@ export class OcrService {
   /**
    * Calculate normalization summary statistics
    */
-  private calculateNormalizationSummary(items: EnhancedOcrItem[]) {
-    const totalItems = items.length;
-    const productItems = items.filter(
-      (item) => !item.is_discount && !item.is_adjustment,
-    ).length;
-    const discountItems = items.filter((item) => item.is_discount).length;
-    const adjustmentItems = items.filter((item) => item.is_adjustment).length;
-
-    const averageConfidence =
-      totalItems > 0
-        ? items.reduce((sum, item) => sum + item.confidence_score, 0) /
-          totalItems
-        : 0;
-
-    return {
-      total_items: totalItems,
-      product_items: productItems,
-      discount_items: discountItems,
-      adjustment_items: adjustmentItems,
-      average_confidence: Math.round(averageConfidence * 1000) / 1000, // Round to 3 decimal places
-    };
-  }
 
   /**
    * Calculate enhanced normalization summary using original normalization results
@@ -676,60 +649,6 @@ export class OcrService {
   /**
    * Calculate enhanced normalization summary with discount linking statistics
    */
-  private calculateEnhancedNormalizationSummary(items: EnhancedOcrItem[]) {
-    const totalItems = items.length;
-    const productItems = items.filter(
-      (item) => !item.is_discount && !item.is_adjustment,
-    ).length;
-    const discountItems = items.filter((item) => item.is_discount).length;
-    const adjustmentItems = items.filter((item) => item.is_adjustment).length;
-
-    const averageConfidence =
-      totalItems > 0
-        ? items.reduce((sum, item) => sum + item.confidence_score, 0) /
-          totalItems
-        : 0;
-
-    // Calculate discount linking statistics
-    const productsWithDiscounts = items.filter(
-      (item) =>
-        !item.is_discount &&
-        item.linked_discounts &&
-        item.linked_discounts.length > 0,
-    ).length;
-
-    const totalLinkedDiscounts = items.reduce(
-      (sum, item) => sum + (item.linked_discounts?.length || 0),
-      0,
-    );
-
-    const totalDiscountAmount = items.reduce((sum, item) => {
-      if (item.linked_discounts) {
-        return (
-          sum +
-          item.linked_discounts.reduce((discountSum, discount) => {
-            // Only count actual discounts, not fees
-            const isFee = discount.discount_description.match(
-              /^(ECO\s*FEE|ENV(?:IRO)?\s*FEE|DEPOSIT|RECYCLING\s*FEE|BAG\s*FEE|SERVICE\s*FEE)/i,
-            );
-            return isFee ? discountSum : discountSum + discount.discount_amount;
-          }, 0)
-        );
-      }
-      return sum;
-    }, 0);
-
-    return {
-      total_items: totalItems,
-      product_items: productItems,
-      discount_items: discountItems,
-      adjustment_items: adjustmentItems,
-      average_confidence: Math.round(averageConfidence * 1000) / 1000,
-      linked_discounts: totalLinkedDiscounts,
-      total_discount_amount: Math.round(totalDiscountAmount * 100) / 100, // Round to 2 decimal places
-      products_with_discounts: productsWithDiscounts,
-    };
-  }
 
   /**
    * Perform embedding lookup for all receipt items before normalization
@@ -1006,15 +925,6 @@ export class OcrService {
       cleanedName,
       extractedItemCode,
     };
-  }
-
-  /**
-   * Clean product name by removing item numbers and other non-product identifiers
-   * Handles patterns like "1628802 OPTIMUM" -> "OPTIMUM"
-   * @deprecated Use cleanProductNameAndExtractCode instead
-   */
-  private cleanProductName(itemName: string): string {
-    return this.cleanProductNameAndExtractCode(itemName).cleanedName;
   }
 
   /**
