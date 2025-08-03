@@ -1,7 +1,19 @@
 import { BarcodeType } from '@beezly/types/dto/barcode';
 import { apiClient } from './api';
 
+export interface Product {
+  product_sk: string;
+  id: string;
+  name: string;
+  barcode: string;
+  type?: BarcodeType;
+  category: string;
+  brandName: string;
+  image_url?: string;
+}
+
 export interface Barcode {
+  product_sk: string;
   id: string;
   name: string;
   barcode: string;
@@ -13,23 +25,53 @@ export interface Barcode {
   isVerified: boolean;
 }
 
-export interface Product {
+export interface ProductDetails {
+  product_sk: string;
   id: string;
   name: string;
   barcode: string;
   type?: BarcodeType;
   category: string;
   brandName: string;
+  image_url?: string;
+  price?: number;
   storeName?: string;
   storeAddress?: string;
+  storePostalCode?: string;
+  storeCity?: string;
+  storeProvince?: string;
+  storeLatitude?: string;
+  storeLongitude?:string;
+  storeStreetNumber?: string;
+  storeStreetAddress?: string;
+}
+
+export interface StoreData {
+    storeId?: string;
+    storeName?: string;
+    storeAddress: string;
+    storePostalCode: string;
+    storeCity : string;
+    storeProvince : string;
+    storeLatitude : string;
+    storeLongitude :string;
+    storeStreetNumber : string;
+    storeStreetAddress : string;
+}
+
+export interface UnifiedStoreSearchResult extends StoreData {
+    source: 'DB' | 'Google';
+}
+
+export interface PriceData {
   price?: number;
-  image_url?: string;
+
 }
 
 export interface ProductSearchResult {
   product_sk: string;
   name: string;
-  brand_name: string | null;
+  brandName: string | null;
   image_url: string;
 }
 
@@ -80,6 +122,33 @@ export class ProductService {
 
   static async searchProducts(query: string): Promise<ProductSearchResult[]> {
     return apiClient.get<ProductSearchResult[]>('/products/search', { params: { q: query } });
+  }
+
+  static async getSearchStores(query: string): Promise<StoreData[]> {
+    const results = await apiClient.get<any[]>(`/stores/search/name`, { params: { name: query }});
+    return results.map(item => ({
+      storeId: item.storeSk,
+      storeName: item.name,
+      storeAddress: item.fullAddress || '',
+      storePostalCode: item.postalCode || '',
+      storeCity: item.city || '',
+      storeProvince: item.province || '',
+      storeLatitude: String(item.latitude || ''),
+      storeLongitude: String(item.longitude || ''),
+      storeStreetNumber: item.streetNumber || '',
+      storeStreetAddress: item.streetAddress || '',
+    }));
+  }
+
+  static async searchGooglePlaces(query: string, lat?: number, lon?: number): Promise<StoreData[]> {
+    // This is a mock implementation. In a real app, you would call the Google Places API.
+    console.log(`Searching Google Places for "${query}" near (${lat}, ${lon})`);
+    const googleData: StoreData[] = [
+        { storeId: '9999', storeName: 'Starbucks', storeAddress: '123 Main St', storePostalCode: 'A1A 1A1', storeCity: 'Toronto', storeProvince: 'ON', storeLatitude: '43.6532', storeLongitude: '-79.3832', storeStreetNumber: '123', storeStreetAddress: 'Main St' },
+        { storeId: '9998', storeName: 'Tim Hortons', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
+        { storeId: '9997', storeName: 'Homeplus seoul', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
+    ];
+    return Promise.resolve(googleData.filter(store => store.storeName && store.storeName.toLowerCase().includes(query.toLowerCase())));
   }
 }
 

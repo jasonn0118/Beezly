@@ -14,8 +14,19 @@ export class User extends BaseEntity {
   @Column({ name: 'password_hash' })
   passwordHash: string;
 
-  @Column({ name: 'display_name', nullable: true })
-  displayName?: string;
+  @Column({ name: 'first_name', nullable: true })
+  firstName?: string;
+
+  @Column({ name: 'last_name', nullable: true })
+  lastName?: string;
+
+  // Computed property that combines firstName and lastName
+  get displayName(): string | undefined {
+    if (this.firstName || this.lastName) {
+      return [this.firstName, this.lastName].filter(Boolean).join(' ');
+    }
+    return undefined;
+  }
 
   @Column({ type: 'int', default: 0 })
   points: number;
