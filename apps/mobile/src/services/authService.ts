@@ -69,7 +69,7 @@ export class AuthService {
     try {
       await apiClient.post<void>('/auth/signout');
     } catch (error) {
-      console.warn('Server signout failed:', error);
+      // Continue with local cleanup if server signout fails
     } finally {
       // Always clear local storage
       await this.clearAuthData();
@@ -108,7 +108,6 @@ export class AuthService {
       // Set the token in the API client for immediate use
       apiClient.setAuthToken(authResponse.accessToken);
     } catch (error) {
-      console.error('Failed to store auth data:', error);
       throw new Error('Failed to save authentication data');
     }
   }
@@ -117,7 +116,6 @@ export class AuthService {
     try {
       return await AsyncStorage.getItem(AUTH_TOKEN_KEY);
     } catch (error) {
-      console.error('Failed to get auth token:', error);
       return null;
     }
   }
@@ -127,7 +125,6 @@ export class AuthService {
       const userData = await AsyncStorage.getItem(USER_DATA_KEY);
       return userData ? JSON.parse(userData) : null;
     } catch (error) {
-      console.error('Failed to get user data:', error);
       return null;
     }
   }
@@ -138,7 +135,7 @@ export class AuthService {
       // Clear the token from the API client
       apiClient.setAuthToken(null);
     } catch (error) {
-      console.error('Failed to clear auth data:', error);
+      // Ignore clear errors
     }
   }
 
@@ -147,7 +144,6 @@ export class AuthService {
       const token = await this.getAuthToken();
       return !!token;
     } catch (error) {
-      console.error('Failed to check authentication status:', error);
       return false;
     }
   }
@@ -160,7 +156,7 @@ export class AuthService {
         apiClient.setAuthToken(token);
       }
     } catch (error) {
-      console.error('Failed to initialize auth:', error);
+      // Continue without stored token
     }
   }
 
@@ -170,7 +166,6 @@ export class AuthService {
       await AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(userProfile));
       return userProfile;
     } catch (error) {
-      console.error('Failed to refresh user data:', error);
       return null;
     }
   }
@@ -197,7 +192,6 @@ export class AuthService {
 
       return response;
     } catch (error: any) {
-      console.error('Backend OAuth callback failed:', error);
       throw new Error(`OAuth sync failed: ${error.message}`);
     }
   }

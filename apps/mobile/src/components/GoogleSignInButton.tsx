@@ -43,8 +43,6 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
         [{ text: 'Continue', onPress: onSuccess }]
       );
     } catch (error: any) {
-      console.error('Google sign in error:', error);
-      
       let errorMessage = 'Google sign in failed. Please try again.';
       
       if (error.message) {

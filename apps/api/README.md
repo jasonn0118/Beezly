@@ -122,11 +122,43 @@ graph LR
 
 📖 **[Detailed OCR Documentation](./src/ocr/README.md)**
 
-### 🔐 **5. Additional Services**
+### 🔐 **5. Authentication System**
+
+**🛡️ JWT-Based Security with Supabase Integration**
+- **Default Protection**: All API routes protected by default (JWT required)
+- **Public Routes**: Must use `@Public()` decorator to bypass authentication
+- **Role-Based Access**: Admin/user roles with fine-grained permissions
+- **OAuth Support**: Google OAuth integration with mobile app support
+- **Session Management**: Secure token validation and refresh handling
+
+**📋 Authentication Endpoints**
+```bash
+# Public endpoints (no auth required)
+POST /auth/signin              # Email/password login
+POST /auth/signup              # User registration
+POST /auth/oauth/google/url    # Get Google OAuth URL
+POST /auth/oauth/callback      # Handle OAuth callback
+POST /auth/reset-password      # Password reset
+
+# Protected endpoints (JWT required)
+GET /auth/me                   # Current user info
+PUT /auth/profile              # Update profile
+POST /auth/signout             # Sign out
+PUT /auth/password             # Change password
+
+# Admin endpoints (admin role required)
+GET /auth/users                # List all users
+GET /auth/users/:id            # Get user by ID
+PUT /auth/users/:id            # Update user
+DELETE /auth/users/:id         # Delete user
+```
+
+📖 **[Complete Authentication Guide](./docs/AUTH_USAGE_GUIDE.md)** | **[OAuth Setup Guide](./docs/OAUTH_SETUP.md)**
+
+### 🏪 **6. Additional Services**
 
 | **Service** | **Purpose** | **Key Features** |
 |-------------|-------------|------------------|
-| **🔐 Auth** | User authentication | JWT tokens, session management |
 | **👥 User** | Profile management | User data, preferences, history |
 | **🏪 Store** | Store information | Location data, merchant details |
 | **📦 Product** | Catalog management | Product database, CRUD operations |

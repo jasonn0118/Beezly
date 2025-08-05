@@ -62,12 +62,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setUser(refreshedUser);
           }
         } catch (error) {
-          console.warn('Failed to refresh user data:', error);
-          // Keep using cached user data
+          // Keep using cached user data on refresh failure
         }
       }
     } catch (error) {
-      console.error('Failed to initialize auth:', error);
       setIsAuthenticated(false);
       setUser(null);
     } finally {
@@ -88,7 +86,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       return response;
     } catch (error) {
-      console.error('Sign in failed:', error);
       throw error;
     }
   };
@@ -111,7 +108,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       return response;
     } catch (error) {
-      console.error('Sign up failed:', error);
       throw error;
     }
   };
@@ -120,7 +116,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await AuthService.signOut();
     } catch (error) {
-      console.error('Sign out failed:', error);
+      // Continue with local cleanup even if server signout fails
     } finally {
       // Always update local state
       setIsAuthenticated(false);
@@ -140,7 +136,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       return updatedUser;
     } catch (error) {
-      console.error('Profile update failed:', error);
       throw error;
     }
   };
@@ -152,7 +147,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(refreshedUser);
       }
     } catch (error) {
-      console.error('Failed to refresh user data:', error);
       throw error;
     }
   };
@@ -174,7 +168,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       return response;
     } catch (error) {
-      console.error('Google sign in failed:', error);
       throw error;
     }
   };

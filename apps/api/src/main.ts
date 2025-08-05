@@ -21,9 +21,15 @@ async function bootstrap() {
   if (isDevelopment) {
     // In development, be more permissive with CORS
     app.enableCors({
-      origin: (origin, callback) => {
+      origin: (
+        origin: string | undefined,
+        callback: (err: Error | null, allow?: boolean) => void,
+      ) => {
         // Allow requests with no origin (like mobile apps)
-        if (!origin) return callback(null, true);
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
 
         // Allow localhost and common development IPs
         const allowedPatterns = [

@@ -1,26 +1,31 @@
 # Authentication Usage Guide
 
-## Current Configuration
-- **APIs are OPEN by default** - No authentication required unless explicitly protected
-- **Auth guards are available** - Can be applied to specific routes/controllers when needed
+## 🔐 Current Security Model
 
-## How to Protect Routes (When Needed)
+- **🛡️ ALL ROUTES ARE PROTECTED BY DEFAULT** - JWT authentication required unless explicitly marked public
+- **✅ Public routes** - Must use `@Public()` decorator to bypass authentication
+- **🔑 JWT validation** - Automatic token validation on all protected routes
+- **👤 User context** - Authenticated user automatically available in route handlers
 
-### 1. Protect a Single Endpoint
+## 🔓 How to Make Routes Public (When Needed)
+
+### 1. Make a Single Endpoint Public
 ```typescript
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('products')
+@UseGuards(JwtAuthGuard) // All routes in controller are protected by default
 export class ProductController {
-  // This endpoint is OPEN (no auth required)
+  // This endpoint is PUBLIC (no auth required)
+  @Public()
   @Get()
   async getAllProducts() {
     return this.productService.findAll();
   }
 
-  // This endpoint is PROTECTED (requires valid JWT)
-  @UseGuards(JwtAuthGuard)
+  // This endpoint is PROTECTED (requires valid JWT) - default behavior
   @Post()
   async createProduct(@Body() createProductDto: CreateProductDto) {
     return this.productService.create(createProductDto);
@@ -28,22 +33,26 @@ export class ProductController {
 }
 ```
 
-### 2. Protect an Entire Controller
+### 2. Make Multiple Endpoints in a Controller Public
 ```typescript
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 
-@Controller('admin')
-@UseGuards(JwtAuthGuard) // All routes in this controller require authentication
-export class AdminController {
-  @Get('dashboard')
-  async getDashboard() {
-    return this.adminService.getDashboard();
+@Controller('public-info')
+@UseGuards(JwtAuthGuard) // Controller-level protection (can be omitted if global)
+export class PublicInfoController {
+  // These endpoints are PUBLIC (no auth required)
+  @Public()
+  @Get('status')
+  async getStatus() {
+    return { status: 'healthy' };
   }
 
-  @Get('users')
-  async getUsers() {
-    return this.adminService.getUsers();
+  @Public()
+  @Get('version')
+  async getVersion() {
+    return { version: '1.0.0' };
   }
 }
 ```
@@ -79,15 +88,15 @@ export class AdminController {
 ```typescript
 import { UseGuards, Controller, Get } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { User } from '../auth/decorators/user.decorator';
-import { UserProfile } from '../auth/interfaces/user-profile.interface';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { UserProfileDTO } from '../../../packages/types/dto/user';
 
 @Controller('profile')
+@UseGuards(JwtAuthGuard) // All routes require authentication
 export class ProfileController {
-  @UseGuards(JwtAuthGuard)
   @Get()
-  async getMyProfile(@User() user: UserProfile) {
-    // The @User() decorator injects the authenticated user
+  async getMyProfile(@CurrentUser() user: UserProfileDTO) {
+    // The @CurrentUser() decorator injects the authenticated user
     return {
       id: user.id,
       email: user.email,
@@ -96,9 +105,8 @@ export class ProfileController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get('points')
-  async getMyPoints(@User() user: UserProfile) {
+  async getMyPoints(@CurrentUser() user: UserProfileDTO) {
     return {
       userId: user.id,
       points: user.pointBalance,
@@ -114,10 +122,10 @@ export class ProfileController {
 - `RolesGuard` - Checks user roles (use with @Roles decorator)
 
 ### Decorators
-- `@UseGuards(JwtAuthGuard)` - Protect a route/controller
-- `@Roles('admin', 'user')` - Specify required roles
-- `@User()` - Inject authenticated user into route handler
-- `@Public()` - Mark a route as public (not needed anymore since all routes are public by default)
+- `@UseGuards(JwtAuthGuard)` - Apply JWT authentication to route/controller (usually at controller level)
+- `@Roles('admin', 'user')` - Specify required roles for authorization
+- `@CurrentUser()` - Inject authenticated user into route handler
+- `@Public()` - **REQUIRED** to mark a route as public (bypasses authentication)
 
 ## Testing Protected Endpoints
 
@@ -139,11 +147,15 @@ curl -X GET http://localhost:3006/protected-endpoint \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
-## Current Auth Endpoints (Always Available)
-- `POST /auth/signin` - User login
+## 🔓 Public Auth Endpoints (Always Available)
+- `POST /auth/signin` - User login (email/password)
 - `POST /auth/signup` - User registration  
 - `POST /auth/reset-password` - Request password reset
 - `POST /auth/signout` - Sign out (clears session)
+
+## 🌟 OAuth Endpoints (Google Sign-In)
+- `POST /auth/oauth/google/url` - Get Google OAuth authorization URL
+- `POST /auth/oauth/callback` - Handle OAuth callback and create user session
 
 ## Notes
 - The AuthMiddleware still runs on all routes for logging and security headers

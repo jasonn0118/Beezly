@@ -40,8 +40,6 @@ export class GoogleOAuthService {
    */
   static async signInWithGoogle(): Promise<GoogleOAuthResponse> {
     try {
-      console.log('Starting Google OAuth with Supabase...');
-      
       // Use Supabase's signInWithOAuth method
       const { data, error } = await supabaseClient.auth.signInWithOAuth({
         provider: 'google',
@@ -55,7 +53,6 @@ export class GoogleOAuthService {
       });
 
       if (error) {
-        console.error('Supabase OAuth error:', error);
         throw new Error(`Google OAuth failed: ${error.message}`);
       }
 
@@ -63,15 +60,11 @@ export class GoogleOAuthService {
         throw new Error('No OAuth URL returned from Supabase');
       }
 
-      console.log('Opening OAuth URL:', data.url);
-
       // Open the OAuth URL in the browser
       const result = await WebBrowser.openAuthSessionAsync(
         data.url,
         getRedirectUrl()
       );
-
-      console.log('OAuth browser result:', result);
 
       if (result.type !== 'success') {
         throw new Error('OAuth cancelled or failed');
@@ -96,7 +89,6 @@ export class GoogleOAuthService {
       });
 
       if (sessionError) {
-        console.error('Session error:', sessionError);
         throw new Error(`Failed to set session: ${sessionError.message}`);
       }
 
@@ -105,14 +97,11 @@ export class GoogleOAuthService {
         throw new Error('No user data received after OAuth');
       }
 
-      console.log('OAuth successful, user:', user.email);
-
       // Create/update local user record through our backend
       const authResponse = await this.syncWithBackend(tokens.access_token, user);
       
       return authResponse;
     } catch (error) {
-      console.error('Google OAuth failed:', error);
       throw error;
     }
   }
@@ -139,7 +128,6 @@ export class GoogleOAuthService {
         expires_in: params.get('expires_in') || undefined,
       };
     } catch (error) {
-      console.error('Failed to parse tokens from URL:', error);
       return {};
     }
   }
@@ -156,8 +144,6 @@ export class GoogleOAuthService {
       const response = await AuthService.handleOAuthCallback(accessToken, supabaseUser);
       return response;
     } catch (error: any) {
-      console.warn('Backend OAuth sync failed, using direct mapping:', error.message);
-      
       // Fallback: return user data directly from Supabase
       const userProfile = {
         id: supabaseUser.id,

@@ -28,6 +28,7 @@ Authorized redirect URIs:
 
 **Get Credentials:**
 - Copy `Client ID` and `Client Secret`
+- **Important**: For mobile apps, you'll also need to add your Android/iOS client IDs
 
 ### 2. Supabase Configuration
 
@@ -41,8 +42,9 @@ Authorized redirect URIs:
 ```
 Site URL: http://localhost:3000
 Additional redirect URLs:
-- http://localhost:3000/auth/callback
-- http://localhost:3001/auth/callback
+- http://localhost:3000/auth/callback  # Web app
+- http://localhost:3001/auth/callback  # Web app (alternate port)
+- beezly://auth/callback              # Mobile app (Expo)
 ```
 
 ## Frontend Integration
@@ -169,36 +171,112 @@ export const GoogleSignInButton = () => {
 
 **Install Dependencies:**
 ```bash
-expo install expo-auth-session expo-crypto
+cd apps/mobile
+npx expo install expo-auth-session expo-crypto
 ```
 
-**OAuth Implementation:**
+**OAuth Service Implementation:**
 ```typescript
-// hooks/useGoogleOAuth.native.ts
-import { useAuthRequest } from 'expo-auth-session';
+// services/googleOAuthService.ts
+import { makeRedirectUri } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import { supabaseClient } from './supabase';
 
 WebBrowser.maybeCompleteAuthSession();
 
-export const useGoogleOAuth = () => {
-  const [request, response, promptAsync] = useAuthRequest(
-    {
-      clientId: 'your-google-client-id',
-      scopes: ['openid', 'profile', 'email'],
-      redirectUri: 'your-app://auth/callback',
-    },
-    { authorizationEndpoint: 'https://accounts.google.com/oauth/authorize' }
-  );
+export class GoogleOAuthService {
+  async signInWithGoogle() {
+    try {
+      const redirectUrl = makeRedirectUri({
+        scheme: 'beezly',
+        path: '/auth/callback',
+      });
 
-  React.useEffect(() => {
-    if (response?.type === 'success') {
-      const { authentication } = response;
-      // Call your OAuth callback endpoint
-      handleOAuthCallback(authentication.accessToken);
+      const { data, error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) throw error;
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectUrl
+      );
+
+      if (result.type === 'success' && result.url) {
+        const url = new URL(result.url);
+        const params = new URLSearchParams(url.hash.substring(1));
+        
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+
+        if (accessToken) {
+          // Exchange tokens with backend
+          const response = await fetch(`${API_BASE_URL}/auth/oauth/callback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            }),
+          });
+
+          const authData = await response.json();
+          return authData;
+        }
+      }
+
+      throw new Error('OAuth flow was cancelled or failed');
+    } catch (error) {
+      throw error;
     }
-  }, [response]);
+  }
+}
+```
 
-  return { promptAsync, loading: !request };
+**Google Sign-In Button:**
+```typescript
+// components/GoogleSignInButton.tsx
+import React from 'react';
+import { TouchableOpacity, Text, View, ActivityIndicator } from 'react-native';
+import { useAuth } from '../contexts/AuthContext';
+
+export const GoogleSignInButton = () => {
+  const { signInWithGoogle, loading } = useAuth();
+
+  return (
+    <TouchableOpacity
+      onPress={signInWithGoogle}
+      disabled={loading}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'white',
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderRadius: 8,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        marginVertical: 8,
+      }}
+    >
+      {/* Google logo would go here */}
+      <View style={{ marginLeft: 8 }}>
+        {loading ? (
+          <ActivityIndicator size="small" color="#4285F4" />
+        ) : (
+          <Text style={{ color: '#333', fontSize: 16 }}>
+            Continue with Google
+          </Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
 };
 ```
 
