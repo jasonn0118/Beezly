@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -13,16 +12,9 @@ import { UserModule } from '../user/user.module';
     AuthService,
     JwtAuthGuard,
     RolesGuard,
-    // Make JWT guard global (all routes protected by default)
-    {
-      provide: APP_GUARD,
-      useClass: JwtAuthGuard,
-    },
-    // Add roles guard as secondary guard
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard,
-    },
+    // Guards are no longer global - use @UseGuards() decorator on specific routes/controllers
+    // To protect a route: @UseGuards(JwtAuthGuard)
+    // To require a role: @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
   ],
   exports: [AuthService, JwtAuthGuard, RolesGuard],
 })
