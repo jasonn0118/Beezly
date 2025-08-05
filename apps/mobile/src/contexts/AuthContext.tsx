@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AuthService, UserProfile, AuthResponse } from '../services/authService';
+import { GoogleOAuthService, GoogleOAuthResponse } from '../services/googleOAuthService';
 
 interface AuthContextType {
   // State
@@ -15,6 +16,7 @@ interface AuthContextType {
     firstName?: string;
     lastName?: string;
   }) => Promise<AuthResponse>;
+  signInWithGoogle: () => Promise<GoogleOAuthResponse>;
   signOut: () => Promise<void>;
   updateProfile: (data: { firstName?: string; lastName?: string }) => Promise<UserProfile>;
   refreshUser: () => Promise<void>;
@@ -155,6 +157,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const signInWithGoogle = async (): Promise<GoogleOAuthResponse> => {
+    try {
+      const response = await GoogleOAuthService.signInWithGoogle();
+      
+      // Store auth data using the same method as regular auth
+      await AuthService.storeAuthData({
+        accessToken: response.accessToken,
+        user: response.user,
+        expiresIn: response.expiresIn,
+      });
+      
+      // Update context state
+      setIsAuthenticated(true);
+      setUser(response.user);
+      
+      return response;
+    } catch (error) {
+      console.error('Google sign in failed:', error);
+      throw error;
+    }
+  };
+
 
 
   const contextValue: AuthContextType = {
@@ -166,6 +190,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Actions
     signIn,
     signUp,
+    signInWithGoogle,
     signOut,
     updateProfile,
     refreshUser,

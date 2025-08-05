@@ -16,6 +16,7 @@ import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/contexts/AuthContext';
 import { AuthService } from '../src/services/authService';
+import GoogleSignInButton from '../src/components/GoogleSignInButton';
 
 const { width, height } = Dimensions.get('window');
 
@@ -178,6 +179,20 @@ export default function Login() {
             )}
           </TouchableOpacity>
 
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Google Sign In */}
+          <GoogleSignInButton
+            mode="signin"
+            onSuccess={() => router.replace('/(tabs)')}
+            disabled={isLoading}
+            style={styles.googleButton}
+          />
           
           {/* Footer Links */}
           <View style={styles.footer}>
@@ -292,11 +307,32 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginTop: 24,
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#495057',
+  },
+  dividerText: {
+    color: '#6c757d',
+    fontSize: 14,
+    marginHorizontal: 16,
+  },
+  googleButton: {
+    width: '100%',
+    marginBottom: 8,
+  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginTop: 32,
+    marginTop: 24,
     paddingHorizontal: 4,
   },
   footerText: {

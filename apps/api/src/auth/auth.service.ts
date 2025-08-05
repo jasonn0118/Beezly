@@ -11,6 +11,7 @@ import { UserProfileDTO } from '../../../packages/types/dto/user';
 import { SupabaseService } from '../supabase/supabase.service';
 import { UserService } from '../user/user.service';
 import { Session, User, AuthError } from '@supabase/supabase-js';
+import { OAuthCallbackDto } from './dto/oauth-callback.dto';
 
 type UserMetadata = {
   firstName?: string;
@@ -586,6 +587,151 @@ export class AuthService {
         `User metadata update error for ${userId}: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
       throw error;
+    }
+  }
+
+  /**
+   * Get Google OAuth authorization URL
+   */
+  async getGoogleOAuthUrl(redirectUrl: string): Promise<string> {
+    try {
+      const supabase = this.supabaseService.client;
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      });
+
+      if (error) {
+        this.logger.error(
+          `Google OAuth URL generation failed: ${error.message}`,
+        );
+        throw new BadRequestException('Failed to generate Google OAuth URL');
+      }
+
+      if (!data.url) {
+        throw new BadRequestException('OAuth URL not returned by provider');
+      }
+
+      return data.url;
+    } catch (error) {
+      this.logger.error(
+        `Google OAuth URL error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Handle OAuth callback and authenticate user
+   */
+  async handleOAuthCallback(oauthData: OAuthCallbackDto): Promise<AuthDTO> {
+    try {
+      // Validate the access token by using it to get user data from Supabase
+      const supabaseUser = await this.supabaseService.validateToken(
+        oauthData.access_token,
+      );
+
+      if (!supabaseUser) {
+        this.logger.error(
+          'OAuth token validation failed - invalid or expired token',
+        );
+        throw new UnauthorizedException('Invalid OAuth tokens');
+      }
+
+      this.logger.log(`OAuth user authenticated: ${supabaseUser.email}`);
+
+      // Check if user exists in local database using getUserById (which checks userSk)
+      let localUser = await this.userService.getUserById(supabaseUser.id);
+
+      if (!localUser) {
+        // Create new local user from OAuth data
+        const userMetadata = (supabaseUser.user_metadata || {}) as {
+          first_name?: string;
+          last_name?: string;
+          given_name?: string;
+          family_name?: string;
+          full_name?: string;
+        };
+
+        const firstName =
+          oauthData.user_info?.given_name ||
+          userMetadata.first_name ||
+          userMetadata.given_name ||
+          (userMetadata.full_name
+            ? userMetadata.full_name.split(' ')[0]
+            : undefined);
+        const lastName =
+          oauthData.user_info?.family_name ||
+          userMetadata.last_name ||
+          userMetadata.family_name ||
+          (userMetadata.full_name
+            ? userMetadata.full_name.split(' ').slice(1).join(' ')
+            : undefined);
+
+        try {
+          localUser = await this.userService.createUserWithSupabaseId(
+            supabaseUser.id,
+            {
+              email: supabaseUser.email!,
+              firstName: firstName || '',
+              lastName: lastName || '',
+              pointBalance: 0,
+              level: 'beginner',
+            },
+          );
+
+          this.logger.log(
+            `✅ New OAuth user created in local database: ${localUser.email}`,
+          );
+        } catch (createError) {
+          this.logger.error(
+            `❌ Failed to create local user: ${createError instanceof Error ? createError.message : 'Unknown error'}`,
+          );
+          throw new InternalServerErrorException(
+            'Failed to create user record',
+          );
+        }
+      } else {
+        this.logger.log(`✅ Existing OAuth user signed in: ${localUser.email}`);
+      }
+
+      // Return authentication response using the original OAuth access token
+      return {
+        accessToken: oauthData.access_token,
+        user: {
+          id: localUser.id,
+          email: localUser.email,
+          firstName: localUser.firstName || '',
+          lastName: localUser.lastName || '',
+          pointBalance: localUser.pointBalance,
+          level: localUser.level || '',
+          rank: localUser.rank || 0,
+          badges: localUser.badges || [],
+          createdAt: localUser.createdAt,
+          updatedAt: localUser.updatedAt,
+        },
+        expiresIn: 3600, // 1 hour
+      };
+    } catch (error) {
+      this.logger.error(
+        `OAuth callback error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+
+      if (
+        error instanceof UnauthorizedException ||
+        error instanceof BadRequestException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException('OAuth authentication failed');
     }
   }
 

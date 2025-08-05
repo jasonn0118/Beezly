@@ -175,6 +175,33 @@ export class AuthService {
     }
   }
 
+  /**
+   * Handle OAuth callback from Supabase
+   */
+  static async handleOAuthCallback(accessToken: string, supabaseUser: any): Promise<AuthResponse> {
+    try {
+      // Call the backend OAuth callback endpoint
+      const response = await apiClient.post<AuthResponse>('/auth/oauth/callback', {
+        access_token: accessToken,
+        provider: 'google',
+        user_info: {
+          id: supabaseUser.id,
+          email: supabaseUser.email,
+          name: supabaseUser.user_metadata?.full_name || 
+                `${supabaseUser.user_metadata?.first_name || ''} ${supabaseUser.user_metadata?.last_name || ''}`.trim(),
+          given_name: supabaseUser.user_metadata?.first_name || supabaseUser.user_metadata?.given_name,
+          family_name: supabaseUser.user_metadata?.last_name || supabaseUser.user_metadata?.family_name,
+          picture: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
+        },
+      });
+
+      return response;
+    } catch (error: any) {
+      console.error('Backend OAuth callback failed:', error);
+      throw new Error(`OAuth sync failed: ${error.message}`);
+    }
+  }
+
   // Legacy method names for backwards compatibility
   static async login(email: string, password: string): Promise<AuthResponse> {
     return this.signIn(email, password);

@@ -30,6 +30,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { SignUpDto } from './dto/signup.dto';
 import { SignInDto } from './dto/signin.dto';
+import { OAuthCallbackDto, OAuthUrlDto } from './dto/oauth-callback.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -137,6 +138,52 @@ export class AuthController {
     return {
       message: 'If the email exists, a password reset link has been sent.',
     };
+  }
+
+  // OAuth endpoints
+  @Public()
+  @Post('oauth/google/url')
+  @ApiOperation({ summary: 'Get Google OAuth authorization URL' })
+  @ApiResponse({
+    status: 200,
+    description: 'Google OAuth URL generated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          example: 'https://accounts.google.com/oauth/authorize?...',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid redirect URL' })
+  async getGoogleOAuthUrl(
+    @Body() oauthUrlDto: OAuthUrlDto,
+  ): Promise<{ url: string }> {
+    const url = await this.authService.getGoogleOAuthUrl(
+      oauthUrlDto.redirectUrl,
+    );
+    return { url };
+  }
+
+  @Public()
+  @Post('oauth/callback')
+  @ApiOperation({ summary: 'Handle OAuth callback and authenticate user' })
+  @ApiResponse({
+    status: 200,
+    description: 'OAuth authentication successful',
+    type: 'AuthDTO',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid OAuth tokens or user data',
+  })
+  @ApiResponse({ status: 401, description: 'OAuth authentication failed' })
+  async handleOAuthCallback(
+    @Body() oauthData: OAuthCallbackDto,
+  ): Promise<AuthDTO> {
+    return this.authService.handleOAuthCallback(oauthData);
   }
 
   // Admin-only endpoints
