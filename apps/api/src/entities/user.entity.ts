@@ -20,14 +20,6 @@ export class User extends BaseEntity {
   @Column({ name: 'last_name', nullable: true })
   lastName?: string;
 
-  // Computed property that combines firstName and lastName
-  get displayName(): string | undefined {
-    if (this.firstName || this.lastName) {
-      return [this.firstName, this.lastName].filter(Boolean).join(' ');
-    }
-    return undefined;
-  }
-
   @Column({ type: 'int', default: 0 })
   points: number;
 

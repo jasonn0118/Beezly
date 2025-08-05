@@ -284,8 +284,28 @@ jobs:
           DB_USERNAME=postgres
           DB_NAME=beezly_test
           DB_LOGGING=false
+          # Required Supabase configuration for auth service
+          SUPABASE_URL=https://dummy-url.supabase.co
+          SUPABASE_ANON_KEY=dummy-anon-key-for-testing
+          SUPABASE_SERVICE_ROLE_KEY=dummy-service-role-key-for-testing
           EOF
           echo "✅ Test environment file created"
+
+      - name: Create root environment file for tests
+        run: |
+          cat > .env << EOF
+          NODE_ENV=test
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_USERNAME=postgres
+          DB_NAME=beezly_test
+          DB_LOGGING=false
+          # Required Supabase configuration for auth service
+          SUPABASE_URL=https://dummy-url.supabase.co
+          SUPABASE_ANON_KEY=dummy-anon-key-for-testing
+          SUPABASE_SERVICE_ROLE_KEY=dummy-service-role-key-for-testing
+          EOF
+          echo "✅ Root environment file created for tests"
 
       - name: Validate database connection and PostGIS
         working-directory: apps/api
@@ -330,6 +350,10 @@ jobs:
           DB_USERNAME: postgres
           DB_NAME: beezly_test
           DB_LOGGING: false
+          # Required Supabase configuration for auth service
+          SUPABASE_URL: https://dummy-url.supabase.co
+          SUPABASE_ANON_KEY: dummy-anon-key-for-testing
+          SUPABASE_SERVICE_ROLE_KEY: dummy-service-role-key-for-testing
         run: pnpm test
 
       - name: Run API e2e tests
@@ -341,6 +365,10 @@ jobs:
           DB_USERNAME: postgres
           DB_NAME: beezly_test
           DB_LOGGING: false
+          # Required Supabase configuration for auth service
+          SUPABASE_URL: https://dummy-url.supabase.co
+          SUPABASE_ANON_KEY: dummy-anon-key-for-testing
+          SUPABASE_SERVICE_ROLE_KEY: dummy-service-role-key-for-testing
         run: pnpm test:e2e
 
 
