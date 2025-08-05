@@ -23,19 +23,38 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
+    const token = this.extractTokenFromHeader(request);
+
     // Check if route is marked as public
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
 
+    // For public routes, try to authenticate if token is present but don't require it
     if (isPublic) {
-      return true;
+      if (token) {
+        try {
+          // Try to validate token and attach user if successful
+          const userProfile = await this.authService.validateToken(token);
+          if (userProfile) {
+            request.user = userProfile;
+            this.logger.debug(
+              `User authenticated on public route: ${userProfile.email} (${userProfile.id})`,
+            );
+          }
+        } catch (error) {
+          // For public routes, we don't throw - just log and continue without user
+          this.logger.debug(
+            `Optional authentication failed on public route: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          );
+        }
+      }
+      return true; // Always allow access to public routes
     }
 
-    const request = context.switchToHttp().getRequest<RequestWithUser>();
-    const token = this.extractTokenFromHeader(request);
-
+    // For protected routes, token is required
     if (!token) {
       this.logger.warn('No token provided in request');
       throw new UnauthorizedException('Access token is required');

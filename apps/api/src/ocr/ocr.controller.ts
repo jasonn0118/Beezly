@@ -7,7 +7,9 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
@@ -25,6 +27,9 @@ import {
   ProcessReceiptDto,
   ProcessReceiptEnhancedDto,
 } from './dto/process-receipt.dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
+import { UserProfileDTO } from '../../../packages/types/dto/user';
 
 @ApiTags('OCR')
 @Controller('ocr')
@@ -37,6 +42,7 @@ export class OcrController {
   ) {}
 
   @Post('health')
+  @Public() // Allow health check without authentication
   @ApiOperation({
     summary: 'Health check for OCR service',
     description:
@@ -88,10 +94,6 @@ export class OcrController {
           format: 'binary',
           description:
             'Receipt image file (PNG, JPG, JPEG, BMP, TIFF, WebP, HEIC, HEIF supported)',
-        },
-        user_id: {
-          type: 'string',
-          description: 'User ID for file organization (optional)',
         },
         store_id: {
           type: 'string',
@@ -150,6 +152,7 @@ export class OcrController {
   async processReceipt(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: ProcessReceiptDto,
+    @CurrentUser() user: UserProfileDTO,
   ): Promise<{ success: boolean; data: OcrResult }> {
     if (!file) {
       throw new BadRequestException('No file uploaded');
@@ -204,7 +207,7 @@ export class OcrController {
       );
 
       // Upload file to storage asynchronously (fire-and-forget)
-      const userId = body.user_id || 'default_user';
+      const userId = user.id; // Use authenticated user's ID
       const storeId = body.store_id || 'default_store';
 
       console.log(`Starting async upload for user ${userId}, store ${storeId}`);
@@ -243,10 +246,11 @@ export class OcrController {
   }
 
   @Post('process-receipt-enhanced')
+  @Public() // Allow non-authenticated users to upload receipts
   @ApiOperation({
     summary: 'Process receipt image with product normalization',
     description:
-      'Upload a receipt image, extract data using OCR, normalize product names to canonical forms, and create receipt record in database. Always includes discount detection and confidence scoring.',
+      'Upload a receipt image, extract data using OCR, normalize product names to canonical forms, and create receipt record in database. Always includes discount detection and confidence scoring. Authentication is optional - non-authenticated users can upload receipts.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -261,7 +265,8 @@ export class OcrController {
         },
         user_id: {
           type: 'string',
-          description: 'User ID for file organization (optional)',
+          description:
+            'User ID for file organization (optional for non-authenticated users)',
         },
       },
       required: ['file'],
@@ -355,6 +360,7 @@ export class OcrController {
   async processReceiptEnhanced(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: ProcessReceiptEnhancedDto,
+    @Req() request: Request & { user?: UserProfileDTO },
   ): Promise<{ success: boolean; data: CleanOcrResult | OcrResult }> {
     if (!file) {
       throw new BadRequestException('No file uploaded');
@@ -409,8 +415,18 @@ export class OcrController {
       );
 
       // Upload file to storage asynchronously (fire-and-forget)
-      const userId = body.user_id || 'default_user';
+      // Use authenticated user's ID if available, otherwise use body.user_id or default
+      const userId = request.user?.id || body.user_id || 'anonymous_user';
       const storeId = 'default_store'; // Always use default store
+
+      // Debug logging to see authentication status
+      console.log(`[OCR Enhanced] Authentication status:`, {
+        hasUser: !!request.user,
+        userEmail: request.user?.email || 'not authenticated',
+        userId: userId,
+        fromAuth: !!request.user?.id,
+        fromBody: !!body.user_id,
+      });
 
       console.log(`Starting async upload for user ${userId}, store ${storeId}`);
 
@@ -447,7 +463,7 @@ export class OcrController {
 
         const receipt = await this.receiptService.createReceiptFromOcrResult(
           receiptData,
-          body.user_id, // Pass actual user_id, not default
+          userId, // Pass the determined user ID (authenticated, provided, or anonymous)
           uploadedFilePath,
         );
         receiptId = receipt.receiptSk;

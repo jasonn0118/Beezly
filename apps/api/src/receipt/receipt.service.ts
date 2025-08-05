@@ -448,6 +448,94 @@ export class ReceiptService {
     await this.receiptRepository.remove(receipt);
   }
 
+  // 🔐 USER-SCOPED METHODS (with ownership verification)
+
+  /**
+   * Get receipt by ID with user ownership verification
+   */
+  async getReceiptByIdForUser(
+    id: string,
+    userId: string,
+  ): Promise<ReceiptDTO | null> {
+    // Try to find by receiptSk (UUID) first, then by id (integer)
+    let receipt = await this.receiptRepository.findOne({
+      where: { receiptSk: id, userSk: userId },
+      relations: ['user', 'store', 'items', 'items.product'],
+    });
+
+    // If not found by receiptSk, try by integer id
+    if (!receipt && !isNaN(Number(id))) {
+      receipt = await this.receiptRepository.findOne({
+        where: { id: Number(id), userSk: userId },
+        relations: ['user', 'store', 'items', 'items.product'],
+      });
+    }
+
+    return receipt ? this.mapReceiptToDTO(receipt) : null;
+  }
+
+  /**
+   * Update receipt with user ownership verification
+   */
+  async updateReceiptForUser(
+    id: string,
+    receiptData: Partial<ReceiptDTO>,
+    userId: string,
+  ): Promise<ReceiptDTO> {
+    // First verify user ownership
+    const existingReceipt = await this.getReceiptByIdForUser(id, userId);
+    if (!existingReceipt) {
+      throw new NotFoundException(
+        `Receipt with ID ${id} not found or access denied`,
+      );
+    }
+
+    // Get the actual entity for updating
+    const receipt = await this.getReceiptEntityById(id);
+    if (!receipt) {
+      throw new NotFoundException(`Receipt with ID ${id} not found`);
+    }
+
+    // Update fields
+    if (receiptData.status) {
+      receipt.status = receiptData.status;
+    }
+    if (receiptData.purchaseDate) {
+      receipt.purchaseDate = new Date(receiptData.purchaseDate);
+    }
+
+    const updatedReceipt = await this.receiptRepository.save(receipt);
+
+    // Reload with relations
+    const completeReceipt = await this.receiptRepository.findOne({
+      where: { id: updatedReceipt.id },
+      relations: ['user', 'store', 'items', 'items.product'],
+    });
+
+    return this.mapReceiptToDTO(completeReceipt!);
+  }
+
+  /**
+   * Delete receipt with user ownership verification
+   */
+  async deleteReceiptForUser(id: string, userId: string): Promise<void> {
+    // First verify user ownership
+    const existingReceipt = await this.getReceiptByIdForUser(id, userId);
+    if (!existingReceipt) {
+      throw new NotFoundException(
+        `Receipt with ID ${id} not found or access denied`,
+      );
+    }
+
+    // Get the actual entity for deletion
+    const receipt = await this.getReceiptEntityById(id);
+    if (!receipt) {
+      throw new NotFoundException(`Receipt with ID ${id} not found`);
+    }
+
+    await this.receiptRepository.remove(receipt);
+  }
+
   // 📊 ANALYTICS AND SEARCH METHODS
 
   /**

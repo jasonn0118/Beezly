@@ -16,6 +16,8 @@ import {
   TestNormalizationRequestDto,
   TestNormalizationResponseDto,
 } from './dto/test-normalization-response.dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { UserProfileDTO } from '../../../packages/types/dto/user';
 
 @ApiTags('Receipts')
 @Controller('receipts')
@@ -26,18 +28,20 @@ export class ReceiptController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get all receipts' })
+  @ApiOperation({ summary: 'Get all receipts for authenticated user' })
   @ApiResponse({
     status: 200,
-    description: 'List of all receipts',
+    description: 'List of user receipts',
     type: [ReceiptDTO],
   })
-  async getAllReceipts(): Promise<ReceiptDTO[]> {
-    return this.receiptService.getAllReceipts();
+  async getAllReceipts(
+    @CurrentUser() user: UserProfileDTO,
+  ): Promise<ReceiptDTO[]> {
+    return this.receiptService.getReceiptsByUserId(user.id);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get a receipt by ID' })
+  @ApiOperation({ summary: 'Get a receipt by ID (user ownership verified)' })
   @ApiResponse({
     status: 200,
     description: 'Receipt found by ID',
@@ -45,14 +49,17 @@ export class ReceiptController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Receipt not found',
+    description: 'Receipt not found or access denied',
   })
-  async getReceiptById(@Param('id') id: string): Promise<ReceiptDTO | null> {
-    return this.receiptService.getReceiptById(id);
+  async getReceiptById(
+    @Param('id') id: string,
+    @CurrentUser() user: UserProfileDTO,
+  ): Promise<ReceiptDTO | null> {
+    return this.receiptService.getReceiptByIdForUser(id, user.id);
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new receipt' })
+  @ApiOperation({ summary: 'Create a new receipt for authenticated user' })
   @ApiResponse({
     status: 201,
     description: 'Receipt successfully created',
@@ -60,10 +67,11 @@ export class ReceiptController {
   })
   async createReceipt(
     @Body() receiptData: CreateReceiptRequestDto,
+    @CurrentUser() user: UserProfileDTO,
   ): Promise<ReceiptDTO> {
-    // Convert DTO to service interface
+    // Convert DTO to service interface - use authenticated user's ID
     const createRequest: CreateReceiptRequest = {
-      userId: receiptData.userId,
+      userId: user.id, // Always use authenticated user's ID
       storeName: receiptData.storeName,
       storeId: receiptData.storeId,
       imageUrl: receiptData.imageUrl,
@@ -78,7 +86,7 @@ export class ReceiptController {
   }
 
   @Put(':id')
-  @ApiOperation({ summary: 'Update a receipt by ID' })
+  @ApiOperation({ summary: 'Update a receipt by ID (user ownership verified)' })
   @ApiResponse({
     status: 200,
     description: 'Receipt successfully updated',
@@ -86,27 +94,31 @@ export class ReceiptController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Receipt not found',
+    description: 'Receipt not found or access denied',
   })
   async updateReceipt(
     @Param('id') id: string,
     @Body() receiptData: Partial<ReceiptDTO>,
+    @CurrentUser() user: UserProfileDTO,
   ): Promise<ReceiptDTO> {
-    return this.receiptService.updateReceipt(id, receiptData);
+    return this.receiptService.updateReceiptForUser(id, receiptData, user.id);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete a receipt by ID' })
+  @ApiOperation({ summary: 'Delete a receipt by ID (user ownership verified)' })
   @ApiResponse({
     status: 200,
     description: 'Receipt successfully deleted',
   })
   @ApiResponse({
     status: 404,
-    description: 'Receipt not found',
+    description: 'Receipt not found or access denied',
   })
-  async deleteReceipt(@Param('id') id: string): Promise<{ message: string }> {
-    await this.receiptService.deleteReceipt(id);
+  async deleteReceipt(
+    @Param('id') id: string,
+    @CurrentUser() user: UserProfileDTO,
+  ): Promise<{ message: string }> {
+    await this.receiptService.deleteReceiptForUser(id, user.id);
     return { message: 'Receipt deleted successfully' };
   }
 
@@ -129,7 +141,7 @@ export class ReceiptController {
 
   @Post(':id/normalize')
   @ApiOperation({
-    summary: 'Normalize items in a receipt',
+    summary: 'Normalize items in a receipt (user ownership verified)',
     description:
       'Process all items in a receipt to find normalized product matches. This creates relationships between receipt items and normalized products.',
   })
@@ -139,22 +151,31 @@ export class ReceiptController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Receipt not found',
+    description: 'Receipt not found or access denied',
   })
   async normalizeReceipt(
     @Param('id') id: string,
+    @CurrentUser() user: UserProfileDTO,
   ): Promise<{ message: string; itemsNormalized: number }> {
+    // Verify user ownership first
+    const receipt = await this.receiptService.getReceiptByIdForUser(
+      id,
+      user.id,
+    );
+    if (!receipt) {
+      throw new Error('Receipt not found or access denied');
+    }
+
     await this.normalizationService.normalizeReceiptItems(id);
-    const receipt = await this.receiptService.getReceiptById(id);
     return {
       message: 'Receipt items normalized successfully',
-      itemsNormalized: receipt?.items.length || 0,
+      itemsNormalized: receipt.items.length || 0,
     };
   }
 
   @Get(':id/normalized')
   @ApiOperation({
-    summary: 'Get receipt with normalized items',
+    summary: 'Get receipt with normalized items (user ownership verified)',
     description:
       'Retrieve a receipt with all normalization data for each item, including multiple candidates and selected normalization.',
   })
@@ -164,9 +185,21 @@ export class ReceiptController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Receipt not found',
+    description: 'Receipt not found or access denied',
   })
-  async getReceiptWithNormalizedItems(@Param('id') id: string): Promise<any> {
+  async getReceiptWithNormalizedItems(
+    @Param('id') id: string,
+    @CurrentUser() user: UserProfileDTO,
+  ): Promise<any> {
+    // Verify user ownership first
+    const receipt = await this.receiptService.getReceiptByIdForUser(
+      id,
+      user.id,
+    );
+    if (!receipt) {
+      throw new Error('Receipt not found or access denied');
+    }
+
     return this.normalizationService.getReceiptWithNormalizedItems(id);
   }
 
