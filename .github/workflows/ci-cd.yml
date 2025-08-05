@@ -853,7 +853,7 @@ jobs:
 
       - name: Discord notification on migration success
         if: success()
-        uses: Ilshidur/action-discord@0.3.2
+        uses: Ilshidur/action-discord@0.4.0
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         with:
@@ -874,7 +874,7 @@ jobs:
 
       - name: Discord notification on migration failure
         if: failure()
-        uses: Ilshidur/action-discord@0.3.2
+        uses: Ilshidur/action-discord@0.4.0
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         with:
@@ -898,7 +898,7 @@ jobs:
     if: always()
     steps:
       - name: Send Discord notification
-        uses: Ilshidur/action-discord@0.3.2
+        uses: Ilshidur/action-discord@0.4.0
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         with:
