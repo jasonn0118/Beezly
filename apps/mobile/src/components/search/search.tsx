@@ -16,6 +16,7 @@ const ResultCard = ({ item, onPress }: { item: ProductSearchResult, onPress: () 
         <View style={styles.cardInfo}>
             <Text style={styles.cardBrand}>{item.brandName || 'Unknown Brand'}</Text>
             <Text style={styles.cardName}>{item.name}</Text>
+            <Text style={styles.cardBrand}>{item.categoryPath}</Text>
         </View>
         <FontAwesome name="chevron-right" size={16} color="#d1d5db" />
     </TouchableOpacity>
@@ -51,7 +52,6 @@ export default function SearchScreen() {
     };
 
     const handleProductInfo = (item : ProductSearchResult) => {
-        console.log(item.product_sk);
         if(item.product_sk){
             //return <ProductDetailScreen productId={item.product_sk} />   
              router.push(`/product-detail?productId=${item.product_sk}`);

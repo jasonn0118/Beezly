@@ -27,7 +27,6 @@ import { useLocalSearchParams } from 'expo-router';
 // Define a new type that extends the original interface to include the new fields
 interface StoreSearchResultWithDisplay extends UnifiedStoreSearchResult {
     key: string;
-    source: 'DB' | 'Google';
     displayAddress: string;
 }
 
@@ -36,29 +35,10 @@ export default function RegisterProductScreen() {
     const scannedData = scannedDataString ? JSON.parse(scannedDataString) : null;
 
     // State for form inputs
-    const [productDetails, setProductDetails] = useState<ProductDetails>({
-        //product info
-        product_sk: '',
-        id: '',
-        name: '',
-        barcode: '',
-        type : scannedData?.type,
-        brandName: '',
-        category: '',
-        image_url: '',
-        //store info
-        storeName: '',
-        storeAddress: '',
-        storePostalCode: '',
-        storeCity : '',
-        storeProvince : '',
-        storeLatitude : '',
-        storeLongitude :'',
-        storeStreetNumber : '',
-        storeStreetAddress : '',
-        //price info
-        price : 0,
+    const [productDetails, setProductDetails] = useState<Partial<ProductDetails>>({
+        type: scannedData?.type,
     });
+    const [categoryDisplayName, setCategoryDisplayName] = useState('');
 
     useEffect(() => {
         const fetchProductData = async () => {
@@ -66,6 +46,9 @@ export default function RegisterProductScreen() {
                 try {
                     const productData = await ProductService.getProduct(productSk);
                     setProductDetails(productData);
+                    if (productData.categoryPath) {
+                        setCategoryDisplayName(productData.categoryPath);
+                    }
                 } catch (error) {
                     console.error('Failed to fetch product data:', error);
                     Alert.alert('Error', 'Failed to load product data.');
@@ -90,10 +73,6 @@ export default function RegisterProductScreen() {
         }
     }, [scannedDataString]);
 
-    // useEffect(() => {
-    //     handleGetLocation();
-    // }, []);
-
     // Store search related states
     const [storeSearchQuery, setStoreSearchQuery] = useState('');
     const [storeSearchResults, setStoreSearchResults] = useState<StoreSearchResultWithDisplay[]>([]);
@@ -106,7 +85,6 @@ export default function RegisterProductScreen() {
 
     // Function to handle image picking
     const pickImage = async () => {
-        // Request permission to access the media library
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
             Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
@@ -129,7 +107,6 @@ export default function RegisterProductScreen() {
         }
     };
 
-    // --- Function to get current location ---
     const handleGetLocation = async () => {
         setIsFetchingLocation(true);
         const { status } = await Location.requestForegroundPermissionsAsync();
@@ -142,33 +119,28 @@ export default function RegisterProductScreen() {
         try {
             const location = await Location.getCurrentPositionAsync({});
             const { latitude, longitude } = location.coords;
-            // Reverse geocode to get address from coordinates
             const placemarks = await Location.reverseGeocodeAsync({ latitude, longitude });
 
             if (placemarks && placemarks.length > 0) {
                 const place = placemarks[0];
-                // We use place.name as a primary store name, if not available, we create one.
                 const formattedStoreName = `${place.name}, ${place.street}, ${place.city}` || `${place.street}, ${place.city}`;
                 const formattedAddress = `${place.street || ''}`;
                 const formattedStreetNumber = `${place.streetNumber || ''}`;
                 const formattedCity = `${place.city || ''}`;
                 const formattedRegion = `${place.region || ''}`;
                 const formattedPostalCode = `${place.postalCode || ''}`;
-                const formattedLatitude = `${location.coords.latitude || ''}`;
-                const formattedLongitude = `${location.coords.longitude || ''}`;
 
                 setProductDetails(prev => ({
                     ...prev,
                     storePostalCode : formattedPostalCode,
-                    storeName : formattedStoreName, // Correctly update store name in the product details
+                    storeName : formattedStoreName,
                     storeCity : formattedCity,
                     storeProvince : formattedRegion,
-                    storeLatitude : formattedLatitude,
-                    storeLongitude :formattedLongitude,
+                    storeLatitude : String(latitude),
+                    storeLongitude : String(longitude),
                     storeStreetNumber : formattedStreetNumber,
                     storeStreetAddress : formattedAddress
                 }));
-                // After getting the location, clear the search results and query to clean up the UI
                 setStoreSearchQuery(formattedStoreName);
                 setStoreSearchResults([]);
             }
@@ -180,7 +152,6 @@ export default function RegisterProductScreen() {
         }
     };
 
-    // --- Store Search Logic ---
     useEffect(() => {
         const handleSearch = async (query: string) => {
             if (query.length < 2) {
@@ -189,31 +160,18 @@ export default function RegisterProductScreen() {
             }
             setIsSearching(true);
             try {
-                const lat = productDetails.storeLatitude ? Number(productDetails.storeLatitude) : undefined;
-                const lon = productDetails.storeLongitude ? Number(productDetails.storeLongitude) : undefined;
+                const location = await Location.getCurrentPositionAsync({});
+                //const { latitude, longitude } = location.coords;
+                const latitude = location.coords.latitude;
+                const longitude = location.coords.longitude;
 
-                const [dbResults, googleResults] = await Promise.all([
-                    ProductService.getSearchStores(query),
-                    ProductService.searchGooglePlaces(query, lat, lon)
-                ]);
+                const results = await ProductService.searchStores(query, latitude, longitude);
 
-                // DB 결과에 storeSk를 키로 사용하고, 필요한 정보를 조합하여 표시
-                const dbResultsWithKey: StoreSearchResultWithDisplay[] = dbResults.map(item => ({
+                const combinedResults: StoreSearchResultWithDisplay[] = results.map(item => ({
                     ...item,
-                    source: 'DB',
-                    key: item.storeId || uuidv4(), // DB 항목의 고유 키 사용. 만약 storeSk가 없다면 uuidv4() 사용
-                    displayAddress: `${item.storeStreetAddress || ''}, ${item.storeCity || ''}`,
+                    key: item.storeId || uuidv4(),
+                    displayAddress: `${item.storeStreetAddress || ''}, ${item.source || ''}`,
                 }));
-
-                // Google 결과에 고유 ID를 키로 사용
-                const googleResultsWithKey: StoreSearchResultWithDisplay[] = googleResults.map(item => ({
-                    ...item,
-                    source: 'Google',
-                    key: uuidv4(), // 고유 ID 생성
-                    displayAddress: `${item.storeStreetAddress || ''}, ${item.storeCity || ''}`,
-                }));
-
-                const combinedResults = [...dbResultsWithKey, ...googleResultsWithKey];
 
                 setStoreSearchResults(combinedResults);
             } catch (error) {
@@ -231,7 +189,7 @@ export default function RegisterProductScreen() {
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [storeSearchQuery]);
+    }, [storeSearchQuery, canSearch, productDetails.storeLatitude, productDetails.storeLongitude]);
 
     const handleSelectStore = (store: StoreSearchResultWithDisplay) => {
         setCanSearch(false);
@@ -246,89 +204,120 @@ export default function RegisterProductScreen() {
             storeLongitude: store.storeLongitude,
             storeStreetNumber: store.storeStreetNumber,
             storeStreetAddress: store.storeStreetAddress,
+            // Also store the raw object to send to the backend
+            selectedStore: store 
         }));
-        // Update the store search query to show the full address for user convenience
         const fullAddress = [store.storeName, store.storeStreetAddress, store.storeCity].filter(Boolean).join(', ');
         setStoreSearchQuery(fullAddress);
         setStoreSearchResults([]);
     };
 
     const handleChange = (key: keyof ProductDetails, value: string | number) => {
-        let finalValue = value;
-        if (key === 'price') {
-            finalValue = Number(value) || 0;
-        }
-
         setProductDetails(prev => ({
             ...prev,
-            [key]: finalValue,
+            [key]: value,
         }));
     };
 
-    // Function to handle form submission
-    const handleSubmit = async () => {
-        const finalProductDetails = {
-            ...productDetails,
-            storeName: storeSearchQuery,
-        };
+    const handleCategorySelect = (categoryId: string, categoryName: string) => {
+        setProductDetails(prev => ({ ...prev, category: Number(categoryId) }));
+        setCategoryDisplayName(categoryName);
+        setCategoryModalVisible(false);
+    };
 
-        if (!finalProductDetails.name || !finalProductDetails.price || !finalProductDetails.storeName) {
-            Alert.alert('Missing Information', 'Please fill in at least the product name, store, and price.');
+    const handleSubmit = async () => {
+        if (!productDetails.name || !productDetails.brandName || !productDetails.category) {
+            Alert.alert('Missing Information', 'Please fill in the product name, brand name, and category.');
             return;
         }
-        try {
-            const formData = new FormData();
 
-            if (!finalProductDetails) {
-                console.error("productData is not available");
-                Alert.alert('Error', 'Product data is missing.');
-                return;
-            }
-
-            if (productSk) {
-                // Update existing product
-                await ProductService.updateProduct(productSk, finalProductDetails);
+        if (productSk) {
+            try {
+                const updatePayload = { ...productDetails, storeName: storeSearchQuery };
+                await ProductService.updateProduct(productSk, updatePayload);
                 Alert.alert('Product Updated', 'Product information has been successfully updated.');
-            } else {
-                // Create new product
-                const newId = uuidv4();
-                const newProductData: Product = {
-                    ...finalProductDetails,
-                    id: newId,
+            } catch (err) {
+                handleApiError(err, 'Update Failed');
+            }
+            return;
+        }
+
+        const formData = new FormData();
+
+        // Append core product details
+        formData.append('name', productDetails.name);
+        formData.append('barcode', productDetails.barcode!);
+        formData.append('category', String(productDetails.category));
+        if (productDetails.brandName) formData.append('brandName', productDetails.brandName);
+        if (productDetails.type) formData.append('barcodeType', productDetails.type);
+        if (productDetails.price) formData.append('price', String(productDetails.price));
+
+        // Append store information
+        if (productDetails.selectedStore) {
+            const store = productDetails.selectedStore;
+            if (store.source === 'DB' && store.storeId) {
+                formData.append('storeSk', store.storeId);
+            } else if (store.source === 'Google' && store.key) {
+                const googleStorePayload = {
+                    place_id: store.key,
+                    name: store.storeName,
+                    formatted_address: store.storeAddress,
+                    latitude: Number(store.storeLatitude),
+                    longitude: Number(store.storeLongitude),
+                    streetNumber: store.storeStreetNumber,
+                    streetAddress: store.storeStreetAddress,
+                    fullAddress: store.storeAddress,
+                    city: store.storeCity,
+                    province: store.storeProvince,
+                    postalCode: store.storePostalCode,
+                    countryRegion: store.countryRegion,
+                    road: store.road,
+                    types: store.types,
                 };
-
-                Object.keys(newProductData).forEach(key => {
-                const typedKey = key as keyof Product;
-                    if (typedKey !== 'image_url') {
-                    formData.append(typedKey, String(newProductData[typedKey]));
-                    }
-                });
-
-                if (newProductData.image_url) {
-                const uri = newProductData.image_url;
-                const uriParts = uri.split('.');
-                const fileType = uriParts[uriParts.length - 1];
-                formData.append('image', {
-                    uri,
-                    name: `photo.${fileType}`,
-                    type: `image/${fileType}`,
-                } as any);
-                }
-                await ProductService.createProduct(formData);
-                Alert.alert('Product Submitted', 'Thank you for contributing!');
+                formData.append('googlePlacesStore', JSON.stringify(googleStorePayload));
             }
+        } else {
+            // Handle manually entered or location-based store info
+            if (storeSearchQuery) {
+                formData.append('storeName', storeSearchQuery);
+            }
+            if (productDetails.storeAddress) formData.append('storeAddress', productDetails.storeAddress);
+            if (productDetails.storeLatitude) formData.append('storeLatitude', String(productDetails.storeLatitude));
+            if (productDetails.storeLongitude) formData.append('storeLongitude', String(productDetails.storeLongitude));
+            if (productDetails.storeStreetNumber) formData.append('storeStreetNumber', productDetails.storeStreetNumber);
+            if (productDetails.storeStreetAddress) formData.append('storeStreetAddress', productDetails.storeStreetAddress);
+            if (productDetails.storeCity) formData.append('storeCity', productDetails.storeCity);
+            if (productDetails.storeProvince) formData.append('storeProvince', productDetails.storeProvince);
+            if (productDetails.storePostalCode) formData.append('storePostalCode', productDetails.storePostalCode);
+        }
+
+        // Append image file
+        if (productDetails.image_url) {
+            const uri = productDetails.image_url;
+            const uriParts = uri.split('.');
+            const fileType = uriParts[uriParts.length - 1];
+            formData.append('image', {
+                uri,
+                name: `photo.${fileType}`,
+                type: `image/${fileType}`,
+            } as any);
+        }
+
+        try {
+            await ProductService.createProduct(formData);
+            Alert.alert('Product Submitted', 'Thank you for contributing!');
         } catch (err) {
-            if (axios.isAxiosError(err) && err.response) {
-                console.log('server response data:', err.response.data);
+            handleApiError(err, 'Submission Failed');
+        }
+    };
 
-                const serverMessage = err.response.data.message || 'An unknown error occurred on the server.';
-
-                Alert.alert('Submission Failed', serverMessage);
-
-            } else {
-                Alert.alert('Submission Failed', 'Could not connect to the server. Please check your network connection.');
-            }
-            Alert.alert('Submission Failed', 'Could not submit the product. Please try again.');
+    const handleApiError = (err: any, title: string) => {
+        if (axios.isAxiosError(err) && err.response) {
+            console.log('Server response data:', err.response.data);
+            const serverMessage = err.response.data.message || 'An unknown error occurred on the server.';
+            Alert.alert(title, serverMessage);
+        } else {
+            Alert.alert(title, 'Could not connect to the server. Please check your network connection.');
         }
     };
 
@@ -342,7 +331,6 @@ export default function RegisterProductScreen() {
                 contentContainerStyle={styles.scrollContent}
                 keyboardShouldPersistTaps="handled"
             >
-                {/* Header Section */}
                 <View style={styles.headerSection}>
                     <View style={styles.iconContainer}>
                         <FontAwesome name="leaf" size={32} color="#fbbf24" />
@@ -351,7 +339,6 @@ export default function RegisterProductScreen() {
                     <Text style={styles.subtitle}>{productSk ? 'Update the details below.' : 'Get bonus points for the first entry!'}</Text>
                 </View>
 
-                {/* Image Upload Card */}
                 <View style={styles.formCard}>
                     <Text style={styles.inputLabel}>Proof of Discovery (Photo)</Text>
                     <TouchableOpacity style={styles.imageUploader} onPress={pickImage}>
@@ -366,7 +353,6 @@ export default function RegisterProductScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Details Form Card */}
                 <View style={styles.formCard}>
                     <View style={styles.inputGroup}>
                         <Text style={styles.inputLabel}>Barcode</Text>
@@ -380,70 +366,71 @@ export default function RegisterProductScreen() {
                         <Text style={styles.inputLabel}>Brand Name</Text>
                         <TextInput style={styles.inputField} placeholder="e.g., Seoul Milk" value={productDetails.brandName} onChangeText={(text) => handleChange('brandName', text)} />
                     </View>
-                    {/* Category Picker is hidden in the original code, but kept here for reference */}
-                    {<View>
-                        <Text style={styles.inputLabel}>Category</Text>
-                        <TextInput style={styles.inputField} placeholder="e.g., Seoul Milk 1L" value={productDetails.category} onChangeText={(text) => handleChange('category', text)} />
-                    </View>}
-                </View>
-
-                {/* Price Form Card */}
-                <View style={styles.formCard}>
                     <View style={styles.inputGroup}>
-                        <View style={styles.labelWithButton}>
-                            <Text style={styles.inputLabel}>Store Name</Text>
-                            <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isFetchingLocation}>
-                                {isFetchingLocation ? (
-                                    <ActivityIndicator size="small" color="#4b5563" />
-                                ) : (
-                                    <>
-                                        <FontAwesome name="map-marker" size={16} color="#4b5563" />
-                                        <Text style={styles.locationButtonText}>Use Current Location</Text>
-                                    </>
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                        <TextInput
-                            style={styles.inputField}
-                            placeholder="e.g., Super Saver"
-                            value={storeSearchQuery}
-                            onChangeText={(text) => {
-                                setCanSearch(true);
-                                setStoreSearchQuery(text);
-                            }}
-                        />
-                        {isSearching ? (
-                            <ActivityIndicator size="small" color="#4b5563" style={styles.searchLoader} />
-                        ) : storeSearchResults.length > 0 && (
-                            <View style={styles.searchResultsWrapper}>
-                                <ScrollView
-                                    style={[styles.searchResultsContainer, { maxHeight: 150 }]}
-                                    keyboardShouldPersistTaps="handled"
-                                >
-                                    {storeSearchResults.map((item) => (
-                                        <TouchableOpacity
-                                            key={item.key} // 고유 키 사용 (DB 항목은 storeSk, Google 항목은 uuid)
-                                            style={styles.resultItem}
-                                            onPress={() => handleSelectStore(item)}
-                                        >
-                                            <View style={styles.resultContent}>
-                                                <Text style={styles.resultText}>{item.storeName+', '+ (item.storeStreetAddress || '') +', '+ (item.storeCity || '')}</Text>
-                                                <Text style={styles.resultSourceText}>{`(${item.source})`}</Text>
-                                            </View>
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
-                            </View>
-                        )}
-                    </View>
-                    {/* The price input is now in its own separate View, which helps with layout flow */}
-                    <View>
-                        <Text style={styles.inputLabel}>Price</Text>
-                        <TextInput style={styles.inputField} placeholder="e.g., 3.85" value={String(productDetails.price)} onChangeText={(text) => handleChange('price', Number(text))} keyboardType="numeric" />
+                        <Text style={styles.inputLabel}>Category</Text>
+                        <TouchableOpacity style={styles.inputField} onPress={() => setCategoryModalVisible(true)}>
+                            <Text style={styles.inputText} numberOfLines={1}>
+                                {categoryDisplayName || 'Select a category'}
+                            </Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
 
-                {/* Submit Button */}
+                {!productSk && (
+                    <View style={styles.formCard}>
+                        <View style={styles.inputGroup}>
+                            <View style={styles.labelWithButton}>
+                                <Text style={styles.inputLabel}>Store Name</Text>
+                                <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isFetchingLocation}>
+                                    {isFetchingLocation ? (
+                                        <ActivityIndicator size="small" color="#4b5563" />
+                                    ) : (
+                                        <>
+                                            <FontAwesome name="map-marker" size={16} color="#4b5563" />
+                                            <Text style={styles.locationButtonText}>Use Current Location</Text>
+                                        </>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                            <TextInput
+                                style={styles.inputField}
+                                placeholder="e.g., Super Saver"
+                                value={storeSearchQuery}
+                                onChangeText={(text) => {
+                                    setCanSearch(true);
+                                    setStoreSearchQuery(text);
+                                }}
+                            />
+                            {isSearching ? (
+                                <ActivityIndicator size="small" color="#4b5563" style={styles.searchLoader} />
+                            ) : storeSearchResults.length > 0 && (
+                                <View style={styles.searchResultsWrapper}>
+                                    <ScrollView
+                                        style={[styles.searchResultsContainer, { maxHeight: 150 }]}
+                                        keyboardShouldPersistTaps="handled"
+                                    >
+                                        {storeSearchResults.map((item) => (
+                                            <TouchableOpacity
+                                                key={item.key}
+                                                style={styles.resultItem}
+                                                onPress={() => handleSelectStore(item)}
+                                            >
+                                                <View style={styles.resultContent}>
+                                                    <Text style={styles.resultText}>{item.storeName + ', ' + (item.storeStreetAddress || '') + ', ' + (item.storeCity || '')}</Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+                        </View>
+                        <View>
+                            <Text style={styles.inputLabel}>Price</Text>
+                            <TextInput style={styles.inputField} placeholder="e.g., 3.85" value={String(productDetails.price || '')} onChangeText={(text) => handleChange('price', text)} keyboardType="numeric" />
+                        </View>
+                    </View>
+                )}
+
                 <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
                     <Text style={styles.submitButtonText}>{productSk ? 'Update Product' : 'Submit & Earn Points'}</Text>
                 </TouchableOpacity>
@@ -451,7 +438,7 @@ export default function RegisterProductScreen() {
             <CategoryPicker
                 visible={isCategoryModalVisible}
                 onClose={() => setCategoryModalVisible(false)}
-                onSelectCategory={(category) => handleChange('category', category)}
+                onSelectCategory={handleCategorySelect}
             />
         </KeyboardAvoidingView>
     );
@@ -460,7 +447,7 @@ export default function RegisterProductScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f3f4f6', // Lighter gray background
+        backgroundColor: '#f3f4f6',
     },
     scrollContent: {
         padding: 20,
@@ -472,9 +459,9 @@ const styles = StyleSheet.create({
         marginBottom: 24,
     },
     iconContainer: {
-        backgroundColor: '#fef3c7', // Amber-100
+        backgroundColor: '#fef3c7',
         padding: 16,
-        borderRadius: 999, // A large number for a circle
+        borderRadius: 999,
         marginBottom: 16,
     },
     title: {
@@ -497,12 +484,12 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 15,
         elevation: 2,
-        zIndex: 1, // Ensure the form card itself has a zIndex
+        zIndex: 1,
     },
     inputLabel: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#4b5563', // Gray-600
+        color: '#4b5563',
         marginBottom: 8,
     },
     inputGroup: {
@@ -510,20 +497,21 @@ const styles = StyleSheet.create({
     },
     inputField: {
         width: '100%',
-        backgroundColor: '#f9fafb', // Gray-50
+        backgroundColor: '#f9fafb',
         borderWidth: 1,
-        borderColor: '#e5e7eb', // Gray-200
+        borderColor: '#e5e7eb',
         borderRadius: 12,
         padding: 14,
         fontSize: 16,
         color: '#1f2937',
+        justifyContent: 'center',
     },
     imageUploader: {
         width: '100%',
-        height: 128,
+        height: 300,
         borderWidth: 2,
         borderStyle: 'dashed',
-        borderColor: '#d1d5db', // Gray-300
+        borderColor: '#d1d5db',
         borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
@@ -543,7 +531,7 @@ const styles = StyleSheet.create({
         borderRadius: 10,
     },
     submitButton: {
-        backgroundColor: '#fbbf24', // Amber-400
+        backgroundColor: '#fbbf24',
         borderRadius: 16,
         paddingVertical: 16,
         alignItems: 'center',
