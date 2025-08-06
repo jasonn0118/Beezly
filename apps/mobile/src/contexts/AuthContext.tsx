@@ -155,14 +155,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const response = await GoogleOAuthService.signInWithGoogle();
       
-      // Debug logging
-      if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
-        console.log('🔑 Storing auth data from Google OAuth:', {
-          hasAccessToken: !!response.accessToken,
-          userEmail: response.user?.email,
-        });
-      }
-      
       // Store auth data using the same method as regular auth
       await AuthService.storeAuthData({
         accessToken: response.accessToken,
@@ -174,15 +166,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsAuthenticated(true);
       setUser(response.user);
       
-      if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
-        console.log('✅ OAuth sign-in complete - user authenticated');
-      }
-      
       return response;
     } catch (error) {
-      if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
-        console.error('❌ OAuth sign-in failed:', error);
-      }
       throw error;
     }
   };

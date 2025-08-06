@@ -100,14 +100,6 @@ export class GoogleOAuthService {
       // Create/update local user record through our backend
       const authResponse = await this.syncWithBackend(tokens.access_token, user);
       
-      if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
-        console.log('🔐 OAuth Success - Auth Response:', {
-          hasAccessToken: !!authResponse.accessToken,
-          userEmail: authResponse.user?.email,
-          expiresIn: authResponse.expiresIn,
-        });
-      }
-      
       return authResponse;
     } catch (error) {
       throw error;
