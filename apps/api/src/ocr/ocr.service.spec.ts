@@ -133,13 +133,10 @@ describe('OcrService', () => {
 
   describe('processReceipt', () => {
     it('should throw error when no Azure credentials provided', async () => {
-      // Mock the image loading to succeed but fail at Azure check
+      // Mock the image optimization to succeed but fail at Azure credentials check
       jest
-        .spyOn(service as any, 'loadImageWithFormatSupport')
-        .mockResolvedValue(Buffer.from('mocked image data'));
-      jest
-        .spyOn(service as any, 'compressImageForAzure')
-        .mockResolvedValue(Buffer.from('compressed image data'));
+        .spyOn(service as any, 'optimizeImageForOcr')
+        .mockResolvedValue(Buffer.from('optimized image data'));
 
       const testBuffer = Buffer.from('test image data');
 
@@ -149,13 +146,10 @@ describe('OcrService', () => {
     });
 
     it('should throw error when Azure credentials are invalid', async () => {
-      // Mock the image loading to succeed
+      // Mock the image optimization to succeed
       jest
-        .spyOn(service as any, 'loadImageWithFormatSupport')
-        .mockResolvedValue(Buffer.from('mocked image data'));
-      jest
-        .spyOn(service as any, 'compressImageForAzure')
-        .mockResolvedValue(Buffer.from('compressed image data'));
+        .spyOn(service as any, 'optimizeImageForOcr')
+        .mockResolvedValue(Buffer.from('optimized image data'));
 
       // Mock the Azure service to throw an error
       const mockOcrAzureService = {
