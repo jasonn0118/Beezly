@@ -1,7 +1,9 @@
 import { Module, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule as AppConfigModule } from './config/config.module';
 import { AuthMiddleware } from './auth/middleware/auth.middleware';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
@@ -116,7 +118,14 @@ import { UserModule } from './user/user.module';
     UserModule,
   ],
   controllers: [AppController],
-  providers: [AppService, DatabaseHealthCheckService],
+  providers: [
+    AppService,
+    DatabaseHealthCheckService,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+  ],
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer) {

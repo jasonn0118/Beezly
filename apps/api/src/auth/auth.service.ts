@@ -57,20 +57,24 @@ export class AuthService {
         throw new UnauthorizedException('Invalid email or password.');
       }
 
-      const metadata = (user.user_metadata ?? {}) as UserMetadata;
+      // Get user data from local database instead of Supabase metadata
+      let localUser = await this.userService.getUserById(user.id);
 
-      const mappedUser: UserProfileDTO = {
-        id: user.id,
-        email: user.email ?? '',
-        firstName: metadata.firstName ?? '',
-        lastName: metadata.lastName ?? '',
-        pointBalance: metadata.pointBalance ?? 0,
-        level: metadata.level ?? '',
-        rank: metadata.rank ?? 0,
-        badges: metadata.badges ?? [],
-        createdAt: user.created_at,
-        updatedAt: user.updated_at ?? user.created_at,
-      };
+      if (!localUser) {
+        // Create local user record if it doesn't exist
+        const metadata = (user.user_metadata ?? {}) as UserMetadata;
+        localUser = await this.userService.createUserWithSupabaseId(user.id, {
+          email: user.email ?? '',
+          firstName: metadata.firstName ?? '',
+          lastName: metadata.lastName ?? '',
+          pointBalance: 0,
+          level: 'beginner',
+        });
+
+        this.logger.log(`Created local user record for: ${user.email}`);
+      }
+
+      const mappedUser: UserProfileDTO = localUser;
 
       this.logger.log(`User signed in successfully: ${user.email}`);
 
@@ -136,22 +140,14 @@ export class AuthService {
         return null;
       }
 
-      const metadata = (user.user_metadata ?? {}) as UserMetadata;
+      // Get user data from local database instead of Supabase metadata
+      const localUser = await this.userService.getUserById(user.id);
 
-      const mappedUser: UserProfileDTO = {
-        id: user.id,
-        email: user.email ?? '',
-        firstName: metadata.firstName ?? '',
-        lastName: metadata.lastName ?? '',
-        pointBalance: metadata.pointBalance ?? 0,
-        level: metadata.level ?? '',
-        rank: metadata.rank ?? 0,
-        badges: metadata.badges ?? [],
-        createdAt: user.created_at,
-        updatedAt: user.updated_at ?? user.created_at,
-      };
+      if (!localUser) {
+        return null;
+      }
 
-      return mappedUser;
+      return localUser;
     } catch (error) {
       this.logger.error(
         `Get user error: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -171,22 +167,14 @@ export class AuthService {
         return null;
       }
 
-      const metadata = (user.user_metadata ?? {}) as UserMetadata;
+      // Get user data from local database instead of Supabase metadata
+      const localUser = await this.userService.getUserById(user.id);
 
-      const mappedUser: UserProfileDTO = {
-        id: user.id,
-        email: user.email ?? '',
-        firstName: metadata.firstName ?? '',
-        lastName: metadata.lastName ?? '',
-        pointBalance: metadata.pointBalance ?? 0,
-        level: metadata.level ?? '',
-        rank: metadata.rank ?? 0,
-        badges: metadata.badges ?? [],
-        createdAt: user.created_at,
-        updatedAt: user.updated_at ?? user.created_at,
-      };
+      if (!localUser) {
+        return null;
+      }
 
-      return mappedUser;
+      return localUser;
     } catch (error) {
       this.logger.error(
         `Token validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -311,47 +299,24 @@ export class AuthService {
   }
 
   /**
-   * Update user profile metadata
+   * Update user profile in local database
    */
   async updateProfile(
     userId: string,
     updates: Partial<UserMetadata>,
   ): Promise<UserProfileDTO> {
     try {
-      const { data, error } = await this.supabaseService.auth.updateUser({
-        data: updates,
+      // Update the local database user record
+      const updatedUser = await this.userService.updateUser(userId, {
+        firstName: updates.firstName,
+        lastName: updates.lastName,
       });
 
-      if (error) {
-        this.logger.warn(
-          `Profile update failed for ${userId}: ${error.message}`,
-        );
-        throw new Error(error.message);
-      }
-
-      if (!data.user) {
-        throw new Error('Profile update failed - no user data returned');
-      }
-
-      const metadata = (data.user.user_metadata ?? {}) as UserMetadata;
-
-      const mappedUser: UserProfileDTO = {
-        id: data.user.id,
-        email: data.user.email ?? '',
-        firstName: metadata.firstName ?? '',
-        lastName: metadata.lastName ?? '',
-        pointBalance: metadata.pointBalance ?? 0,
-        level: metadata.level ?? '',
-        rank: metadata.rank ?? 0,
-        badges: metadata.badges ?? [],
-        createdAt: data.user.created_at,
-        updatedAt: data.user.updated_at ?? data.user.created_at,
-      };
-
       this.logger.log(
-        `Profile updated successfully for user: ${data.user.email}`,
+        `Profile updated successfully for user: ${updatedUser.email}`,
       );
-      return mappedUser;
+
+      return updatedUser;
     } catch (error) {
       this.logger.error(
         `Profile update error for ${userId}: ${error instanceof Error ? error.message : 'Unknown error'}`,
