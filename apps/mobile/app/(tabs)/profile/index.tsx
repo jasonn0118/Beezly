@@ -59,6 +59,7 @@ export default function ProfilePage() {
                         <TouchableOpacity 
                             style={styles.primaryButton}
                             onPress={() => router.push('/login')}
+                            activeOpacity={0.8}
                         >
                             <Ionicons name="log-in-outline" size={20} color="#212529" style={styles.buttonIcon} />
                             <Text style={styles.primaryButtonText}>Sign In</Text>
@@ -67,26 +68,12 @@ export default function ProfilePage() {
                         <TouchableOpacity 
                             style={styles.secondaryButton}
                             onPress={() => router.push('/signup')}
+                            activeOpacity={0.8}
                         >
                             <Ionicons name="person-add-outline" size={20} color="#FFC107" style={styles.buttonIcon} />
                             <Text style={styles.secondaryButtonText}>Create Account</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity 
-                            style={styles.debugButton}
-                            onPress={() => router.push('/debug')}
-                        >
-                            <Ionicons name="bug-outline" size={20} color="#dc3545" style={styles.buttonIcon} />
-                            <Text style={styles.debugButtonText}>Debug Network</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity 
-                            style={styles.debugButton}
-                            onPress={() => router.push('/test-linking')}
-                        >
-                            <Ionicons name="link-outline" size={20} color="#007bff" style={styles.buttonIcon} />
-                            <Text style={[styles.debugButtonText, { color: '#007bff' }]}>Test Linking</Text>
-                        </TouchableOpacity>
                     </View>
 
                     <View style={styles.features}>
@@ -124,12 +111,22 @@ export default function ProfilePage() {
                     <Text style={styles.userEmail}>{user?.email}</Text>
                     <Text style={styles.userPoints}>{user?.pointBalance || 0} points</Text>
                 </View>
-                <TouchableOpacity 
-                    style={styles.signOutButton}
-                    onPress={handleSignOut}
-                >
-                    <Ionicons name="log-out-outline" size={20} color="#dc3545" />
-                </TouchableOpacity>
+                <View style={styles.userActions}>
+                    <TouchableOpacity 
+                        style={styles.editButton}
+                        onPress={() => router.push('/profile-edit')}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="pencil-outline" size={18} color="#FFC107" />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={styles.signOutButton}
+                        onPress={handleSignOut}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="log-out-outline" size={20} color="#dc3545" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* Tab switcher */}
@@ -137,12 +134,14 @@ export default function ProfilePage() {
                 <TouchableOpacity 
                     style={[styles.tabButton, activeTab === 'leaderboard' && styles.tabButtonActive]}
                     onPress={() => setActiveTab('leaderboard')}
+                    activeOpacity={0.8}
                 >
                     <Text style={[styles.tabText, activeTab === 'leaderboard' && styles.tabTextActive]}>Leaderboard</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                     style={[styles.tabButton, activeTab === 'badges' && styles.tabButtonActive]}
                     onPress={() => setActiveTab('badges')}
+                    activeOpacity={0.8}
                 >
                     <Text style={[styles.tabText, activeTab === 'badges' && styles.tabTextActive]}>My Badges</Text>
                 </TouchableOpacity>
@@ -282,6 +281,18 @@ const styles = StyleSheet.create({
         flex: 1,
         marginLeft: 16,
     },
+    userActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    editButton: {
+        padding: 8,
+        backgroundColor: '#f3f4f6',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#FFC107',
+    },
     userName: {
         fontSize: 18,
         fontWeight: 'bold',
@@ -329,22 +340,5 @@ const styles = StyleSheet.create({
     },
     tabTextActive: { 
         color: '#1f2937' 
-    },
-    debugButton: {
-        backgroundColor: 'transparent',
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 8,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#dc3545',
-        marginTop: 8,
-    },
-    debugButtonText: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: '#dc3545',
     },
 });
