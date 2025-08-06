@@ -168,7 +168,7 @@ export class ProductService {
         product.categoryEntity = undefined;
         product.category = undefined;
       }
-    }""
+    }
 
     const updatedProduct = await this.productRepository.save(product);
     return this.mapProductToDTO(updatedProduct);
