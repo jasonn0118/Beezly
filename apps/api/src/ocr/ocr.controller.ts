@@ -8,6 +8,7 @@ import {
   HttpException,
   HttpStatus,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -19,9 +20,17 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { OcrService, OcrResult, CleanOcrResult } from './ocr.service';
+import {
+  OcrService,
+  OcrResult,
+  CleanOcrResult,
+  EnhancedOcrResult,
+} from './ocr.service';
 import { ReceiptService } from '../receipt/receipt.service';
-import { ReceiptNormalizationService } from '../receipt/receipt-normalization.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ReceiptItem } from '../entities/receipt-item.entity';
+import { ReceiptItemNormalization } from '../entities/receipt-item-normalization.entity';
 import { upload_receipt } from '../utils/storage.util';
 import {
   ProcessReceiptDto,
@@ -29,15 +38,20 @@ import {
 } from './dto/process-receipt.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserProfileDTO } from '../../../packages/types/dto/user';
 
 @ApiTags('OCR')
 @Controller('ocr')
+@UseGuards(JwtAuthGuard) // Apply JWT Auth Guard to all routes in this controller
 export class OcrController {
   constructor(
     private readonly ocrService: OcrService,
     private readonly receiptService: ReceiptService,
-    private readonly normalizationService: ReceiptNormalizationService,
+    @InjectRepository(ReceiptItem)
+    private readonly receiptItemRepository: Repository<ReceiptItem>,
+    @InjectRepository(ReceiptItemNormalization)
+    private readonly receiptItemNormalizationRepository: Repository<ReceiptItemNormalization>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -407,45 +421,44 @@ export class OcrController {
         );
       }
 
-      // Always process with normalization
-      const result = await this.ocrService.processReceiptEnhanced(
-        file.buffer,
-        azureEndpoint,
-        azureApiKey,
-      );
-
-      // Upload file to storage asynchronously (fire-and-forget)
       // Use authenticated user's ID if available, otherwise use body.user_id or default
       const userId = request.user?.id || body.user_id || 'anonymous_user';
       const storeId = 'default_store'; // Always use default store
 
-      // Debug logging to see authentication status
-      console.log(`[OCR Enhanced] Authentication status:`, {
-        hasUser: !!request.user,
-        userEmail: request.user?.email || 'not authenticated',
-        userId: userId,
-        fromAuth: !!request.user?.id,
-        fromBody: !!body.user_id,
-      });
+      console.log(
+        `Starting parallel processing: OCR + Storage upload for user ${userId}, store ${storeId}`,
+      );
 
-      console.log(`Starting async upload for user ${userId}, store ${storeId}`);
-
-      let uploadedFilePath: string | undefined;
-
-      try {
-        // Upload file to storage
-        const uploadResult = await upload_receipt(
-          userId,
-          storeId,
+      // Run OCR processing and file upload in parallel
+      const [result, uploadResult] = await Promise.allSettled([
+        // OCR Processing (main operation) - using WithNormalization for database compatibility
+        this.ocrService.processReceiptWithNormalization(
           file.buffer,
-          file.mimetype,
+          azureEndpoint,
+          azureApiKey,
+        ),
+        // Storage upload (parallel operation)
+        upload_receipt(userId, storeId, file.buffer, file.mimetype),
+      ]);
+
+      // Handle OCR result (must succeed)
+      if (result.status === 'rejected') {
+        throw new Error(`OCR processing failed: ${result.reason}`);
+      }
+      const ocrResult = result.value;
+
+      // Handle upload result (optional, can fail)
+      let uploadedFilePath: string | undefined;
+      if (uploadResult.status === 'fulfilled' && uploadResult.value) {
+        uploadedFilePath = uploadResult.value;
+        console.log(`Receipt uploaded successfully to: ${uploadedFilePath}`);
+      } else {
+        console.error(
+          'Error uploading receipt to storage:',
+          uploadResult.status === 'rejected'
+            ? uploadResult.reason
+            : 'Upload failed',
         );
-        uploadedFilePath = uploadResult || undefined;
-        if (uploadedFilePath) {
-          console.log(`Receipt uploaded successfully to: ${uploadedFilePath}`);
-        }
-      } catch (error) {
-        console.error('Error uploading receipt to storage:', error);
         // Continue without file path - not critical for OCR processing
       }
 
@@ -453,40 +466,46 @@ export class OcrController {
       let receiptId: string | undefined;
 
       try {
-        // Use the enhanced result with normalization
-        const receiptData =
-          await this.ocrService.processReceiptWithNormalization(
-            file.buffer,
-            azureEndpoint,
-            azureApiKey,
-          );
-
+        // Use the already processed OCR result from the parallel processing
         const receipt = await this.receiptService.createReceiptFromOcrResult(
-          receiptData,
+          ocrResult,
           userId, // Pass the determined user ID (authenticated, provided, or anonymous)
           uploadedFilePath,
         );
         receiptId = receipt.receiptSk;
         console.log(`Receipt created in database with ID: ${receiptId}`);
 
-        // Trigger normalization as a background process (fire-and-forget)
-        this.normalizationService
-          .normalizeReceiptItems(receiptId)
-          .then(() => {
-            console.log(`Receipt ${receiptId} normalization completed`);
-          })
-          .catch((error) => {
-            console.error(`Error normalizing receipt ${receiptId}:`, error);
-          });
+        // Step 3: Create receipt_item_normalizations to link receipt items with normalized products
+        try {
+          await this.createReceiptItemNormalizations(
+            receipt.receiptSk,
+            ocrResult,
+          );
+          console.log(
+            `Created receipt_item_normalizations for receipt ${receiptId}`,
+          );
+        } catch (linkingError) {
+          console.error(
+            'Error creating receipt_item_normalizations:',
+            linkingError,
+          );
+          // Continue without linking - not critical for basic receipt processing
+        }
+
+        // Note: Normalization already completed during processReceiptWithNormalization()
+        // No additional background normalization needed - saves ~815ms
       } catch (error) {
         console.error('Error creating receipt in database:', error);
         // Continue without receipt creation - OCR result still valid
       }
 
+      // Convert EnhancedOcrResult to CleanOcrResult for API response
+      const cleanResult = this.ocrService.convertToCleanResult(ocrResult);
+
       return {
         success: true,
         data: {
-          ...result,
+          ...cleanResult,
           // Add receipt_id to response if created
           ...(receiptId && { receipt_id: receiptId }),
           // Add uploaded file path to response if available
@@ -500,6 +519,67 @@ export class OcrController {
           error: error instanceof Error ? error.message : 'Unknown error',
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Creates receipt_item_normalizations entries to link receipt items with their normalized products
+   */
+  private async createReceiptItemNormalizations(
+    receiptSk: string,
+    ocrResult: EnhancedOcrResult,
+  ): Promise<void> {
+    // Get the receipt items that were created for this receipt (ordered by creation)
+    const receiptItems = await this.receiptItemRepository.find({
+      where: { receiptSk },
+      order: { createdAt: 'ASC' }, // Ensure same order as OCR items
+    });
+
+    if (!receiptItems.length) {
+      console.log('No receipt items found for receipt', receiptSk);
+      return;
+    }
+
+    // Create receipt_item_normalizations entries
+    const normalizations: ReceiptItemNormalization[] = [];
+
+    // Match receipt items with normalized products from OCR result
+    if (ocrResult.items && Array.isArray(ocrResult.items)) {
+      const itemsToProcess = Math.min(
+        ocrResult.items.length,
+        receiptItems.length,
+      );
+
+      for (let i = 0; i < itemsToProcess; i++) {
+        const ocrItem = ocrResult.items[i];
+        const receiptItem = receiptItems[i];
+
+        if (ocrItem.normalized_product_sk) {
+          const normalization = this.receiptItemNormalizationRepository.create({
+            receiptItemSk: receiptItem.receiptitemSk,
+            normalizedProductSk: ocrItem.normalized_product_sk,
+            confidenceScore: ocrItem.confidence_score || 0.8,
+            normalizationMethod: 'ai_normalization',
+            isSelected: true, // Auto-select the AI normalization
+            similarityScore: ocrItem.embedding_lookup?.similarity_score,
+            finalPrice: ocrItem.final_price,
+          });
+
+          normalizations.push(normalization);
+        }
+      }
+    }
+
+    // Save the receipt_item_normalizations entries
+    if (normalizations.length > 0) {
+      await this.receiptItemNormalizationRepository.save(normalizations);
+      console.log(
+        `Created ${normalizations.length} receipt_item_normalizations entries`,
+      );
+    } else {
+      console.log(
+        'No normalizations to create - no normalized products found in OCR result',
       );
     }
   }

@@ -7,7 +7,8 @@ export interface Product {
   name: string;
   barcode: string;
   type?: BarcodeType;
-  category: string;
+  category: number;
+  categoryPath?: string;
   brandName: string;
   image_url?: string;
 }
@@ -20,7 +21,8 @@ export interface Barcode {
   barcodeType?: BarcodeType;
   brandName?: string;
   categoryName?: string;
-  category: string;
+  category: number;
+  categoryPath: string;
   image_url : string;
   isVerified: boolean;
 }
@@ -31,7 +33,8 @@ export interface ProductDetails {
   name: string;
   barcode: string;
   type?: BarcodeType;
-  category: string;
+  category: number;
+  categoryPath?: string;
   brandName: string;
   image_url?: string;
   price?: number;
@@ -41,9 +44,10 @@ export interface ProductDetails {
   storeCity?: string;
   storeProvince?: string;
   storeLatitude?: string;
-  storeLongitude?:string;
+  storeLongitude?: string;
   storeStreetNumber?: string;
   storeStreetAddress?: string;
+  selectedStore?: UnifiedStoreSearchResult; // Add this line to fix the type error
 }
 
 export interface StoreData {
@@ -57,10 +61,14 @@ export interface StoreData {
     storeLongitude :string;
     storeStreetNumber : string;
     storeStreetAddress : string;
+    road?: string;
+    countryRegion?: string;
+    types?: string[];
 }
 
 export interface UnifiedStoreSearchResult extends StoreData {
     source: 'DB' | 'Google';
+    key?: string; // Add placeId for Google results
 }
 
 export interface PriceData {
@@ -73,11 +81,50 @@ export interface ProductSearchResult {
   name: string;
   brandName: string | null;
   image_url: string;
+  category?: number;
+  categoryPath?: string;
 }
 
 export interface ScannedDataParam {
   barcode: string;
   type: BarcodeType;
+}
+
+export interface PriceDetail {
+  priceSk: string;
+  price: number;
+  currency: string;
+  recordedAt: string;
+  creditScore: number;
+  verifiedCount?: number;
+  isDiscount: boolean;
+  originalPrice?: number;
+  store: {
+    storeSk: string;
+    name: string;
+    fullAddress?: string;
+    city: string;
+    province: string;
+    latitude?: number;
+    longitude?: number;
+    distance?: number;
+  };
+}
+
+export interface NearbyPrice {
+  storeName: string;
+  price: number;
+  distance: number;
+  isBestDeal?: boolean;
+}
+
+export interface EnhancedProductDetails {
+  product: Product;
+  lowestPrice?: PriceDetail;
+  prices: PriceDetail[]; // This is the array from the backend
+  availableStoresCount?: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface UseProductInfoProps {
@@ -112,6 +159,10 @@ export class ProductService {
     return apiClient.post<Product>('/products', formData);
   }
 
+  static async addPrice(productId: string, priceData: { price: number; store: StoreData }): Promise<any> {
+    return apiClient.post(`/products/${productId}/prices`, priceData);
+  }
+
   static async updateProduct(id: string, product: Partial<Product>): Promise<Product> {
     return apiClient.put<Product>(`/product/${id}`, product);
   }
@@ -124,31 +175,44 @@ export class ProductService {
     return apiClient.get<ProductSearchResult[]>('/products/search', { params: { q: query } });
   }
 
-  static async getSearchStores(query: string): Promise<StoreData[]> {
-    const results = await apiClient.get<any[]>(`/stores/search/name`, { params: { name: query }});
-    return results.map(item => ({
-      storeId: item.storeSk,
-      storeName: item.name,
-      storeAddress: item.fullAddress || '',
-      storePostalCode: item.postalCode || '',
-      storeCity: item.city || '',
-      storeProvince: item.province || '',
-      storeLatitude: String(item.latitude || ''),
-      storeLongitude: String(item.longitude || ''),
-      storeStreetNumber: item.streetNumber || '',
-      storeStreetAddress: item.streetAddress || '',
+  static async searchStores(query: string, latitude?: number, longitude?: number): Promise<UnifiedStoreSearchResult[]> {
+    const params: { query: string; latitude?: number; longitude?: number } = { query };
+    if (latitude !== undefined) params.latitude = latitude;
+    if (longitude !== undefined) params.longitude = longitude;
+
+    // Expect a response with 'localStores' and 'googleStores' keys
+    const response = await apiClient.get<{ localStores?: any[], googleStores?: any[] }>('/stores/search', { params });
+    
+    const localResults = (response.localStores || []).map(item => ({ ...item, source: 'DB' }));
+    const googleResults = (response.googleStores || []).map(item => ({ ...item, source: 'Google' }));
+
+    const combinedResults = [...localResults, ...googleResults];
+
+    // Map the combined API response to the client-side UnifiedStoreSearchResult interface
+    return combinedResults.map(item => ({
+        storeId: item.id, // The sample uses 'id' for local stores
+        placeId: item.placeId, // Ensure placeId is mapped for Google stores
+        storeName: item.name,
+        storeAddress: item.fullAddress,
+        storePostalCode: item.postalCode,
+        storeCity: item.city,
+        storeProvince: item.province,
+        storeLatitude: String(item.latitude),
+        storeLongitude: String(item.longitude),
+        storeStreetNumber: item.streetNumber,
+        storeStreetAddress: item.streetAddress,
+        road: item.road,
+        countryRegion: item.countryRegion,
+        types: item.types,
+        source: item.source, // Add back the source field to match the type
     }));
   }
 
-  static async searchGooglePlaces(query: string, lat?: number, lon?: number): Promise<StoreData[]> {
-    // This is a mock implementation. In a real app, you would call the Google Places API.
-    console.log(`Searching Google Places for "${query}" near (${lat}, ${lon})`);
-    const googleData: StoreData[] = [
-        { storeId: '9999', storeName: 'Starbucks', storeAddress: '123 Main St', storePostalCode: 'A1A 1A1', storeCity: 'Toronto', storeProvince: 'ON', storeLatitude: '43.6532', storeLongitude: '-79.3832', storeStreetNumber: '123', storeStreetAddress: 'Main St' },
-        { storeId: '9998', storeName: 'Tim Hortons', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
-        { storeId: '9997', storeName: 'Homeplus seoul', storeAddress: '456 King St', storePostalCode: 'B2B 2B2', storeCity: 'Vancouver', storeProvince: 'BC', storeLatitude: '49.2827', storeLongitude: '-123.1207', storeStreetNumber: '456', storeStreetAddress: 'King St' },
-    ];
-    return Promise.resolve(googleData.filter(store => store.storeName && store.storeName.toLowerCase().includes(query.toLowerCase())));
+  static async getEnhancedProductDetails(productSk: string, latitude?: number, longitude?: number): Promise<EnhancedProductDetails> {
+    const params: { latitude?: number; longitude?: number } = {};
+    if (latitude !== undefined) params.latitude = latitude;
+    if (longitude !== undefined) params.longitude = longitude;
+    return apiClient.get<EnhancedProductDetails>(`/products/${productSk}/enhanced`, { params });
   }
 }
 

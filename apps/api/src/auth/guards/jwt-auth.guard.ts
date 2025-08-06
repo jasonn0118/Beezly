@@ -47,7 +47,7 @@ export class JwtAuthGuard implements CanActivate {
         } catch (error) {
           // For public routes, we don't throw - just log and continue without user
           this.logger.debug(
-            `Optional authentication failed on public route: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            `Optional authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           );
         }
       }

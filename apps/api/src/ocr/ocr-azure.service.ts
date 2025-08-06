@@ -21,11 +21,13 @@ export class OcrAzureService {
 
     try {
       // Validate inputs before making API call
-      console.log('Azure API call details:', {
+      const azureStartTime = performance.now();
+      console.log('🚀 Starting Azure OCR processing:', {
         endpoint: endpoint?.slice(0, 50) + '...',
         hasApiKey: !!apiKey,
         apiKeyLength: apiKey?.length,
         bufferSize: buffer.length,
+        bufferSizeMB: (buffer.length / (1024 * 1024)).toFixed(2),
       });
 
       // Validate endpoint format
@@ -47,19 +49,49 @@ export class OcrAzureService {
         );
       }
 
-      // Initialize Azure Document Intelligence client
+      // Initialize Azure Document Intelligence client with timeout
       const client = DocumentIntelligence(
         endpoint,
         new AzureKeyCredential(apiKey),
+        {
+          // Add request timeout to prevent hanging
+          additionalPolicies: [
+            {
+              policy: {
+                name: 'RequestTimeoutPolicy',
+                sendRequest: async (request, next) => {
+                  // Set timeout for initial submission
+                  const timeoutMs = 20000; // 20 seconds max for submission (increased from 10s)
+                  const timeoutPromise = new Promise<never>((_, reject) => {
+                    setTimeout(
+                      () =>
+                        reject(
+                          new Error(`Request timeout after ${timeoutMs}ms`),
+                        ),
+                      timeoutMs,
+                    );
+                  });
+
+                  return Promise.race([next(request), timeoutPromise]);
+                },
+              },
+              position: 'perCall',
+            },
+          ],
+        },
       );
 
       // Analyze document using prebuilt receipt model
+      console.log('💷 Submitting document to Azure for analysis...');
+      const submitStartTime = performance.now();
       const initialResponse = await client
         .path('/documentModels/{modelId}:analyze', 'prebuilt-receipt')
         .post({
           contentType: 'application/octet-stream',
           body: buffer,
         });
+      const submitDuration = performance.now() - submitStartTime;
+      console.log(`📫 Document submitted in ${submitDuration.toFixed(1)}ms`);
 
       if (initialResponse.status !== '202') {
         // Enhanced error logging for 403 and other authentication issues
@@ -119,12 +151,17 @@ export class OcrAzureService {
       }
 
       // Poll for results using the Azure SDK
+      console.log('🔍 Starting polling for results...');
       const result = await this.pollForResultsWithSdk(
         client,
         operationLocation,
       );
 
       // Parse the prebuilt receipt response
+      const totalAzureDuration = performance.now() - azureStartTime;
+      console.log(
+        `🏁 Total Azure OCR time: ${(totalAzureDuration / 1000).toFixed(1)}s`,
+      );
       return this.parsePrebuiltReceiptResponse(result);
     } catch (error) {
       throw new Error(
@@ -134,15 +171,18 @@ export class OcrAzureService {
   }
 
   /**
-   * Poll Azure API for analysis results using SDK
+   * Poll Azure API for analysis results using SDK with optimized polling strategy
    */
   private async pollForResultsWithSdk(
     client: any,
     operationLocation: string,
   ): Promise<Record<string, any>> {
-    const maxRetries = 30;
-    const retryDelayMs = 1000;
+    const maxRetries = 60; // Increased for complex receipts
+    const maxWaitTime = 45000; // Maximum 45 seconds total wait time (increased from 15s)
     let retryCount = 0;
+    const startTime = performance.now();
+
+    console.log(`🕰️ Starting Azure OCR polling with optimized strategy...`);
 
     // Extract operation ID from operation location
     const operationId = operationLocation.split('/').pop()?.split('?')[0];
@@ -151,7 +191,40 @@ export class OcrAzureService {
     }
 
     while (retryCount < maxRetries) {
+      const elapsed = performance.now() - startTime;
+
+      // Progress indicator every 10 seconds
+      if (
+        retryCount > 0 &&
+        Math.floor(elapsed / 10000) > Math.floor((elapsed - 1000) / 10000)
+      ) {
+        console.log(
+          `⏳ Azure OCR still processing... ${(elapsed / 1000).toFixed(0)}s elapsed, ${retryCount} polls completed`,
+        );
+      }
+
+      // Early timeout if taking too long
+      if (elapsed > maxWaitTime) {
+        console.error(
+          `⏱️ Azure OCR timeout after ${(elapsed / 1000).toFixed(1)}s (max ${maxWaitTime / 1000}s)`,
+        );
+        console.error('📊 Timeout Analysis:', {
+          totalElapsed: `${(elapsed / 1000).toFixed(1)}s`,
+          maxAllowed: `${maxWaitTime / 1000}s`,
+          retryCount,
+          maxRetries,
+          averageTimePerPoll: `${(elapsed / (retryCount || 1)).toFixed(0)}ms`,
+        });
+
+        throw new Error(
+          `Azure OCR timeout: Processing exceeded ${maxWaitTime / 1000}s limit. ` +
+            `This may indicate a complex receipt or Azure service delays. ` +
+            `Try again with a simpler receipt or check Azure service status.`,
+        );
+      }
+
       try {
+        const pollStartTime = performance.now();
         const response = await client
           .path(
             '/documentModels/{modelId}/analyzeResults/{resultId}',
@@ -159,10 +232,15 @@ export class OcrAzureService {
             operationId,
           )
           .get();
+        const pollDuration = performance.now() - pollStartTime;
 
         if (response.status === '200') {
           const result = response.body;
           if (result.status === 'succeeded') {
+            const totalDuration = performance.now() - startTime;
+            console.log(
+              `✅ Azure OCR completed in ${(totalDuration / 1000).toFixed(1)}s after ${retryCount + 1} polls`,
+            );
             return result as Record<string, any>;
           } else if (result.status === 'failed') {
             throw new Error(
@@ -170,21 +248,46 @@ export class OcrAzureService {
             );
           }
           // Status is still 'running' or 'notStarted', continue polling
+          console.log(
+            `🔄 Poll ${retryCount + 1}: ${result.status} (${pollDuration.toFixed(1)}ms)`,
+          );
         }
 
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        // Dynamic delay based on retry count (faster initial checks, slower later)
+        const dynamicDelay = Math.min(500 + retryCount * 100, 2000); // 500ms to 2s
+        await new Promise((resolve) => setTimeout(resolve, dynamicDelay));
         retryCount++;
       } catch (error) {
         if (retryCount >= maxRetries - 1) {
           throw error;
         }
-        // Continue polling for other errors
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        console.warn(
+          `⚠️ Poll ${retryCount + 1} failed, retrying:`,
+          (error as Error).message,
+        );
+        // Continue polling for other errors with shorter delay
+        await new Promise((resolve) => setTimeout(resolve, 500));
         retryCount++;
       }
     }
 
-    throw new Error('Azure API timeout: Analysis took too long');
+    const totalDuration = performance.now() - startTime;
+    console.error(
+      `❌ Azure OCR failed after ${(totalDuration / 1000).toFixed(1)}s and ${retryCount} polls`,
+    );
+    console.error('📊 Final Analysis:', {
+      totalDuration: `${(totalDuration / 1000).toFixed(1)}s`,
+      retryCount,
+      maxRetries,
+      averageTimePerPoll: `${(totalDuration / retryCount).toFixed(0)}ms`,
+      lastStatus: 'polling_exhausted',
+    });
+
+    throw new Error(
+      `Azure OCR polling exhausted: Reached ${retryCount} retries over ${(totalDuration / 1000).toFixed(1)}s. ` +
+        `Receipt may be too complex or Azure service is experiencing delays. ` +
+        `Please try again or contact support if this persists.`,
+    );
   }
 
   /**

@@ -132,4 +132,10 @@ export class NormalizedProductDTO {
     description: "Foreign key category ID (integer)",
   })
   category?: number;
+
+  @ApiPropertyOptional({
+    example: "food > vege > onion",
+    description: "Foreign key category Path",
+  })
+  categoryPath?: string;
 }
