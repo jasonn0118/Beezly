@@ -53,9 +53,23 @@ export interface ConfirmationResponse {
   pendingSelectionProducts?: any[];
 }
 
+export interface ReceiptData {
+  item_count: number;
+  items: ReceiptItem[];
+  receipt_id: string;
+  merchant: string | null;
+  store_address: string | null;
+}
+
+export interface ProcessReceiptResponse {
+  success: boolean;
+  data?: ReceiptData;
+  message?: string;
+}
+
 export class ReceiptService {
-  static async processReceipt(formData: FormData): Promise<UploadReceiptResponse> {
-    return apiClient.post<UploadReceiptResponse>('/ocr/process-receipt-enhanced', formData, {
+  static async processReceipt(formData: FormData): Promise<ProcessReceiptResponse> {
+    return apiClient.post<ProcessReceiptResponse>('/ocr/process-receipt-enhanced', formData, {
       // headers: {
       //   'Content-Type': 'multipart/form-data',
       // },
@@ -87,6 +101,10 @@ export class ReceiptService {
       items: processedItems,
     };
     return apiClient.post<ConfirmationResponse>('/products/receipt/process-confirmations', payload, { timeout: 300000 });
+  }
+
+  static async processPendingSelections(payload: { selections: { normalizedProductSk: string, selectedProductSk: string | null, selectionReason: string }[], userId: string, receiptId: string }): Promise<ConfirmationResponse> {
+    return apiClient.post<ConfirmationResponse>('/products/receipt/process-selections', payload, { timeout: 300000 });
   }
 }
 

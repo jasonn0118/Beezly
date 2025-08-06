@@ -2,11 +2,7 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 // API configuration
 // @ts-ignore - Expo environment variables are available at runtime
-<<<<<<< HEAD
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3006';
-=======
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.11:3006';
->>>>>>> 75f2b61b9077a954eed5d57009b80ac5511e2788
 // @ts-ignore - Expo environment variables are available at runtime
 const API_TIMEOUT = parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '10000', 10);
 

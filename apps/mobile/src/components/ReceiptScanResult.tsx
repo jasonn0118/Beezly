@@ -2,22 +2,23 @@ import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Animated, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import ReceiptService, { ReceiptItem } from "../services/receiptService";
+import ReceiptService, { ReceiptItem, ProcessReceiptResponse } from "../services/receiptService";
 import { Swipeable } from 'react-native-gesture-handler';
 import ReceiptScanFailed from './ReceiptScanFailed';
+import { isAxiosError } from 'axios';
 
-// 디자인 시스템 색상 정의
+// Enhanced Design System Colors
 const COLORS = {
-  primary: '#007AFF', // 활성/브랜드 색상 (Apple Blue)
-  background: '#F2F2F7', // 화면 배경색
-  card: '#FFFFFF', // 카드 배경색
-  textPrimary: '#1C1C1E', // 주요 텍스트
-  textSecondary: '#8A8A8E', // 보조 텍스트
-  textTertiary: '#C7C7CC', // 가장 연한 텍스트
-  separator: '#E5E5EA', // 구분선
-  success: '#34C759', // 성공 (신뢰도 높음)
-  warning: '#FF9500', // 경고 (신뢰도 보통)
-  danger: '#FF3B30', // 위험 (신뢰도 낮음)
+  primary: '#007AFF',
+  background: '#F2F2F7',
+  card: '#FFFFFF',
+  textPrimary: '#1C1C1E',
+  textSecondary: '#8A8A8E',
+  textTertiary: '#C7C7CC',
+  separator: '#E5E5EA',
+  success: '#34C759',
+  warning: '#FF9500',
+  danger: '#FF3B30',
   white: '#FFFFFF',
   black: '#000000',
 };
@@ -57,7 +58,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         if (!editingItem) return;
         setProductInfo(productInfo.map(item =>
             item.id === editingItem.id
-                ? { ...item, normalized_name: editedName, price: parseFloat(editedPrice) || 0, brand: editedBrand }
+                ? { ...item, normalized_name: editedName, final_price: parseFloat(editedPrice) || 0, brand: editedBrand }
                 : item
         ));
         setIsModalVisible(false);
@@ -86,26 +87,35 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         try {
             const formData = new FormData();
             formData.append('file', { uri: pictureData, name: 'receipt.jpg', type: 'image/jpeg' } as any);
-            const response: any = await ReceiptService.processReceipt(formData);
+            const response = await ReceiptService.processReceipt(formData);
             if (response.success && response.data) {
-                // console.log("OCR API Response Data:", JSON.stringify(response.data, null, 2));
                 if (response.data.item_count > 0) {
-                    setProductInfo(response.data.items.map((item: any, index: number) => ({ ...item, id: item.id || `temp-${index}`, price: parseFloat(item.final_price) || 0 })) || []);
+                    const processedItems = response.data.items.map((item, index) => ({
+                        ...item,
+                        id: item.id || `temp-${index}`,
+                        final_price: Number(item.final_price) || 0,
+                    }));
+                    setProductInfo(processedItems);
                     setReceiptId(response.data.receipt_id || null);
                     setMerchantName(response.data.merchant || null);
                     setStoreAddress(response.data.store_address || null);
                 } else {
-                    // 영수증이지만 아이템이 없을때...
-                    setError('aaaaaaaaaaaaaaaaaaaaa.');
+                    // receipt scan => no item
+                    setError('Sorry, the receipt failed to scan, please try again.');
                     setScanFailed(true);
                 }
             } else {
-                setError((response as any).message || 'Failed to analyze receipt.');
+                setError(response.message || 'Failed to analyze receipt.');
                 setScanFailed(true);
             }
-        } catch (err: any) {
-            // console.error("Error processing receipt:", JSON.stringify(err, null, 2));
-            setError(err.response?.data?.message || err.message || 'A network error occurred.');
+        } catch (err) {
+            let errorMessage = 'A network error occurred.';
+            if (isAxiosError(err)) {
+                errorMessage = err.response?.data?.message || err.message;
+            } else if (err instanceof Error) {
+                errorMessage = err.message;
+            }
+            setError(errorMessage);
             setScanFailed(true);
         } finally {
             setLoading(false);
@@ -118,13 +128,12 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
 
     const handleSaveReceipt = async () => {
         if (!receiptId || !productInfo) {
-            // console.error("Receipt ID or product info is missing.");
             return;
         }
 
         // TODO: 현재 로그인된 사용자의 ID를 가져와야 합니다.
         const userId = "123e4567-e89b-12d3-a456-426614174000";
-        // console.log('Save button pressed');
+        console.log('Save button pressed');
 
         const itemsToConfirm = productInfo.map(item => ({
             normalizedProductSk: item.normalized_product_sk,
@@ -132,36 +141,30 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
             brand: item.brand || '',
         }))
 
-        // console.log('Saving receipt with data:', { userId, receiptId, items: itemsToConfirm });
-
         try {
             const response = await ReceiptService.processConfirmations(userId, receiptId, itemsToConfirm);
-            // console.log('Confirmation reponse:', response);
-
-            
-
+            console.log('Confirmation reponse:', response);
             if (response.pendingSelectionProducts && response.pendingSelectionProducts.length > 0) {
-
-                // console.log("response.pendingSelectionProducts : "+ response.pendingSelectionProducts[0].topMatches);
-
                 router.push({
                     pathname: '/product-selection',
-                    params: { pendingSelectionProductsString: JSON.stringify(response.pendingSelectionProducts) },
+                    params: { 
+                        pendingSelectionProductsString: JSON.stringify(response.pendingSelectionProducts),
+                        receiptId: receiptId
+                    },
                 });
             } else {
-                alert('영수증이 성공적으로 저장되었습니다!');
+                alert('The receipt was successfully saved');
+                router.push('/');
             }
-            
         } catch (error) {
-            // console.error('Failed to save receipt confirmation:', error);
-            alert('저장에 실패했습니다. 다시 시도해주세요.');
+            alert('Save failed, please try again.');
         }
     };
 
     const getConfidenceColor = (score: number) => {
         const percentage = score * 100;
-        if (percentage >= 90) return COLORS.success;
-        if (percentage >= 70) return COLORS.warning;
+        if (percentage >= 80) return COLORS.success;
+        // if (percentage >= 70) return COLORS.warning;
         return COLORS.danger;
     };
 
@@ -207,7 +210,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                             swipeableRefs.current.forEach((ref, i) => { if (i !== index && ref) ref.close(); });
                         }}
                     >
-                        <TouchableOpacity style={styles.productCard} activeOpacity={0.8} onPress={() => {if (item.confidence_score < 0.9) { handleOpenModal(item); } }}>
+                        <TouchableOpacity style={styles.productCard} activeOpacity={0.8} onPress={() => { handleOpenModal(item); }}>
                             <View style={[styles.statusDot, { backgroundColor: getConfidenceColor(item.confidence_score) }]} />
                             <View style={styles.productDetails}>
                                 <Text style={styles.productName}>{item.brand && <Text>{item.brand} - </Text>}{item.normalized_name || item.name}</Text>

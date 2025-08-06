@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, Image, SectionList, TouchableOpacity, StyleSheet, SafeAreaView, Modal, Pressable, Animated } from 'react-native';
+import { View, Text, Image, SectionList, TouchableOpacity, StyleSheet, SafeAreaView, Modal, Pressable, Animated, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
+import ReceiptService from '../src/services/receiptService';
 
 // Enhanced Design System Colors
 const COLORS = {
@@ -22,16 +23,14 @@ const NO_MATCH_SK = null;
 
 const ProductSelectionScreen = () => {
     const router = useRouter();
-    const { pendingSelectionProductsString } = useLocalSearchParams();
+    const { pendingSelectionProductsString, receiptId } = useLocalSearchParams();
     const pendingSelectionProducts = JSON.parse(pendingSelectionProductsString as string);
-    
-    // console.log("pendingSelectionProducts :!@#!@#!@ "+ pendingSelectionProducts);
-    // console.log("pendingSelectionProducts :!!!!!!!!!!!!!!! "+ JSON.stringify(pendingSelectionProducts[0].normalizedProduct.normalizedProductSk, null, 2));
     
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [selections, setSelections] = useState<{ [key: string]: any }>({});
     const [animatedValue] = useState(new Animated.Value(0));
+    const [isSaving, setIsSaving] = useState(false);
 
     const sections = useMemo(() => pendingSelectionProducts.map((product: any, index: number) => ({
         title: product.name,
@@ -56,18 +55,36 @@ const ProductSelectionScreen = () => {
         }));
     };
 
-    const handleSave = () => {
-        if (!allSectionsSelected) return;
-        const result = Object.entries(selections).map(([sectionIndex, selectedProduct]) => {
+    const handleSave = async () => {
+        if (!allSectionsSelected || isSaving) return;
+        setIsSaving(true);
+
+        const finalSelections = Object.entries(selections).map(([sectionIndex, selectedProduct]) => {
             const originalProduct = pendingSelectionProducts[parseInt(sectionIndex, 10)];
+            const isNoMatch = (selectedProduct as any).productSk === NO_MATCH_SK;
             return {
                 normalizedProductSk: originalProduct.normalizedProduct?.normalizedProductSk,
-                selectedProductSk: (selectedProduct as any).productSk,
-                selectionReason: (selectedProduct as any).productSk ? 'Best Match' : 'No suitable product found',
+                selectedProductSk: isNoMatch ? null : (selectedProduct as any).productSk,
+                selectionReason: isNoMatch ? 'No suitable product found' : 'Selected best match',
             };
         });
-        console.log("Final Selections (normalizedProductSk, productSk):", JSON.stringify(result, null, 2));
-        // router.back();
+
+        const payload = {
+            selections: finalSelections,
+            userId: '' as string,
+            receiptId: receiptId as string,
+        };
+
+        try {
+            await ReceiptService.processPendingSelections(payload);
+            Alert.alert('Success', 'Your selections have been saved.');
+            router.push('/');
+        } catch (error) {
+            console.error('Failed to save selections:', error);
+            Alert.alert('Error', 'Failed to save your selections. Please try again.');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const openImageModal = (imageUrl: string) => {
@@ -141,8 +158,8 @@ const ProductSelectionScreen = () => {
                     return (
                         <Animated.View style={[styles.card, isSelected && styles.cardSelected]}>
                             <TouchableOpacity onPress={() => handleSelectProduct(section.index, item)} style={styles.touchableCard}>
-                                <TouchableOpacity onPress={(e) => { e.stopPropagation(); openImageModal(item.imageUrl); }}>
-                                    <Image source={{ uri: item.imageUrl }} style={styles.image} />
+                                <TouchableOpacity onPress={(e) => { e.stopPropagation(); item.imageUrl && openImageModal(item.imageUrl); }}>
+                                    <Image source={{ uri: item.imageUrl || undefined }} style={styles.image} />
                                 </TouchableOpacity>
                                 <View style={styles.infoContainer}>
                                     <Text style={styles.name}>{item.name}</Text>
@@ -161,8 +178,12 @@ const ProductSelectionScreen = () => {
 
             <View style={styles.footer}>
                 <Animated.View style={[styles.completeButton, buttonStyle]}>
-                    <TouchableOpacity onPress={handleSave} disabled={!allSectionsSelected} style={styles.completeButtonTouchable}>
-                        <Text style={styles.completeButtonText}>Complete Selection</Text>
+                    <TouchableOpacity onPress={handleSave} disabled={!allSectionsSelected || isSaving} style={styles.completeButtonTouchable}>
+                        {isSaving ? (
+                            <ActivityIndicator color={COLORS.white} />
+                        ) : (
+                            <Text style={styles.completeButtonText}>Complete Selection</Text>
+                        )}
                     </TouchableOpacity>
                 </Animated.View>
             </View>
