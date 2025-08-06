@@ -21,7 +21,7 @@ describe('BarcodeController (e2e)', () => {
         AppModule,
         ConfigModule.forRoot({
           isGlobal: true,
-          envFilePath: '.env.test', // 또는 .env.local 등
+          envFilePath: '.env.test',
         }),
       ],
     }).compile();

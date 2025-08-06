@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigService, ConfigModule } from '@nestjs/config';
 import { TasksService } from './tasks.service';
+import { TasksController } from './tasks.controller';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
 @Module({
   imports: [ConfigModule],
+  controllers: [TasksController],
   providers: [
     TasksService,
     {
@@ -13,8 +15,8 @@ import OpenAI from 'openai';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         return createClient(
-          config.get<string>('NEXT_PUBLIC_SUPABASE_URL')!,
-          config.get<string>('NEXT_PUBLIC_SUPABASE_ANON_KEY')!,
+          config.get<string>('SUPABASE_URL')!,
+          config.get<string>('SUPABASE_ANON_KEY')!,
         );
       },
     },

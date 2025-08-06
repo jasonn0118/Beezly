@@ -50,7 +50,7 @@ const mockFromReturn: SupabaseFromClient = {
   single: jest.fn().mockResolvedValue({
     data: {
       created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    }, // 3일 전
+    },
     error: null,
   }),
 };
@@ -62,7 +62,13 @@ const mockSupabase: MockSupabaseClient = {
     }
     return {
       select: jest.fn().mockReturnValue({ data: [], error: null }),
-    } as any;
+      insert: jest.fn(),
+      eq: jest.fn(),
+      maybeSingle: jest.fn(),
+      order: jest.fn(),
+      limit: jest.fn(),
+      single: jest.fn(),
+    } as SupabaseFromClient;
   }),
 };
 

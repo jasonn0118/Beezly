@@ -3,7 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export class CategoryLevel3DTO {
   @ApiProperty({ example: 1, description: 'Category ID' })
   id: number;
-  
+
   @ApiProperty({ example: 'Citrus', description: 'Third-level category name' })
   name: string;
 
@@ -37,7 +37,7 @@ export class CategoryLevel2DTO {
 export class CategoryHierarchyDTO {
   @ApiProperty({ example: 1, description: 'Category ID' })
   id: number;
-  
+
   @ApiProperty({ example: 'Produce', description: 'Top-level category name' })
   name: string;
 
