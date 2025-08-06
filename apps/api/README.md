@@ -12,6 +12,16 @@
 - [💻 Development Guide](#-development-guide)
 - [🏗️ Architecture](#️-architecture)
 
+## 📚 Documentation
+
+| Guide | Purpose |
+|-------|---------|
+| **[Setup Guides](./docs/README.md)** | Database, authentication, and environment setup |
+| **[Database Guide](./docs/DATABASE.md)** | PostgreSQL setup, migrations, schema management |
+| **[Authentication Guide](./docs/AUTHENTICATION.md)** | Supabase JWT setup, API testing |
+| **[OAuth Setup Guide](./docs/OAUTH_SETUP.md)** | Google OAuth integration with Supabase |
+| **[Configuration Guide](./src/config/README.md)** | Service configuration and environment variables |
+
 ---
 
 ## ⚡ Quick Start
@@ -44,7 +54,7 @@ pnpm run dev:setup
 pnpm run migration:run --filter=api
 ```
 
-For detailed setup instructions, see [DATABASE_SETUP.md](./DATABASE_SETUP.md)
+📖 **[Complete Setup Guide](./docs/DATABASE.md)**
 </details>
 
 ---
@@ -112,11 +122,43 @@ graph LR
 
 📖 **[Detailed OCR Documentation](./src/ocr/README.md)**
 
-### 🔐 **5. Additional Services**
+### 🔐 **5. Authentication System**
+
+**🛡️ JWT-Based Security with Supabase Integration**
+- **Default Protection**: All API routes protected by default (JWT required)
+- **Public Routes**: Must use `@Public()` decorator to bypass authentication
+- **Role-Based Access**: Admin/user roles with fine-grained permissions
+- **OAuth Support**: Google OAuth integration with mobile app support
+- **Session Management**: Secure token validation and refresh handling
+
+**📋 Authentication Endpoints**
+```bash
+# Public endpoints (no auth required)
+POST /auth/signin              # Email/password login
+POST /auth/signup              # User registration
+POST /auth/oauth/google/url    # Get Google OAuth URL
+POST /auth/oauth/callback      # Handle OAuth callback
+POST /auth/reset-password      # Password reset
+
+# Protected endpoints (JWT required)
+GET /auth/me                   # Current user info
+PUT /auth/profile              # Update profile
+POST /auth/signout             # Sign out
+PUT /auth/password             # Change password
+
+# Admin endpoints (admin role required)
+GET /auth/users                # List all users
+GET /auth/users/:id            # Get user by ID
+PUT /auth/users/:id            # Update user
+DELETE /auth/users/:id         # Delete user
+```
+
+📖 **[Complete Authentication Guide](./docs/AUTH_USAGE_GUIDE.md)** | **[OAuth Setup Guide](./docs/OAUTH_SETUP.md)**
+
+### 🏪 **6. Additional Services**
 
 | **Service** | **Purpose** | **Key Features** |
 |-------------|-------------|------------------|
-| **🔐 Auth** | User authentication | JWT tokens, session management |
 | **👥 User** | Profile management | User data, preferences, history |
 | **🏪 Store** | Store information | Location data, merchant details |
 | **📦 Product** | Catalog management | Product database, CRUD operations |
@@ -500,6 +542,7 @@ curl -X POST http://localhost:3006/products/unprocessed/bulk-review \
 - **Azure Form Recognizer v4.0**: High-accuracy receipt text extraction
 - **Batch Embedding Lookups**: Process multiple items simultaneously 
 - **Smart Format Detection**: HEIC/HEIF conversion for compatibility
+- **Enhanced Performance**: 80% faster processing (15s → 2-3s)
 - **Endpoint**: `POST /ocr/process-receipt-enhanced`
 
 #### **🧠 Vector Embedding Service** (`src/product/vector-embedding.service.ts`)
@@ -581,42 +624,7 @@ if (
 
 ### ⚙️ **Environment Setup**
 
-<details>
-<summary>🔧 <strong>Environment Variables (.env file)</strong></summary>
-
-Create a `.env` file in the `apps/api` directory:
-
-```bash
-# 🚀 Application
-NODE_ENV=development
-PORT=3006
-
-# 🗄️ Database (PostgreSQL)
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=root
-DB_PASSWORD=root
-DB_NAME=beezly_local
-DB_SSL=false
-DB_LOGGING=false  # Set to 'verbose' for debugging
-
-# 🔐 Authentication
-JWT_SECRET=your_jwt_secret_here
-
-# 🤖 AI Services
-OPENAI_API_KEY=your_openai_key_here
-
-# 📄 Azure Form Recognizer (OCR)
-AZURE_FORM_RECOGNIZER_ENDPOINT=https://your-resource.cognitiveservices.azure.com
-AZURE_FORM_RECOGNIZER_API_KEY=your-azure-api-key
-
-# ☁️ Supabase (Optional - for cloud features)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-SUPABASE_ANON_KEY=your-supabase-anon-key
-```
-
-</details>
+📖 **[Complete Environment Guide](./docs/AUTHENTICATION.md#environment-configuration)** - Detailed .env setup with all required variables
 
 ### 📦 **Development Commands**
 

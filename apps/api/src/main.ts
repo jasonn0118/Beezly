@@ -1,9 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { AppModule } from './app.module';
 import { config } from 'dotenv';
 import { join } from 'path';
+import { AppModule } from './app.module';
 
 // Load environment variables from root .env file before anything else
 config({ path: join(process.cwd(), '../../.env') });
@@ -16,28 +16,67 @@ async function bootstrap() {
   const app: INestApplication = await NestFactory.create(AppModule);
 
   // Configure CORS for frontend apps
-  const corsOrigins = process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(',')
-    : [
-        'http://localhost:3000', // Next.js web app (default)
-        'http://localhost:3001', // Next.js web app (alternative)
-        'http://localhost:8081', // Expo mobile app default port
-        'http://localhost:19000', // Expo dev server port
-        'http://localhost:19001', // Expo dev server port
-        'http://localhost:19002', // Expo web port
-      ];
+  const isDevelopment = process.env.NODE_ENV !== 'production';
 
-  app.enableCors({
-    origin: corsOrigins,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-    credentials: true,
-  });
+  if (isDevelopment) {
+    // In development, be more permissive with CORS
+    app.enableCors({
+      origin: (
+        origin: string | undefined,
+        callback: (err: Error | null, allow?: boolean) => void,
+      ) => {
+        // Allow requests with no origin (like mobile apps)
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+
+        // Allow localhost and common development IPs
+        const allowedPatterns = [
+          /^http:\/\/localhost:\d+$/,
+          /^http:\/\/127\.0\.0\.1:\d+$/,
+          /^http:\/\/192\.168\.\d+\.\d+:\d+$/,
+          /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/,
+        ];
+
+        const isAllowed = allowedPatterns.some((pattern) =>
+          pattern.test(origin),
+        );
+        callback(null, isAllowed);
+      },
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      credentials: true,
+    });
+  } else {
+    // Production: use specific origins
+    const corsOrigins = process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(',')
+      : ['https://your-production-domain.com'];
+
+    app.enableCors({
+      origin: corsOrigins,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      credentials: true,
+    });
+  }
 
   const config = new DocumentBuilder()
     .setTitle('Beezly API')
     .setDescription('API documentation for Beezly backend')
     .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Enter JWT token',
+        in: 'header',
+      },
+      'JWT-auth', // This name here is important for matching up with @ApiBearerAuth() in your controller!
+    )
     .addTag('App', 'General application endpoints')
     .addTag('Auth', 'Authentication endpoints')
     .addTag('Barcodes', 'Barcode scanning and lookup endpoints')

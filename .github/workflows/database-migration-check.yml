@@ -158,20 +158,29 @@ jobs:
         DB_SSL: false
         NODE_ENV: test
 
+    - name: Create root environment file for API startup
+      run: |
+        cat > .env << EOF
+        NODE_ENV=test
+        DB_HOST=localhost
+        DB_PORT=5432
+        DB_USERNAME=postgres
+        DB_NAME=beezly_migration_test
+        DB_SSL=false
+        PORT=3001
+        CI=true
+        # Required Supabase configuration for auth service
+        SUPABASE_URL=https://dummy-url.supabase.co
+        SUPABASE_ANON_KEY=dummy-anon-key-for-testing
+        SUPABASE_SERVICE_ROLE_KEY=dummy-service-role-key-for-testing
+        EOF
+        echo "✅ Root environment file created for API startup test"
+
     - name: Verify API can start
       run: |
         timeout 30s pnpm run start:prod --filter=api &
         sleep 20
         curl -f http://localhost:3001/ | grep -q "Beezly API is running" || exit 1
-      env:
-        DB_HOST: localhost
-        DB_PORT: 5432
-        DB_USERNAME: postgres
-        DB_NAME: beezly_migration_test
-        DB_SSL: false
-        NODE_ENV: test
-        PORT: 3001
-        CI: true
 
     - name: Discord notification on success
       if: success()

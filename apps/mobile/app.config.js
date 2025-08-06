@@ -16,6 +16,7 @@ export default {
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     newArchEnabled: true,
+    scheme: "beezly",
     plugins: [
       "expo-router",
       [
