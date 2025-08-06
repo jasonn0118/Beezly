@@ -12,6 +12,7 @@ import {
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
+    Modal, // Import Modal for the notification and loading
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -21,7 +22,7 @@ import { BarcodeType } from '@beezly/types/dto/barcode';
 import CategoryPicker from '../src/components/scan/CategoryPicker';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router'; // Import useRouter
 
 
 // Define a new type that extends the original interface to include the new fields
@@ -30,15 +31,44 @@ interface StoreSearchResultWithDisplay extends UnifiedStoreSearchResult {
     displayAddress: string;
 }
 
+// Success Notification Component
+const SuccessNotification = () => (
+    <View style={notificationStyles.overlay}>
+        <View style={notificationStyles.card}>
+            <FontAwesome name="check-circle" size={60} color="#28a745" />
+            <Text style={notificationStyles.title}>Success!</Text>
+            <Text style={notificationStyles.message}>Product saved successfully.</Text>
+        </View>
+    </View>
+);
+
+// Loading Overlay Component
+const LoadingOverlay = () => (
+    <View style={notificationStyles.overlay}>
+        <View style={notificationStyles.card}>
+            <ActivityIndicator size="large" color="#fbbf24" />
+            <Text style={notificationStyles.title}>Saving...</Text>
+            <Text style={notificationStyles.message}>Please wait while we save your product.</Text>
+        </View>
+    </View>
+);
+
+
 export default function RegisterProductScreen() {
     const { productSk, scannedData: scannedDataString } = useLocalSearchParams<{ productSk?: string, scannedData?: string }>();
     const scannedData = scannedDataString ? JSON.parse(scannedDataString) : null;
+    const router = useRouter(); // Initialize useRouter
 
     // State for form inputs
     const [productDetails, setProductDetails] = useState<Partial<ProductDetails>>({
         type: scannedData?.type,
     });
     const [categoryDisplayName, setCategoryDisplayName] = useState('');
+
+    // New state for success notification and loading
+    const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false); // New state for loading
+
 
     useEffect(() => {
         const fetchProductData = async () => {
@@ -85,6 +115,7 @@ export default function RegisterProductScreen() {
 
     // Function to handle image picking
     const pickImage = async () => {
+        if (isSubmitting) return; // Prevent interaction during submission
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
             Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
@@ -108,6 +139,7 @@ export default function RegisterProductScreen() {
     };
 
     const handleGetLocation = async () => {
+        if (isSubmitting) return; // Prevent interaction during submission
         setIsFetchingLocation(true);
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
@@ -161,7 +193,6 @@ export default function RegisterProductScreen() {
             setIsSearching(true);
             try {
                 const location = await Location.getCurrentPositionAsync({});
-                //const { latitude, longitude } = location.coords;
                 const latitude = location.coords.latitude;
                 const longitude = location.coords.longitude;
 
@@ -183,18 +214,21 @@ export default function RegisterProductScreen() {
         };
 
         const timer = setTimeout(() => {
-            if (storeSearchQuery && canSearch) {
+            if (storeSearchQuery && canSearch && !isSubmitting) { // Add isSubmitting check
                 handleSearch(storeSearchQuery);
             }
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [storeSearchQuery, canSearch, productDetails.storeLatitude, productDetails.storeLongitude]);
+    }, [storeSearchQuery, canSearch, productDetails.storeLatitude, productDetails.storeLongitude, isSubmitting]); // Add isSubmitting to dependencies
 
     const handleSelectStore = (store: StoreSearchResultWithDisplay) => {
+        if (isSubmitting) return; // Prevent interaction during submission
         setCanSearch(false);
+        // Store the entire selected store object to decide how to submit it later
         setProductDetails(prev => ({
             ...prev,
+            // Keep individual fields for immediate UI updates if needed
             storeName: store.storeName,
             storeAddress: store.storeAddress,
             storePostalCode: store.storePostalCode,
@@ -213,6 +247,7 @@ export default function RegisterProductScreen() {
     };
 
     const handleChange = (key: keyof ProductDetails, value: string | number) => {
+        if (isSubmitting) return; // Prevent interaction during submission
         setProductDetails(prev => ({
             ...prev,
             [key]: value,
@@ -220,6 +255,7 @@ export default function RegisterProductScreen() {
     };
 
     const handleCategorySelect = (categoryId: string, categoryName: string) => {
+        if (isSubmitting) return; // Prevent interaction during submission
         setProductDetails(prev => ({ ...prev, category: Number(categoryId) }));
         setCategoryDisplayName(categoryName);
         setCategoryModalVisible(false);
@@ -231,84 +267,102 @@ export default function RegisterProductScreen() {
             return;
         }
 
-        if (productSk) {
-            try {
-                const updatePayload = { ...productDetails, storeName: storeSearchQuery };
-                await ProductService.updateProduct(productSk, updatePayload);
-                Alert.alert('Product Updated', 'Product information has been successfully updated.');
-            } catch (err) {
-                handleApiError(err, 'Update Failed');
-            }
-            return;
-        }
+        Alert.alert(
+            'Confirm Save',
+            'Are you sure you want to save this product?',
+            [
+                {
+                    text: 'Cancel',
+                    style: 'cancel',
+                },
+                {
+                    text: 'Save',
+                    onPress: async () => {
+                        setIsSubmitting(true); // Set loading to true
+                        try {
+                            if (productSk) {
+                                const updatePayload = { ...productDetails, storeName: storeSearchQuery };
+                                await ProductService.updateProduct(productSk, updatePayload);
+                                Alert.alert('Product Updated', 'Product information has been successfully updated.');
+                            } else {
+                                const formData = new FormData();
 
-        const formData = new FormData();
+                                // Append core product details
+                                formData.append('name', productDetails.name!);
+                                formData.append('barcode', productDetails.barcode!);
+                                formData.append('category', String(productDetails.category));
+                                if (productDetails.brandName) formData.append('brandName', productDetails.brandName);
+                                if (productDetails.type) formData.append('barcodeType', productDetails.type);
+                                if (productDetails.price) formData.append('price', String(productDetails.price)); // Ensure price is string
 
-        // Append core product details
-        formData.append('name', productDetails.name);
-        formData.append('barcode', productDetails.barcode!);
-        formData.append('category', String(productDetails.category));
-        if (productDetails.brandName) formData.append('brandName', productDetails.brandName);
-        if (productDetails.type) formData.append('barcodeType', productDetails.type);
-        if (productDetails.price) formData.append('price', String(productDetails.price));
+                                // Append store information
+                                if (productDetails.selectedStore) {
+                                    const store = productDetails.selectedStore;
+                                    if (store.source === 'DB' && store.storeId) {
+                                        formData.append('storeSk', store.storeId);
+                                    } else if (store.source === 'Google' && store.key) {
+                                        const googleStorePayload = {
+                                            place_id: store.key,
+                                            name: store.storeName,
+                                            formatted_address: store.storeAddress,
+                                            latitude: Number(store.storeLatitude),
+                                            longitude: Number(store.storeLongitude),
+                                            streetNumber: store.storeStreetNumber,
+                                            streetAddress: store.storeStreetAddress,
+                                            fullAddress: store.storeAddress,
+                                            city: store.storeCity,
+                                            province: store.storeProvince,
+                                            postalCode: store.storePostalCode,
+                                            countryRegion: store.countryRegion,
+                                            road: store.road,
+                                            types: store.types,
+                                        };
+                                        formData.append('googlePlacesStore', JSON.stringify(googleStorePayload));
+                                    }
+                                } else {
+                                    // Handle manually entered or location-based store info
+                                    if (storeSearchQuery) {
+                                        formData.append('storeName', storeSearchQuery);
+                                    }
+                                    if (productDetails.storeAddress) formData.append('storeAddress', productDetails.storeAddress);
+                                    if (productDetails.storeLatitude) formData.append('storeLatitude', String(productDetails.storeLatitude));
+                                    if (productDetails.storeLongitude) formData.append('storeLongitude', String(productDetails.storeLongitude));
+                                    if (productDetails.storeStreetNumber) formData.append('storeStreetNumber', productDetails.storeStreetNumber);
+                                    if (productDetails.storeStreetAddress) formData.append('storeStreetAddress', productDetails.storeStreetAddress);
+                                    if (productDetails.storeCity) formData.append('storeCity', productDetails.storeCity);
+                                    if (productDetails.storeProvince) formData.append('storeProvince', productDetails.storeProvince);
+                                    if (productDetails.storePostalCode) formData.append('storePostalCode', productDetails.storePostalCode);
+                                }
 
-        // Append store information
-        if (productDetails.selectedStore) {
-            const store = productDetails.selectedStore;
-            if (store.source === 'DB' && store.storeId) {
-                formData.append('storeSk', store.storeId);
-            } else if (store.source === 'Google' && store.key) {
-                const googleStorePayload = {
-                    place_id: store.key,
-                    name: store.storeName,
-                    formatted_address: store.storeAddress,
-                    latitude: Number(store.storeLatitude),
-                    longitude: Number(store.storeLongitude),
-                    streetNumber: store.storeStreetNumber,
-                    streetAddress: store.storeStreetAddress,
-                    fullAddress: store.storeAddress,
-                    city: store.storeCity,
-                    province: store.storeProvince,
-                    postalCode: store.storePostalCode,
-                    countryRegion: store.countryRegion,
-                    road: store.road,
-                    types: store.types,
-                };
-                formData.append('googlePlacesStore', JSON.stringify(googleStorePayload));
-            }
-        } else {
-            // Handle manually entered or location-based store info
-            if (storeSearchQuery) {
-                formData.append('storeName', storeSearchQuery);
-            }
-            if (productDetails.storeAddress) formData.append('storeAddress', productDetails.storeAddress);
-            if (productDetails.storeLatitude) formData.append('storeLatitude', String(productDetails.storeLatitude));
-            if (productDetails.storeLongitude) formData.append('storeLongitude', String(productDetails.storeLongitude));
-            if (productDetails.storeStreetNumber) formData.append('storeStreetNumber', productDetails.storeStreetNumber);
-            if (productDetails.storeStreetAddress) formData.append('storeStreetAddress', productDetails.storeStreetAddress);
-            if (productDetails.storeCity) formData.append('storeCity', productDetails.storeCity);
-            if (productDetails.storeProvince) formData.append('storeProvince', productDetails.storeProvince);
-            if (productDetails.storePostalCode) formData.append('storePostalCode', productDetails.storePostalCode);
-        }
+                                // Append image file
+                                if (productDetails.image_url) {
+                                    const uri = productDetails.image_url;
+                                    const uriParts = uri.split('.');
+                                    const fileType = uriParts[uriParts.length - 1];
+                                    formData.append('image', {
+                                        uri,
+                                        name: `photo.${fileType}`,
+                                        type: `image/${fileType}`,
+                                    } as any);
+                                }
 
-        // Append image file
-        if (productDetails.image_url) {
-            const uri = productDetails.image_url;
-            const uriParts = uri.split('.');
-            const fileType = uriParts[uriParts.length - 1];
-            formData.append('image', {
-                uri,
-                name: `photo.${fileType}`,
-                type: `image/${fileType}`,
-            } as any);
-        }
-
-        try {
-            await ProductService.createProduct(formData);
-            Alert.alert('Product Submitted', 'Thank you for contributing!');
-        } catch (err) {
-            handleApiError(err, 'Submission Failed');
-        }
+                                await ProductService.createProduct(formData);
+                            }
+                            setShowSuccessNotification(true); // Show success notification
+                            setTimeout(() => {
+                                setShowSuccessNotification(false); // Hide notification
+                                router.replace('/scan'); // Navigate to scan screen
+                            }, 2000);
+                        } catch (err) {
+                            handleApiError(err, 'Submission Failed');
+                        } finally {
+                            setIsSubmitting(false); // Always set loading to false
+                        }
+                    },
+                },
+            ],
+            { cancelable: true }
+        );
     };
 
     const handleApiError = (err: any, title: string) => {
@@ -341,7 +395,7 @@ export default function RegisterProductScreen() {
 
                 <View style={styles.formCard}>
                     <Text style={styles.inputLabel}>Proof of Discovery (Photo)</Text>
-                    <TouchableOpacity style={styles.imageUploader} onPress={pickImage}>
+                    <TouchableOpacity style={styles.imageUploader} onPress={pickImage} disabled={isSubmitting}>
                         {productDetails?.image_url ? (
                             <Image source={{ uri: productDetails.image_url }} style={styles.imagePreview} />
                         ) : (
@@ -360,15 +414,15 @@ export default function RegisterProductScreen() {
                     </View>
                     <View style={styles.inputGroup}>
                         <Text style={styles.inputLabel}>Product Name</Text>
-                        <TextInput style={styles.inputField} placeholder="e.g., Seoul Milk 1L" value={productDetails.name} onChangeText={(text) => handleChange('name', text)} />
+                        <TextInput style={styles.inputField} placeholder="e.g., Seoul Milk 1L" value={productDetails.name} onChangeText={(text) => handleChange('name', text)} editable={!isSubmitting} />
                     </View>
                     <View style={styles.inputGroup}>
                         <Text style={styles.inputLabel}>Brand Name</Text>
-                        <TextInput style={styles.inputField} placeholder="e.g., Seoul Milk" value={productDetails.brandName} onChangeText={(text) => handleChange('brandName', text)} />
+                        <TextInput style={styles.inputField} placeholder="e.g., Seoul Milk" value={productDetails.brandName} onChangeText={(text) => handleChange('brandName', text)} editable={!isSubmitting} />
                     </View>
                     <View style={styles.inputGroup}>
                         <Text style={styles.inputLabel}>Category</Text>
-                        <TouchableOpacity style={styles.inputField} onPress={() => setCategoryModalVisible(true)}>
+                        <TouchableOpacity style={styles.inputField} onPress={() => setCategoryModalVisible(true)} disabled={isSubmitting}>
                             <Text style={styles.inputText} numberOfLines={1}>
                                 {categoryDisplayName || 'Select a category'}
                             </Text>
@@ -381,7 +435,7 @@ export default function RegisterProductScreen() {
                         <View style={styles.inputGroup}>
                             <View style={styles.labelWithButton}>
                                 <Text style={styles.inputLabel}>Store Name</Text>
-                                <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isFetchingLocation}>
+                                <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isFetchingLocation || isSubmitting}>
                                     {isFetchingLocation ? (
                                         <ActivityIndicator size="small" color="#4b5563" />
                                     ) : (
@@ -400,6 +454,7 @@ export default function RegisterProductScreen() {
                                     setCanSearch(true);
                                     setStoreSearchQuery(text);
                                 }}
+                                editable={!isSubmitting}
                             />
                             {isSearching ? (
                                 <ActivityIndicator size="small" color="#4b5563" style={styles.searchLoader} />
@@ -414,6 +469,7 @@ export default function RegisterProductScreen() {
                                                 key={item.key}
                                                 style={styles.resultItem}
                                                 onPress={() => handleSelectStore(item)}
+                                                disabled={isSubmitting}
                                             >
                                                 <View style={styles.resultContent}>
                                                     <Text style={styles.resultText}>{item.storeName + ', ' + (item.storeStreetAddress || '') + ', ' + (item.storeCity || '')}</Text>
@@ -426,12 +482,12 @@ export default function RegisterProductScreen() {
                         </View>
                         <View>
                             <Text style={styles.inputLabel}>Price</Text>
-                            <TextInput style={styles.inputField} placeholder="e.g., 3.85" value={String(productDetails.price || '')} onChangeText={(text) => handleChange('price', text)} keyboardType="numeric" />
+                            <TextInput style={styles.inputField} placeholder="e.g., 3.85" value={String(productDetails.price || '')} onChangeText={(text) => handleChange('price', text)} keyboardType="numeric" editable={!isSubmitting} />
                         </View>
                     </View>
                 )}
 
-                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} disabled={isSubmitting}>
                     <Text style={styles.submitButtonText}>{productSk ? 'Update Product' : 'Submit & Earn Points'}</Text>
                 </TouchableOpacity>
             </ScrollView>
@@ -440,6 +496,26 @@ export default function RegisterProductScreen() {
                 onClose={() => setCategoryModalVisible(false)}
                 onSelectCategory={handleCategorySelect}
             />
+
+            {/* Success Notification Modal */}
+            <Modal
+                transparent={true}
+                animationType="fade"
+                visible={showSuccessNotification}
+                onRequestClose={() => setShowSuccessNotification(false)}
+            >
+                <SuccessNotification />
+            </Modal>
+
+            {/* Loading Overlay Modal */}
+            <Modal
+                transparent={true}
+                animationType="fade"
+                visible={isSubmitting && !showSuccessNotification} // Show loading only if not showing success
+                onRequestClose={() => {}} // Prevent closing during submission
+            >
+                <LoadingOverlay />
+            </Modal>
         </KeyboardAvoidingView>
     );
 };
@@ -599,5 +675,37 @@ const styles = StyleSheet.create({
     resultSourceText: {
         fontSize: 12,
         color: '#6b7280',
+    },
+});
+
+const notificationStyles = StyleSheet.create({
+    overlay: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    card: {
+        backgroundColor: 'white',
+        borderRadius: 20,
+        padding: 30,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    title: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#1f2937',
+        marginTop: 20,
+    },
+    message: {
+        fontSize: 16,
+        color: '#6b7280',
+        marginTop: 10,
+        textAlign: 'center',
     },
 });
