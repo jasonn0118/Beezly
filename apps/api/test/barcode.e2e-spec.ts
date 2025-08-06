@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { Repository } from 'typeorm';
@@ -16,7 +17,13 @@ describe('BarcodeController (e2e)', () => {
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
+      imports: [
+        AppModule,
+        ConfigModule.forRoot({
+          isGlobal: true,
+          envFilePath: '.env.test', // 또는 .env.local 등
+        }),
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();

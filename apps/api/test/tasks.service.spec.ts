@@ -88,13 +88,13 @@ class TestTasksService extends TasksService {
     );
   }
 
-  override async fetchCategoryMap(): Promise<Record<string, number>> {
-    return {
+  override fetchCategoryMap(): Promise<Record<string, number>> {
+    return Promise.resolve({
       'food > snacks > chips': 1,
-    };
+    });
   }
 
-  override async fetchProducts(): Promise<OpenFoodFactsProduct[]> {
+  override fetchProducts(): Promise<OpenFoodFactsProduct[]> {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const lastModified = Math.floor(yesterday.getTime() / 1000);
@@ -113,10 +113,10 @@ class TestTasksService extends TasksService {
     ]);
   }
 
-  override async getLatestCreatedAt(): Promise<Date> {
+  override getLatestCreatedAt(): Promise<Date> {
     const date = new Date();
-    date.setDate(date.getDate() - 2); // 2일 전
-    return date;
+    date.setDate(date.getDate() - 2);
+    return Promise.resolve(date);
   }
 }
 
