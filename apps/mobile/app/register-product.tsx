@@ -281,9 +281,9 @@ export default function RegisterProductScreen() {
                         setIsSubmitting(true); // Set loading to true
                         try {
                             if (productSk) {
-                                const updatePayload = { ...productDetails, storeName: storeSearchQuery };
+                                const updatePayload = { ...productDetails};
                                 await ProductService.updateProduct(productSk, updatePayload);
-                                Alert.alert('Product Updated', 'Product information has been successfully updated.');
+                                //Alert.alert('Product Updated', 'Product information has been successfully updated.');
                             } else {
                                 const formData = new FormData();
 
@@ -351,7 +351,11 @@ export default function RegisterProductScreen() {
                             setShowSuccessNotification(true); // Show success notification
                             setTimeout(() => {
                                 setShowSuccessNotification(false); // Hide notification
-                                router.replace('/scan'); // Navigate to scan screen
+                                if(productSk){
+                                    router.push(`/product-detail?productId=${productSk}`);
+                                }else{
+                                    router.replace('/scan'); // Navigate to scan screen
+                                }
                             }, 2000);
                         } catch (err) {
                             handleApiError(err, 'Submission Failed');

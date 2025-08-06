@@ -147,7 +147,9 @@ export class ProductService {
       product.barcodeType = productData.barcode_type;
     if (productData.image_url !== undefined)
       product.imageUrl = productData.image_url;
-
+    if (productData.brandName !== undefined)
+      product.brandName = productData.brandName;
+    
     // ✅ Update category by ID (FK)
     if (productData.category !== undefined) {
       if (productData.category !== null) {
@@ -160,12 +162,13 @@ export class ProductService {
             `Category with ID ${productData.category} not found`,
           );
         }
-
+        product.categoryEntity = category;
         product.category = category.id;
       } else {
+        product.categoryEntity = undefined;
         product.category = undefined;
       }
-    }
+    }""
 
     const updatedProduct = await this.productRepository.save(product);
     return this.mapProductToDTO(updatedProduct);

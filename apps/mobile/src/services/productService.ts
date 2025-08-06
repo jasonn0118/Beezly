@@ -164,7 +164,7 @@ export class ProductService {
   }
 
   static async updateProduct(id: string, product: Partial<Product>): Promise<Product> {
-    return apiClient.put<Product>(`/product/${id}`, product);
+    return apiClient.put<Product>(`/products/${id}`, product);
   }
 
   static async deleteProduct(id: string): Promise<void> {
