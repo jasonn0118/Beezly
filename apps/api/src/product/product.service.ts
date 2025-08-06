@@ -528,7 +528,7 @@ export class ProductService {
     this.logger.log(
       `Searching for product with ID: ${productSk}${storeSk ? ` in store: ${storeSk}` : ''}`,
     );
-    
+
     try {
       const product = await this.productRepository.findOne({
         where: { productSk },
@@ -580,7 +580,12 @@ export class ProductService {
         );
       }
 
-      return this.mapProductToEnhancedResponse(product, prices, latitude, longitude);
+      return this.mapProductToEnhancedResponse(
+        product,
+        prices,
+        latitude,
+        longitude,
+      );
     } catch (error) {
       if (
         error instanceof NotFoundException ||
@@ -727,7 +732,11 @@ export class ProductService {
   }
 
   private mapProductToDTO(product: Product): NormalizedProductDTO {
-    const categoryPath = [product.categoryEntity?.category1, product.categoryEntity?.category2, product.categoryEntity?.category3]
+    const categoryPath = [
+      product.categoryEntity?.category1,
+      product.categoryEntity?.category2,
+      product.categoryEntity?.category3,
+    ]
       .filter(Boolean)
       .join(' > ');
     return {
@@ -750,7 +759,11 @@ export class ProductService {
   private mapProductToSearchResponse(
     product: Product,
   ): ProductSearchResponseDto {
-    const categoryPath = [product.categoryEntity?.category1, product.categoryEntity?.category2, product.categoryEntity?.category3]
+    const categoryPath = [
+      product.categoryEntity?.category1,
+      product.categoryEntity?.category2,
+      product.categoryEntity?.category3,
+    ]
       .filter(Boolean)
       .join(' > ');
 
@@ -793,8 +806,11 @@ export class ProductService {
         );
       } else if (productData.googlePlacesStore) {
         // Scenario 2: Create store from Google Places data
-        const googleStoreData: GooglePlacesStoreDataDto = typeof productData.googlePlacesStore === 'string'
-            ? JSON.parse(productData.googlePlacesStore)
+        const googleStoreData: GooglePlacesStoreDataDto =
+          typeof productData.googlePlacesStore === 'string'
+            ? (JSON.parse(
+                productData.googlePlacesStore,
+              ) as GooglePlacesStoreDataDto)
             : productData.googlePlacesStore;
 
         // Use the StoreService to create the store from Google Places data
@@ -1161,7 +1177,9 @@ export class ProductService {
     maxDistanceKm: number,
   ): Promise<Price[]> {
     try {
-      this.logger.debug(`getPricesFromNearbyStores: userLatitude=${latitude}, userLongitude=${longitude}`);
+      this.logger.debug(
+        `getPricesFromNearbyStores: userLatitude=${latitude}, userLongitude=${longitude}`,
+      );
       // Use PostgreSQL's Earth extension or a simpler calculation
       // For now, let's use a basic bounding box approach
       const earthRadiusKm = 6371;
@@ -1225,13 +1243,17 @@ export class ProductService {
     const priceInfos: PriceInfoDto[] = prices
       .filter((price) => price.store) // Filter out prices without an associated store
       .map((price) => {
-        this.logger.debug(`Mapping price for store: ${price.store!.name}, latitude: ${price.store!.latitude}, longitude: ${price.store!.longitude}`);
+        this.logger.debug(
+          `Mapping price for store: ${price.store!.name}, latitude: ${price.store!.latitude}, longitude: ${price.store!.longitude}`,
+        );
         return {
           priceSk: price.priceSk,
           price: Number(price.price),
           currency: price.currency || 'CAD',
           recordedAt: price.recordedAt,
-          creditScore: price.creditScore ? Number(price.creditScore) : undefined,
+          creditScore: price.creditScore
+            ? Number(price.creditScore)
+            : undefined,
           verifiedCount: price.verifiedCount || undefined,
           isDiscount: price.isDiscount,
           originalPrice: price.originalPrice
@@ -1271,16 +1293,24 @@ export class ProductService {
     };
   }
 
-  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    this.logger.debug(`Calculating distance between (${lat1}, ${lon1}) and (${lat2}, ${lon2})`);
+  private calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    this.logger.debug(
+      `Calculating distance between (${lat1}, ${lon1}) and (${lat2}, ${lon2})`,
+    );
     const R = 6371; // Radius of Earth in kilometers
     const dLat = this.deg2rad(lat2 - lat1);
     const dLon = this.deg2rad(lon2 - lon1);
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(this.deg2rad(lat1)) *
-      Math.cos(this.deg2rad(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        Math.cos(this.deg2rad(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
     this.logger.debug(`Calculated distance: ${distance} km`);
@@ -1291,7 +1321,11 @@ export class ProductService {
     return deg * (Math.PI / 180);
   }
 
-  private mapStoreToDto(store: Store, userLatitude?: number, userLongitude?: number): StoreInfoDto {
+  private mapStoreToDto(
+    store: Store,
+    userLatitude?: number,
+    userLongitude?: number,
+  ): StoreInfoDto {
     const storeDto: StoreInfoDto = {
       storeSk: store.storeSk,
       name: store.name,
@@ -1302,8 +1336,18 @@ export class ProductService {
       longitude: store.longitude || undefined,
     };
 
-    if (userLatitude !== undefined && userLongitude !== undefined && store.latitude !== undefined && store.longitude !== undefined) {
-      storeDto.distance = this.calculateDistance(userLatitude, userLongitude, store.latitude, store.longitude);
+    if (
+      userLatitude !== undefined &&
+      userLongitude !== undefined &&
+      store.latitude !== undefined &&
+      store.longitude !== undefined
+    ) {
+      storeDto.distance = this.calculateDistance(
+        userLatitude,
+        userLongitude,
+        store.latitude,
+        store.longitude,
+      );
     }
 
     return storeDto;
