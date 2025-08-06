@@ -1039,7 +1039,37 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         lastMatchedAt: new Date(),
       });
     }
-    // Check for comprehensive duplicates before attempting to save
+    // First check for exact match to avoid duplicate key errors
+    const exactMatch = await this.findExactMatch(rawName, merchant);
+    if (exactMatch) {
+      this.logger.debug(
+        `Exact match found for ${rawName} from ${merchant}. Using existing record.`,
+      );
+
+      // IMPORTANT: Re-validate if this should be a discount/adjustment based on current rules
+      // This handles cases where items were previously saved incorrectly as products
+      const cleanedName = this.cleanRawName(rawName);
+      const isDiscount = this.isDiscountLine(cleanedName, merchant);
+      const isAdjustment = this.isAdjustmentLine(cleanedName);
+
+      if (isDiscount || isAdjustment) {
+        this.logger.debug(
+          `Existing record for ${rawName} should be a ${isDiscount ? 'discount' : 'adjustment'}. Updating database record.`,
+        );
+        // Update the existing record's flags in database and return it
+        exactMatch.isDiscount = isDiscount;
+        exactMatch.isAdjustment = isAdjustment;
+        await this.normalizedProductRepository.save(exactMatch);
+        await this.updateMatchingStatistics(exactMatch);
+        return exactMatch;
+      }
+
+      // Update match statistics and return existing product (unchanged)
+      await this.updateMatchingStatistics(exactMatch);
+      return exactMatch;
+    }
+
+    // Check for comprehensive duplicates (similar products)
     const existingProduct = await this.findComprehensiveDuplicate(
       merchant,
       rawName,
@@ -1080,15 +1110,13 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
       return savedProduct;
     } catch (error: any) {
-      // Handle duplicate key constraint violation as fallback
+      // Handle ANY duplicate key error (PostgreSQL error code 23505)
+      // Don't rely on specific constraint names since they can change
       /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-      if (
-        error.code === '23505' &&
-        error.constraint === 'UQ_raw_name_merchant'
-      ) {
+      if (error.code === '23505') {
         /* eslint-enable @typescript-eslint/no-unsafe-member-access */
         this.logger.debug(
-          `Product already exists: ${rawName} from ${merchant}. Retrieving existing record.`,
+          `Concurrent insert detected for ${rawName} from ${merchant}. Retrieving existing record.`,
         );
 
         // Another request created this product concurrently, retrieve the existing one
@@ -1101,6 +1129,13 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
           await this.updateMatchingStatistics(concurrentExistingProduct);
           return concurrentExistingProduct;
         }
+
+        // If we still can't find it, log warning but don't crash
+        this.logger.warn(
+          `Could not find product after duplicate key error: ${rawName} from ${merchant}`,
+        );
+        // Return a minimal product object to prevent crash
+        return normalizedProduct;
       }
 
       // Re-throw other errors
