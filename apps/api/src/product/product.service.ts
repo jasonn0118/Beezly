@@ -149,7 +149,7 @@ export class ProductService {
       product.imageUrl = productData.image_url;
     if (productData.brandName !== undefined)
       product.brandName = productData.brandName;
-    
+
     // ✅ Update category by ID (FK)
     if (productData.category !== undefined) {
       if (productData.category !== null) {
