@@ -20,9 +20,17 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { OcrService, OcrResult, CleanOcrResult } from './ocr.service';
+import {
+  OcrService,
+  OcrResult,
+  CleanOcrResult,
+  EnhancedOcrResult,
+} from './ocr.service';
 import { ReceiptService } from '../receipt/receipt.service';
-import { ReceiptNormalizationService } from '../receipt/receipt-normalization.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ReceiptItem } from '../entities/receipt-item.entity';
+import { ReceiptItemNormalization } from '../entities/receipt-item-normalization.entity';
 import { upload_receipt } from '../utils/storage.util';
 import {
   ProcessReceiptDto,
@@ -40,7 +48,10 @@ export class OcrController {
   constructor(
     private readonly ocrService: OcrService,
     private readonly receiptService: ReceiptService,
-    private readonly normalizationService: ReceiptNormalizationService,
+    @InjectRepository(ReceiptItem)
+    private readonly receiptItemRepository: Repository<ReceiptItem>,
+    @InjectRepository(ReceiptItemNormalization)
+    private readonly receiptItemNormalizationRepository: Repository<ReceiptItemNormalization>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -464,6 +475,23 @@ export class OcrController {
         receiptId = receipt.receiptSk;
         console.log(`Receipt created in database with ID: ${receiptId}`);
 
+        // Step 3: Create receipt_item_normalizations to link receipt items with normalized products
+        try {
+          await this.createReceiptItemNormalizations(
+            receipt.receiptSk,
+            ocrResult,
+          );
+          console.log(
+            `Created receipt_item_normalizations for receipt ${receiptId}`,
+          );
+        } catch (linkingError) {
+          console.error(
+            'Error creating receipt_item_normalizations:',
+            linkingError,
+          );
+          // Continue without linking - not critical for basic receipt processing
+        }
+
         // Note: Normalization already completed during processReceiptWithNormalization()
         // No additional background normalization needed - saves ~815ms
       } catch (error) {
@@ -491,6 +519,67 @@ export class OcrController {
           error: error instanceof Error ? error.message : 'Unknown error',
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Creates receipt_item_normalizations entries to link receipt items with their normalized products
+   */
+  private async createReceiptItemNormalizations(
+    receiptSk: string,
+    ocrResult: EnhancedOcrResult,
+  ): Promise<void> {
+    // Get the receipt items that were created for this receipt (ordered by creation)
+    const receiptItems = await this.receiptItemRepository.find({
+      where: { receiptSk },
+      order: { createdAt: 'ASC' }, // Ensure same order as OCR items
+    });
+
+    if (!receiptItems.length) {
+      console.log('No receipt items found for receipt', receiptSk);
+      return;
+    }
+
+    // Create receipt_item_normalizations entries
+    const normalizations: ReceiptItemNormalization[] = [];
+
+    // Match receipt items with normalized products from OCR result
+    if (ocrResult.items && Array.isArray(ocrResult.items)) {
+      const itemsToProcess = Math.min(
+        ocrResult.items.length,
+        receiptItems.length,
+      );
+
+      for (let i = 0; i < itemsToProcess; i++) {
+        const ocrItem = ocrResult.items[i];
+        const receiptItem = receiptItems[i];
+
+        if (ocrItem.normalized_product_sk) {
+          const normalization = this.receiptItemNormalizationRepository.create({
+            receiptItemSk: receiptItem.receiptitemSk,
+            normalizedProductSk: ocrItem.normalized_product_sk,
+            confidenceScore: ocrItem.confidence_score || 0.8,
+            normalizationMethod: 'ai_normalization',
+            isSelected: true, // Auto-select the AI normalization
+            similarityScore: ocrItem.embedding_lookup?.similarity_score,
+            finalPrice: ocrItem.final_price,
+          });
+
+          normalizations.push(normalization);
+        }
+      }
+    }
+
+    // Save the receipt_item_normalizations entries
+    if (normalizations.length > 0) {
+      await this.receiptItemNormalizationRepository.save(normalizations);
+      console.log(
+        `Created ${normalizations.length} receipt_item_normalizations entries`,
+      );
+    } else {
+      console.log(
+        'No normalizations to create - no normalized products found in OCR result',
       );
     }
   }

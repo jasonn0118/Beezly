@@ -50,7 +50,8 @@ export class StoreInfoDto {
   longitude?: number;
 
   @ApiProperty({
-    description: 'Distance from the provided coordinates to the store in kilometers',
+    description:
+      'Distance from the provided coordinates to the store in kilometers',
     example: 5.2,
     required: false,
   })

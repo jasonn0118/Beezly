@@ -377,7 +377,7 @@ export class ProductNormalizationService {
       const embeddingSimilarProducts =
         await this.vectorEmbeddingService.findSimilarProductsEnhanced({
           queryText: cleanedName,
-          merchant,
+          merchant, // Use the already normalized merchant from step above
           similarityThreshold,
           limit: 5,
           includeDiscounts: false,
@@ -958,16 +958,23 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
   /**
    * Normalize merchant names to prevent duplicates from inconsistent naming
+   * Uses canonical merchant names to ensure consistency across the system
    */
   private normalizeMerchantName(merchant: string): string {
     const normalized = merchant.trim().toLowerCase();
 
     // Define merchant name mappings for common variations
+    // IMPORTANT: All variations of the same merchant should map to the same canonical name
     const merchantMappings: Record<string, string> = {
+      // Costco variations - use "Costco Wholesale" as canonical
       costco: 'Costco Wholesale',
       'costco wholesale': 'Costco Wholesale',
+
+      // Walmart variations - use "Walmart" as canonical
       walmart: 'Walmart',
       'walmart supercenter': 'Walmart',
+
+      // Other major retailers
       target: 'Target',
       'whole foods': 'Whole Foods Market',
       'whole foods market': 'Whole Foods Market',
@@ -990,9 +997,13 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     };
 
     // Return mapped value or properly capitalized original
-    return (
-      merchantMappings[normalized] || this.capitalizeWords(merchant.trim())
-    );
+    const mappedName = merchantMappings[normalized];
+    if (mappedName) {
+      this.logger.debug(`Normalized merchant: "${merchant}" → "${mappedName}"`);
+      return mappedName;
+    }
+
+    return this.capitalizeWords(merchant.trim());
   }
 
   /**
@@ -1039,17 +1050,20 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         lastMatchedAt: new Date(),
       });
     }
+    // Normalize merchant name for consistent lookups
+    const normalizedMerchant = this.normalizeMerchantName(merchant);
+
     // First check for exact match to avoid duplicate key errors
-    const exactMatch = await this.findExactMatch(rawName, merchant);
+    const exactMatch = await this.findExactMatch(rawName, normalizedMerchant);
     if (exactMatch) {
       this.logger.debug(
-        `Exact match found for ${rawName} from ${merchant}. Using existing record.`,
+        `Exact match found for ${rawName} from ${normalizedMerchant}. Using existing record.`,
       );
 
       // IMPORTANT: Re-validate if this should be a discount/adjustment based on current rules
       // This handles cases where items were previously saved incorrectly as products
       const cleanedName = this.cleanRawName(rawName);
-      const isDiscount = this.isDiscountLine(cleanedName, merchant);
+      const isDiscount = this.isDiscountLine(cleanedName, normalizedMerchant);
       const isAdjustment = this.isAdjustmentLine(cleanedName);
 
       if (isDiscount || isAdjustment) {
@@ -1071,14 +1085,14 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
     // Check for comprehensive duplicates (similar products)
     const existingProduct = await this.findComprehensiveDuplicate(
-      merchant,
+      normalizedMerchant,
       rawName,
       result,
     );
 
     if (existingProduct) {
       this.logger.debug(
-        `Comprehensive duplicate found for ${rawName} from ${merchant}. Using existing record.`,
+        `Comprehensive duplicate found for ${rawName} from ${normalizedMerchant}. Using existing record.`,
       );
       // Update match statistics and return existing product
       await this.updateMatchingStatistics(existingProduct);
@@ -1088,7 +1102,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     // Create product without embedding first for faster response
     const normalizedProduct = this.normalizedProductRepository.create({
       rawName,
-      merchant,
+      merchant: normalizedMerchant, // Use normalized merchant name
       itemCode: result.itemCode,
       normalizedName: result.normalizedName,
       brand: result.brand,
@@ -1116,13 +1130,13 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       if (error.code === '23505') {
         /* eslint-enable @typescript-eslint/no-unsafe-member-access */
         this.logger.debug(
-          `Concurrent insert detected for ${rawName} from ${merchant}. Retrieving existing record.`,
+          `Concurrent insert detected for ${rawName} from ${normalizedMerchant}. Retrieving existing record.`,
         );
 
         // Another request created this product concurrently, retrieve the existing one
         const concurrentExistingProduct = await this.findExactMatch(
           rawName,
-          merchant,
+          normalizedMerchant,
         );
         if (concurrentExistingProduct) {
           // Update the existing product's match statistics and return it
@@ -1132,7 +1146,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
         // If we still can't find it, log warning but don't crash
         this.logger.warn(
-          `Could not find product after duplicate key error: ${rawName} from ${merchant}`,
+          `Could not find product after duplicate key error: ${rawName} from ${normalizedMerchant}`,
         );
         // Return a minimal product object to prevent crash
         return normalizedProduct;
@@ -1145,20 +1159,84 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
   /**
    * Find comprehensive duplicate based on core criteria: normalized_name, brand, confidence_score
-   * Falls back to full field matching if needed
+   * Enhanced with merchant normalization and semantic duplicate detection
    */
   private async findComprehensiveDuplicate(
     merchant: string,
     rawName: string,
     result: NormalizationResult,
   ): Promise<NormalizedProduct | null> {
-    // Strategy 1: Search by core product information (normalized_name + brand + merchant)
+    // Normalize merchant to catch variations like "Costco" vs "Costco Wholesale"
+    const normalizedMerchant = this.normalizeMerchantName(merchant);
+
+    // Strategy 1: Search by semantic product information (normalized_name + brand)
+    // This catches the same product with different raw_name variations or merchant name inconsistencies
+    const semanticSearchConditions: {
+      normalizedName: string;
+      brand?: string;
+      isDiscount: boolean;
+      isAdjustment: boolean;
+    } = {
+      normalizedName: result.normalizedName,
+      isDiscount: result.isDiscount,
+      isAdjustment: result.isAdjustment,
+    };
+
+    // Add brand to semantic search if available
+    if (result.brand) {
+      semanticSearchConditions.brand = result.brand;
+    }
+
+    // First check with normalized merchant name
+    const semanticCandidates = await this.normalizedProductRepository.find({
+      where: {
+        ...semanticSearchConditions,
+        merchant: normalizedMerchant,
+      },
+    });
+
+    // Check semantic candidates first (highest chance of being duplicates)
+    for (const candidate of semanticCandidates) {
+      const isDuplicate = this.isSemanticDuplicate(candidate, result);
+      if (isDuplicate) {
+        this.logger.debug(
+          `Found semantic duplicate: ${candidate.normalizedName} (brand: ${candidate.brand}) from ${candidate.merchant}`,
+        );
+        return candidate;
+      }
+    }
+
+    // Strategy 2: Search across merchant name variations for the same semantic product
+    // This handles cases where the same store has different name formats
+    const merchantVariations = this.getMerchantVariations(merchant);
+    for (const merchantVariation of merchantVariations) {
+      if (merchantVariation === normalizedMerchant) continue; // Skip already checked
+
+      const variationCandidates = await this.normalizedProductRepository.find({
+        where: {
+          ...semanticSearchConditions,
+          merchant: merchantVariation,
+        },
+      });
+
+      for (const candidate of variationCandidates) {
+        const isDuplicate = this.isSemanticDuplicate(candidate, result);
+        if (isDuplicate) {
+          this.logger.debug(
+            `Found semantic duplicate across merchant variations: ${candidate.normalizedName} from ${candidate.merchant}`,
+          );
+          return candidate;
+        }
+      }
+    }
+
+    // Strategy 3: Search by core product information with exact merchant match (legacy behavior)
     const coreSearchConditions: {
       merchant: string;
       normalizedName: string;
       brand?: string;
     } = {
-      merchant,
+      merchant: normalizedMerchant,
       normalizedName: result.normalizedName,
     };
 
@@ -1171,7 +1249,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       where: coreSearchConditions,
     });
 
-    // Check core candidates first (highest chance of being duplicates)
+    // Check core candidates
     for (const candidate of coreCandidates) {
       const isDuplicate = this.isComprehensiveDuplicate(candidate, result);
       if (isDuplicate) {
@@ -1182,36 +1260,11 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       }
     }
 
-    // Strategy 2: Search by full normalized results (legacy comprehensive search)
-    const normalizedCandidates = await this.normalizedProductRepository.find({
-      where: {
-        merchant,
-        normalizedName: result.normalizedName,
-        // Include optional fields in search to narrow down candidates
-        ...(result.itemCode && { itemCode: result.itemCode }),
-        ...(result.brand && { brand: result.brand }),
-        ...(result.category && { category: result.category }),
-        isDiscount: result.isDiscount,
-        isAdjustment: result.isAdjustment,
-      },
-    });
-
-    // Check normalized candidates first (highest chance of being duplicates)
-    for (const candidate of normalizedCandidates) {
-      const isDuplicate = this.isComprehensiveDuplicate(candidate, result);
-      if (isDuplicate) {
-        this.logger.debug(
-          `Found duplicate via normalized search: ${candidate.normalizedName}`,
-        );
-        return candidate;
-      }
-    }
-
-    // Strategy 2: Search by raw_name + merchant (original logic for fallback)
+    // Strategy 4: Search by raw_name + merchant (exact match fallback)
     const rawNameCandidates = await this.normalizedProductRepository.find({
       where: {
         rawName,
-        merchant,
+        merchant: normalizedMerchant,
         // Include item_code in the search if provided
         ...(result.itemCode && { itemCode: result.itemCode }),
       },
@@ -1229,6 +1282,75 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     }
 
     return null;
+  }
+
+  /**
+   * Check if a candidate product is a semantic duplicate
+   * Focuses on core product identity: normalized_name + brand + product type flags
+   */
+  private isSemanticDuplicate(
+    candidate: NormalizedProduct,
+    result: NormalizationResult,
+  ): boolean {
+    // Helper function to normalize null/undefined values for comparison
+    const normalizeValue = (
+      value: string | undefined | null,
+    ): string | null => {
+      return value === undefined ? null : value;
+    };
+
+    // Core semantic matching: product identity should be the same
+    const sameNormalizedName =
+      candidate.normalizedName === result.normalizedName;
+    const sameBrand =
+      normalizeValue(candidate.brand) === normalizeValue(result.brand);
+    const sameIsDiscount = candidate.isDiscount === result.isDiscount;
+    const sameIsAdjustment = candidate.isAdjustment === result.isAdjustment;
+
+    // For semantic duplicates, we care about the core product identity
+    const isSemanticDuplicate =
+      sameNormalizedName && sameBrand && sameIsDiscount && sameIsAdjustment;
+
+    if (isSemanticDuplicate) {
+      this.logger.debug(
+        `Found semantic duplicate: ${candidate.normalizedName} with brand ${candidate.brand}`,
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Get possible merchant name variations to check for duplicates
+   */
+  private getMerchantVariations(merchant: string): string[] {
+    const variations: string[] = [];
+    const normalizedMerchant = merchant.trim().toLowerCase();
+
+    // Define common merchant name variations
+    const merchantVariationsMap: Record<string, string[]> = {
+      costco: ['Costco', 'Costco Wholesale'],
+      'costco wholesale': ['Costco', 'Costco Wholesale'],
+      walmart: ['Walmart', 'Walmart Supercenter'],
+      'walmart supercenter': ['Walmart', 'Walmart Supercenter'],
+      target: ['Target'],
+      'whole foods': ['Whole Foods', 'Whole Foods Market'],
+      'whole foods market': ['Whole Foods', 'Whole Foods Market'],
+      'trader joes': ["Trader Joe's"],
+      "trader joe's": ["Trader Joe's"],
+    };
+
+    // Get variations for this merchant
+    if (merchantVariationsMap[normalizedMerchant]) {
+      variations.push(...merchantVariationsMap[normalizedMerchant]);
+    } else {
+      // If no specific variations defined, use the normalized version
+      variations.push(this.normalizeMerchantName(merchant));
+    }
+
+    // Remove duplicates and return
+    return [...new Set(variations)];
   }
 
   /**
