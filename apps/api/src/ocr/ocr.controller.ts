@@ -356,6 +356,27 @@ export class OcrController {
             raw_text: { type: 'string' },
             azure_confidence: { type: 'number' },
             engine_used: { type: 'string' },
+            store_search: {
+              type: 'object',
+              description: 'Store search results for user-controlled workflow',
+              properties: {
+                storeFound: { type: 'boolean' },
+                store: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    name: { type: 'string' },
+                    fullAddress: { type: 'string' },
+                    confidence: { type: 'number' },
+                    matchMethod: { type: 'string' },
+                  },
+                },
+                extractedMerchant: { type: 'string' },
+                extractedAddress: { type: 'string' },
+                message: { type: 'string' },
+                requiresUserConfirmation: { type: 'boolean' },
+              },
+            },
           },
         },
       },
@@ -432,10 +453,12 @@ export class OcrController {
       // Run OCR processing and file upload in parallel
       const [result, uploadResult] = await Promise.allSettled([
         // OCR Processing (main operation) - using WithNormalization for database compatibility
+        // Enable store search for new user-controlled workflow
         this.ocrService.processReceiptWithNormalization(
           file.buffer,
           azureEndpoint,
           azureApiKey,
+          true, // includeStoreSearch = true
         ),
         // Storage upload (parallel operation)
         upload_receipt(userId, storeId, file.buffer, file.mimetype),

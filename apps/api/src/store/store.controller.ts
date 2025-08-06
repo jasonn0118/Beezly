@@ -618,4 +618,51 @@ export class StoreController {
       },
     };
   }
+
+  // 🔧 MAINTENANCE ENDPOINTS
+
+  @Post('merge-duplicates')
+  @ApiOperation({
+    summary: 'Find and merge duplicate stores',
+    description: `
+    **Maintenance operation to clean up duplicate store entries**
+    
+    ⚠️ **Warning**: This operation modifies the database by:
+    - Finding stores with identical names
+    - Merging them into a single store with the most complete information
+    - Updating all related receipts and prices to reference the merged store
+    - Deleting the duplicate entries
+    
+    This operation is useful for cleaning up OCR-created duplicates.
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Duplicate merge operation completed',
+    schema: {
+      type: 'object',
+      properties: {
+        duplicatesFound: {
+          type: 'number',
+          description: 'Number of duplicate stores found',
+        },
+        merged: {
+          type: 'number',
+          description: 'Number of stores successfully merged',
+        },
+        errors: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Any errors that occurred during merging',
+        },
+      },
+    },
+  })
+  async mergeDuplicateStores(): Promise<{
+    duplicatesFound: number;
+    merged: number;
+    errors: string[];
+  }> {
+    return this.storeService.findAndMergeDuplicateStores();
+  }
 }
