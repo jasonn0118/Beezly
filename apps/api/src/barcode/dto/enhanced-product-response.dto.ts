@@ -48,6 +48,13 @@ export class StoreInfoDto {
     required: false,
   })
   longitude?: number;
+
+  @ApiProperty({
+    description: 'Distance from the provided coordinates to the store in kilometers',
+    example: 5.2,
+    required: false,
+  })
+  distance?: number;
 }
 
 export class PriceInfoDto {
