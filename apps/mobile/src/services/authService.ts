@@ -101,13 +101,29 @@ export class AuthService {
   // Token Storage Management
   static async storeAuthData(authResponse: AuthResponse): Promise<void> {
     try {
+      if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+        console.log('💾 Storing auth data:', {
+          hasToken: !!authResponse.accessToken,
+          userEmail: authResponse.user?.email,
+          tokenPreview: authResponse.accessToken ? `${authResponse.accessToken.substring(0, 20)}...` : null,
+        });
+      }
+      
       await AsyncStorage.multiSet([
         [AUTH_TOKEN_KEY, authResponse.accessToken],
         [USER_DATA_KEY, JSON.stringify(authResponse.user)],
       ]);
+      
       // Set the token in the API client for immediate use
       apiClient.setAuthToken(authResponse.accessToken);
+      
+      if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+        console.log('✅ Auth data stored successfully');
+      }
     } catch (error) {
+      if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+        console.error('❌ Failed to store auth data:', error);
+      }
       throw new Error('Failed to save authentication data');
     }
   }
@@ -154,9 +170,21 @@ export class AuthService {
       const token = await this.getAuthToken();
       if (token) {
         apiClient.setAuthToken(token);
+        if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+          console.log('🔄 Auth initialized with stored token:', {
+            hasToken: true,
+            tokenPreview: `${token.substring(0, 20)}...`,
+          });
+        }
+      } else {
+        if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+          console.log('🔄 Auth initialized - no stored token found');
+        }
       }
     } catch (error) {
-      // Continue without stored token
+      if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+        console.log('🔄 Auth initialization error:', error);
+      }
     }
   }
 

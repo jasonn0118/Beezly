@@ -3,11 +3,11 @@ import {
   Controller,
   Post,
   Get,
-  UseGuards,
   Put,
   Delete,
   Param,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,7 +20,6 @@ import {
 import { AuthService } from './auth.service';
 import { AuthDTO } from '../../../packages/types/dto/auth';
 import { UserProfileDTO } from '../../../packages/types/dto/user';
-import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Roles } from './decorators/roles.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -34,10 +33,10 @@ import { OAuthCallbackDto, OAuthUrlDto } from './dto/oauth-callback.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
-@UseGuards(JwtAuthGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @UseGuards(JwtAuthGuard)
   @Get('me')
   @ApiOperation({ summary: 'Get current authenticated user' })
   @ApiBearerAuth('JWT-auth')
@@ -51,7 +50,6 @@ export class AuthController {
     return user;
   }
 
-  @Public()
   @Post('signin')
   @ApiOperation({ summary: 'Sign in user' })
   @ApiResponse({ status: 200, description: 'Successfully signed in' })
@@ -60,7 +58,6 @@ export class AuthController {
     return this.authService.signIn(signInDto.email, signInDto.password);
   }
 
-  @Public()
   @Post('signup')
   @ApiOperation({ summary: 'Sign up new user' })
   @ApiResponse({ status: 201, description: 'Successfully signed up' })
@@ -83,6 +80,7 @@ export class AuthController {
     );
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('signout')
   @ApiOperation({ summary: 'Sign out current user' })
   @ApiBearerAuth('JWT-auth')
@@ -95,6 +93,7 @@ export class AuthController {
     return { message: `User ${user.email} signed out successfully.` };
   }
 
+  @UseGuards(JwtAuthGuard)
   @Put('profile')
   @ApiOperation({ summary: 'Update current user profile' })
   @ApiBearerAuth('JWT-auth')
@@ -112,6 +111,7 @@ export class AuthController {
     return this.authService.updateProfile(user.id, updateData);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Put('password')
   @ApiOperation({ summary: 'Change current user password' })
   @ApiBearerAuth('JWT-auth')
@@ -123,10 +123,9 @@ export class AuthController {
     @Body() changePasswordData: ChangePasswordDto,
   ): Promise<{ message: string }> {
     await this.authService.changePassword(changePasswordData.newPassword);
-    return { message: 'Password changed successfully' };
+    return { message: `Password changed successfully for ${user.email}` };
   }
 
-  @Public()
   @Post('reset-password')
   @ApiOperation({ summary: 'Request password reset email' })
   @ApiResponse({ status: 200, description: 'Password reset email sent' })
@@ -141,7 +140,6 @@ export class AuthController {
   }
 
   // OAuth endpoints
-  @Public()
   @Post('oauth/google/url')
   @ApiOperation({ summary: 'Get Google OAuth authorization URL' })
   @ApiResponse({
@@ -167,7 +165,6 @@ export class AuthController {
     return { url };
   }
 
-  @Public()
   @Post('oauth/callback')
   @ApiOperation({ summary: 'Handle OAuth callback and authenticate user' })
   @ApiResponse({
@@ -187,6 +184,7 @@ export class AuthController {
   }
 
   // Admin-only endpoints
+  @UseGuards(JwtAuthGuard)
   @Roles('admin')
   @Get('users')
   @ApiOperation({ summary: 'List all users (admin only)' })
@@ -230,6 +228,7 @@ export class AuthController {
     return this.authService.listUsers(query.page, query.perPage);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Roles('admin')
   @Get('users/:userId')
   @ApiOperation({ summary: 'Get user by ID (admin only)' })
@@ -251,6 +250,7 @@ export class AuthController {
     return user;
   }
 
+  @UseGuards(JwtAuthGuard)
   @Roles('admin')
   @Put('users/:userId')
   @ApiOperation({ summary: 'Update user metadata (admin only)' })
@@ -271,6 +271,7 @@ export class AuthController {
     return this.authService.updateUserMetadata(userId, updateData);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Roles('admin')
   @Delete('users/:userId')
   @ApiOperation({ summary: 'Delete user account (admin only)' })

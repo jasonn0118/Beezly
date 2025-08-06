@@ -6,12 +6,14 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.11:300
 // @ts-ignore - Expo environment variables are available at runtime
 const API_TIMEOUT = parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '10000', 10);
 
-// Debug environment variables (comment out in production)
-// console.log('🔧 API Configuration:', {
-//   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
-//   API_BASE_URL,
-//   API_TIMEOUT,
-// });
+// Debug environment variables
+if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+  console.log('🔧 API Configuration:', {
+    EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+    API_BASE_URL,
+    API_TIMEOUT,
+  });
+}
 
 class ApiClient {
   private client: AxiosInstance;
@@ -28,13 +30,15 @@ class ApiClient {
     // Request interceptor for authentication
     this.client.interceptors.request.use(
       (config) => {
-        // Debug logging (comment out in production)
-        // console.log('🚀 API Request:', {
-        //   method: config.method?.toUpperCase(),
-        //   url: config.url,
-        //   baseURL: config.baseURL,
-        //   fullUrl: `${config.baseURL}${config.url}`,
-        // });
+        // Debug logging
+        if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+          console.log('🚀 API Request:', {
+            method: config.method?.toUpperCase(),
+            url: config.url,
+            baseURL: config.baseURL,
+            fullUrl: `${config.baseURL}${config.url}`,
+          });
+        }
         
         if (config.data instanceof FormData) {
           delete config.headers['Content-Type'];
@@ -55,12 +59,14 @@ class ApiClient {
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => {
-        // Debug logging (comment out in production)
-        // console.log('✅ API Response:', {
-        //   status: response.status,
-        //   url: response.config.url,
-        //   method: response.config.method?.toUpperCase(),
-        // });
+        // Debug logging
+        if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+          console.log('✅ API Response:', {
+            status: response.status,
+            url: response.config.url,
+            method: response.config.method?.toUpperCase(),
+          });
+        }
         return response;
       },
       (error) => {
@@ -94,6 +100,12 @@ class ApiClient {
   // Method to set the cached token (called by AuthService after login)
   setAuthToken(token: string | null): void {
     this.cachedToken = token;
+    if (process.env.EXPO_PUBLIC_DEBUG_API === 'true') {
+      console.log('🔑 API Client token updated:', {
+        hasToken: !!token,
+        tokenPreview: token ? `${token.substring(0, 20)}...` : null,
+      });
+    }
   }
 
   private handleUnauthorized(): void {

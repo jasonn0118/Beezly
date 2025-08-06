@@ -55,7 +55,7 @@ export class ReceiptService {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
-      timeout: 30000,
+      timeout: 90000, // 90 seconds for OCR processing
     });
   }
 
