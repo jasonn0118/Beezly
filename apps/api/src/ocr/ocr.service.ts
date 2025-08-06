@@ -933,7 +933,12 @@ export class OcrService {
   private convertToCleanResult(
     enhancedResult: EnhancedOcrResult,
   ): CleanOcrResult {
-    const cleanItems: CleanOcrItem[] = enhancedResult.items.map((item) => ({
+    // Filter out items with confidence score 0 (fees, non-products)
+    const validItems = enhancedResult.items.filter(
+      (item) => item.confidence_score > 0,
+    );
+
+    const cleanItems: CleanOcrItem[] = validItems.map((item) => ({
       name: item.name,
       quantity: item.quantity,
       unit_price: item.unit_price,
