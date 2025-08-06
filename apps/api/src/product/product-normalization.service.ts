@@ -1045,7 +1045,26 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
       this.logger.debug(
         `Exact match found for ${rawName} from ${merchant}. Using existing record.`,
       );
-      // Update match statistics and return existing product
+
+      // IMPORTANT: Re-validate if this should be a discount/adjustment based on current rules
+      // This handles cases where items were previously saved incorrectly as products
+      const cleanedName = this.cleanRawName(rawName);
+      const isDiscount = this.isDiscountLine(cleanedName, merchant);
+      const isAdjustment = this.isAdjustmentLine(cleanedName);
+
+      if (isDiscount || isAdjustment) {
+        this.logger.debug(
+          `Existing record for ${rawName} should be a ${isDiscount ? 'discount' : 'adjustment'}. Updating database record.`,
+        );
+        // Update the existing record's flags in database and return it
+        exactMatch.isDiscount = isDiscount;
+        exactMatch.isAdjustment = isAdjustment;
+        await this.normalizedProductRepository.save(exactMatch);
+        await this.updateMatchingStatistics(exactMatch);
+        return exactMatch;
+      }
+
+      // Update match statistics and return existing product (unchanged)
       await this.updateMatchingStatistics(exactMatch);
       return exactMatch;
     }
