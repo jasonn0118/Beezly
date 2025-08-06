@@ -27,15 +27,15 @@ export class ProductSearchResponseDto {
   })
   image_url?: string;
 
-  @ApiProperty({ 
-    example: 12, 
-    required: false 
+  @ApiProperty({
+    example: 12,
+    required: false,
   })
   category?: number;
 
-  @ApiProperty({ 
-    example: 'Produce > Fruits > Bananas', 
-    required: false 
+  @ApiProperty({
+    example: 'Produce > Fruits > Bananas',
+    required: false,
   })
   categoryPath?: string;
 }
