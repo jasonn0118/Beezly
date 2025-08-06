@@ -1222,27 +1222,24 @@ export class ProductService {
     userLatitude?: number,
     userLongitude?: number,
   ): EnhancedProductResponseDto {
-    const priceInfos: PriceInfoDto[] = prices.map((price) => {
-      // Ensure price.store exists before accessing its properties
-      if (!price.store) {
-        this.logger.warn(`Price with SK ${price.priceSk} has no associated store. Skipping.`);
-        return null; // Or handle this case as appropriate, e.g., return a default PriceInfoDto
-      }
-      this.logger.debug(`Mapping price for store: ${price.store.name}, latitude: ${price.store.latitude}, longitude: ${price.store.longitude}`);
-      return ({
-        priceSk: price.priceSk,
-        price: Number(price.price),
-        currency: price.currency || 'CAD',
-        recordedAt: price.recordedAt,
-        creditScore: price.creditScore ? Number(price.creditScore) : undefined,
-        verifiedCount: price.verifiedCount || undefined,
-        isDiscount: price.isDiscount,
-        originalPrice: price.originalPrice
-          ? Number(price.originalPrice)
-          : undefined,
-        store: this.mapStoreToDto(price.store, userLatitude, userLongitude),
+    const priceInfos: PriceInfoDto[] = prices
+      .filter((price) => price.store) // Filter out prices without an associated store
+      .map((price) => {
+        this.logger.debug(`Mapping price for store: ${price.store!.name}, latitude: ${price.store!.latitude}, longitude: ${price.store!.longitude}`);
+        return {
+          priceSk: price.priceSk,
+          price: Number(price.price),
+          currency: price.currency || 'CAD',
+          recordedAt: price.recordedAt,
+          creditScore: price.creditScore ? Number(price.creditScore) : undefined,
+          verifiedCount: price.verifiedCount || undefined,
+          isDiscount: price.isDiscount,
+          originalPrice: price.originalPrice
+            ? Number(price.originalPrice)
+            : undefined,
+          store: this.mapStoreToDto(price.store!, userLatitude, userLongitude),
+        };
       });
-    }).filter(Boolean) as PriceInfoDto[]; // Filter out nulls if any were returned
 
     // Find the lowest price
     const lowestPrice = priceInfos.reduce(
