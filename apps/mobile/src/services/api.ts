@@ -6,13 +6,6 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.11:300
 // @ts-ignore - Expo environment variables are available at runtime
 const API_TIMEOUT = parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '10000', 10);
 
-// Debug: Log the actual URL being used
-console.log('🔧 API Configuration Debug:', {
-  ENV_VAR: process.env.EXPO_PUBLIC_API_URL,
-  FALLBACK: 'http://172.20.10.11:3006',
-  ACTUAL: API_BASE_URL,
-});
-
 // Debug environment variables (comment out in production)
 // console.log('🔧 API Configuration:', {
 //   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
