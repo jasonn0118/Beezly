@@ -1039,7 +1039,18 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
         lastMatchedAt: new Date(),
       });
     }
-    // Check for comprehensive duplicates before attempting to save
+    // First check for exact match to avoid duplicate key errors
+    const exactMatch = await this.findExactMatch(rawName, merchant);
+    if (exactMatch) {
+      this.logger.debug(
+        `Exact match found for ${rawName} from ${merchant}. Using existing record.`,
+      );
+      // Update match statistics and return existing product
+      await this.updateMatchingStatistics(exactMatch);
+      return exactMatch;
+    }
+
+    // Check for comprehensive duplicates (similar products)
     const existingProduct = await this.findComprehensiveDuplicate(
       merchant,
       rawName,
@@ -1080,15 +1091,13 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
       return savedProduct;
     } catch (error: any) {
-      // Handle duplicate key constraint violation as fallback
+      // Handle ANY duplicate key error (PostgreSQL error code 23505)
+      // Don't rely on specific constraint names since they can change
       /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-      if (
-        error.code === '23505' &&
-        error.constraint === 'UQ_raw_name_merchant'
-      ) {
+      if (error.code === '23505') {
         /* eslint-enable @typescript-eslint/no-unsafe-member-access */
         this.logger.debug(
-          `Product already exists: ${rawName} from ${merchant}. Retrieving existing record.`,
+          `Concurrent insert detected for ${rawName} from ${merchant}. Retrieving existing record.`,
         );
 
         // Another request created this product concurrently, retrieve the existing one
@@ -1101,6 +1110,13 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
           await this.updateMatchingStatistics(concurrentExistingProduct);
           return concurrentExistingProduct;
         }
+
+        // If we still can't find it, log warning but don't crash
+        this.logger.warn(
+          `Could not find product after duplicate key error: ${rawName} from ${merchant}`,
+        );
+        // Return a minimal product object to prevent crash
+        return normalizedProduct;
       }
 
       // Re-throw other errors

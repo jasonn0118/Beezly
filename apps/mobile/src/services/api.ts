@@ -1,10 +1,14 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import { EXPO_PUBLIC_API_URL, EXPO_PUBLIC_API_TIMEOUT } from '@env';
 
 // API configuration
-// @ts-ignore - Expo environment variables are available at runtime
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.11:3006';
-// @ts-ignore - Expo environment variables are available at runtime
-const API_TIMEOUT = parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '10000', 10);
+const API_BASE_URL = EXPO_PUBLIC_API_URL || 'http://10.0.0.183:3006';
+const API_TIMEOUT = parseInt(EXPO_PUBLIC_API_TIMEOUT || '60000', 10);
+
+console.log('🔗 API Configuration:', {
+  url: API_BASE_URL,
+  timeout: API_TIMEOUT
+});
 
 
 class ApiClient {

@@ -104,7 +104,7 @@ async function bootstrap() {
   await app.listen(port, host);
 
   console.log(`🚀 Beezly API is running on: http://localhost:${port}`);
-  console.log(`📱 Mobile access: http://172.20.10.11:${port}`);
+  console.log(`📱 Mobile access: http://10.0.0.183:${port}`);
   console.log(`📚 API Documentation: http://localhost:${port}/api-docs`);
 }
 void bootstrap();
