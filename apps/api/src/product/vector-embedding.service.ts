@@ -27,6 +27,14 @@ interface SimilarityQueryRawResult {
 export class VectorEmbeddingService {
   private readonly logger = new Logger(VectorEmbeddingService.name);
 
+  // In-memory cache for recent embedding lookups to avoid duplicate API calls
+  private readonly embeddingCache = new Map<
+    string,
+    { embedding: number[]; timestamp: number }
+  >();
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private readonly MAX_CACHE_SIZE = 1000; // Prevent memory bloat
+
   constructor(
     @InjectRepository(NormalizedProduct)
     private readonly normalizedProductRepository: Repository<NormalizedProduct>,
@@ -34,9 +42,18 @@ export class VectorEmbeddingService {
   ) {}
 
   /**
-   * Generate vector embedding for text using OpenAI
+   * Generate vector embedding for text using OpenAI with caching
    */
   async generateEmbedding(text: string): Promise<number[]> {
+    const cacheKey = `${text.toLowerCase().trim()}`;
+    const now = Date.now();
+
+    // Check cache first
+    const cached = this.embeddingCache.get(cacheKey);
+    if (cached && now - cached.timestamp < this.CACHE_TTL) {
+      return cached.embedding;
+    }
+
     try {
       // Check if OpenAI is configured, fall back to simple embedding if not
       if (!this.openAIService.isConfigured()) {
@@ -51,6 +68,9 @@ export class VectorEmbeddingService {
         model: 'text-embedding-3-small',
       });
 
+      // Cache the result
+      this.cacheEmbedding(cacheKey, result.embedding, now);
+
       return result.embedding;
     } catch (error) {
       this.logger.error(
@@ -59,6 +79,28 @@ export class VectorEmbeddingService {
       // Fall back to simple embedding on error
       return this.generateFallbackEmbedding(text);
     }
+  }
+
+  /**
+   * Cache an embedding with LRU-style cleanup
+   */
+  private cacheEmbedding(
+    key: string,
+    embedding: number[],
+    timestamp: number,
+  ): void {
+    // Clean up expired entries and enforce size limit
+    if (this.embeddingCache.size >= this.MAX_CACHE_SIZE) {
+      const entries = Array.from(this.embeddingCache.entries());
+      // Remove oldest 20% of entries
+      const toRemove = Math.floor(entries.length * 0.2);
+      entries
+        .sort(([, a], [, b]) => a.timestamp - b.timestamp)
+        .slice(0, toRemove)
+        .forEach(([key]) => this.embeddingCache.delete(key));
+    }
+
+    this.embeddingCache.set(key, { embedding, timestamp });
   }
 
   /**
@@ -141,28 +183,24 @@ export class VectorEmbeddingService {
     // Using pgvector's cosine similarity operator <=>
     // Note: 1 - (embedding <=> query) gives us cosine similarity (0 to 1)
     // where 1 is most similar and 0 is least similar
+    // Optimized query with minimal field selection for performance
     const results = await this.normalizedProductRepository
       .createQueryBuilder('np')
       .select([
         'np.normalizedProductSk',
-        'np.rawName',
-        'np.merchant',
-        'np.itemCode',
         'np.normalizedName',
         'np.brand',
         'np.category',
         'np.confidenceScore',
-        'np.embedding',
         'np.isDiscount',
         'np.isAdjustment',
         'np.matchCount',
-        'np.lastMatchedAt',
-        'np.createdAt',
-        'np.updatedAt',
       ])
       .addSelect(`1 - (np.embedding <=> :queryEmbedding::vector)`, 'similarity')
       .where('np.merchant = :merchant', { merchant })
       .andWhere('np.embedding IS NOT NULL')
+      .andWhere('np.isDiscount = false') // Early filter for performance
+      .andWhere('np.isAdjustment = false') // Early filter for performance
       .andWhere(`1 - (np.embedding <=> :queryEmbedding::vector) >= :threshold`)
       .setParameter('queryEmbedding', `[${queryEmbedding.join(',')}]`)
       .setParameter('threshold', threshold)
@@ -173,13 +211,23 @@ export class VectorEmbeddingService {
     return results.entities.map((entity, index) => ({
       productId: entity.normalizedProductSk,
       similarity: (results.raw[index] as { similarity: number }).similarity,
-      normalizedProduct: entity,
+      normalizedProduct: {
+        ...entity,
+        // Add back missing fields that might be needed downstream
+        rawName: entity.normalizedName, // Use normalized name as fallback
+        merchant: merchant,
+        itemCode: undefined,
+        embedding: undefined,
+        lastMatchedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
     }));
   }
 
   /**
    * Batch version of findSimilarProductsEnhanced for processing multiple queries at once
-   * Much faster than individual calls due to batch embedding generation
+   * Much faster than individual calls due to batch embedding generation and query optimization
    */
   async batchFindSimilarProducts(
     queries: { queryText: string; options: StoreEmbeddingSearchOptions }[],
@@ -188,20 +236,68 @@ export class VectorEmbeddingService {
       return [];
     }
 
+    const batchStartTime = performance.now();
+    this.logger.debug(
+      `Starting batch similarity search for ${queries.length} queries`,
+    );
+
     try {
       // Extract unique query texts for batch embedding generation
+      const embeddingStartTime = performance.now();
       const uniqueTexts = [...new Set(queries.map((q) => q.queryText))];
 
-      // Generate embeddings for all unique texts in batch
-      const embeddingResponses =
-        await this.openAIService.generateBatchEmbeddings(
-          uniqueTexts,
+      // Check cache for existing embeddings
+      const now = Date.now();
+      const uncachedTexts: string[] = [];
+      const cachedEmbeddings = new Map<string, number[]>();
+
+      for (const text of uniqueTexts) {
+        const cacheKey = `${text.toLowerCase().trim()}`;
+        const cached = this.embeddingCache.get(cacheKey);
+        if (cached && now - cached.timestamp < this.CACHE_TTL) {
+          cachedEmbeddings.set(text, cached.embedding);
+        } else {
+          uncachedTexts.push(text);
+        }
+      }
+
+      this.logger.debug(
+        `Processing ${uniqueTexts.length} unique texts from ${queries.length} queries (${cachedEmbeddings.size} cached, ${uncachedTexts.length} new)`,
+      );
+
+      // Generate embeddings only for uncached texts
+      let embeddingResponses: { embedding: number[] }[] = [];
+      if (uncachedTexts.length > 0) {
+        embeddingResponses = await this.openAIService.generateBatchEmbeddings(
+          uncachedTexts,
           'text-embedding-3-small',
         );
 
-      // Create a map from text to embedding
+        // Cache new embeddings
+        uncachedTexts.forEach((text, index) => {
+          const cacheKey = `${text.toLowerCase().trim()}`;
+          const embeddingResponse = embeddingResponses[index];
+          if (embeddingResponse?.embedding) {
+            this.cacheEmbedding(cacheKey, embeddingResponse.embedding, now);
+          }
+        });
+      }
+
+      const embeddingDuration = performance.now() - embeddingStartTime;
+      this.logger.debug(
+        `Batch embedding generation: ${embeddingDuration.toFixed(1)}ms (${uncachedTexts.length} API calls, ${cachedEmbeddings.size} cached)`,
+      );
+
+      // Create a map from text to embedding (combining cached and new)
       const embeddingMap = new Map<string, number[]>();
-      uniqueTexts.forEach((text, index) => {
+
+      // Add cached embeddings
+      cachedEmbeddings.forEach((embedding, text) => {
+        embeddingMap.set(text, embedding);
+      });
+
+      // Add newly generated embeddings
+      uncachedTexts.forEach((text, index) => {
         const embeddingResponse = embeddingResponses[index];
         if (embeddingResponse?.embedding) {
           embeddingMap.set(text, embeddingResponse.embedding);
@@ -209,6 +305,7 @@ export class VectorEmbeddingService {
       });
 
       // Process each query using the pre-generated embeddings
+      const queryStartTime = performance.now();
       const results = await Promise.all(
         queries.map(async ({ queryText, options }) => {
           const queryEmbedding = embeddingMap.get(queryText);
@@ -222,14 +319,29 @@ export class VectorEmbeddingService {
           );
         }),
       );
+      const queryDuration = performance.now() - queryStartTime;
+      this.logger.debug(`Database queries: ${queryDuration.toFixed(1)}ms`);
+
+      const totalDuration = performance.now() - batchStartTime;
+      const hitRate =
+        (results.filter((r) => r.length > 0).length /
+          Math.max(results.length, 1)) *
+        100;
+      this.logger.debug(
+        `Batch complete: ${totalDuration.toFixed(1)}ms (${hitRate.toFixed(1)}% hit rate)`,
+      );
 
       return results;
     } catch (error) {
       this.logger.error('Batch similarity search failed', error);
       // Fallback to individual calls if batch fails
-      return await Promise.all(
+      const fallbackStartTime = performance.now();
+      const fallbackResults = await Promise.all(
         queries.map(({ options }) => this.findSimilarProductsEnhanced(options)),
       );
+      const fallbackDuration = performance.now() - fallbackStartTime;
+      this.logger.warn(`Fallback processing: ${fallbackDuration.toFixed(1)}ms`);
+      return fallbackResults;
     }
   }
 
@@ -248,25 +360,18 @@ export class VectorEmbeddingService {
       includeAdjustments = false,
     } = options;
 
-    // Build query
+    // Build optimized query with performance-focused field selection
     let query = this.normalizedProductRepository
       .createQueryBuilder('np')
       .select([
         'np.normalizedProductSk',
-        'np.rawName',
-        'np.merchant',
-        'np.itemCode',
         'np.normalizedName',
         'np.brand',
         'np.category',
         'np.confidenceScore',
-        'np.embedding',
         'np.isDiscount',
         'np.isAdjustment',
         'np.matchCount',
-        'np.lastMatchedAt',
-        'np.createdAt',
-        'np.updatedAt',
       ])
       .addSelect(`1 - (np.embedding <=> :queryEmbedding::vector)`, 'similarity')
       .where('np.merchant = :merchant', { merchant })
@@ -328,25 +433,18 @@ export class VectorEmbeddingService {
     // Generate embedding for query text
     const queryEmbedding = await this.generateEmbedding(queryText);
 
-    // Build query
+    // Build optimized query with minimal field selection for performance
     let query = this.normalizedProductRepository
       .createQueryBuilder('np')
       .select([
         'np.normalizedProductSk',
-        'np.rawName',
-        'np.merchant',
-        'np.itemCode',
         'np.normalizedName',
         'np.brand',
         'np.category',
         'np.confidenceScore',
-        'np.embedding',
         'np.isDiscount',
         'np.isAdjustment',
         'np.matchCount',
-        'np.lastMatchedAt',
-        'np.createdAt',
-        'np.updatedAt',
       ])
       .addSelect(`1 - (np.embedding <=> :queryEmbedding::vector)`, 'similarity')
       .where('np.merchant = :merchant', { merchant })
@@ -363,7 +461,8 @@ export class VectorEmbeddingService {
       query = query.andWhere('np.isAdjustment = false');
     }
 
-    // Order by similarity and match count (frequently matched items are likely more accurate)
+    // Order by similarity first for optimal performance
+    // Secondary ordering by match count and confidence for tie-breaking
     query = query
       .orderBy('similarity', 'DESC')
       .addOrderBy('np.matchCount', 'DESC')

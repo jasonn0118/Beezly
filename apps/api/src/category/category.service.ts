@@ -345,6 +345,7 @@ export class CategoryService {
       // Get or create level 1
       if (!categoryMap.has(category.category1)) {
         categoryMap.set(category.category1, {
+          id: category.id,
           name: category.category1,
           value: category.category1,
           subcategories: [],
@@ -361,6 +362,7 @@ export class CategoryService {
 
         if (!level2) {
           level2 = {
+            id: category.id,
             name: category.category2,
             value: category.category2,
             subcategories: [],
@@ -376,6 +378,7 @@ export class CategoryService {
 
           if (!exists) {
             level2.subcategories.push({
+              id: category.id,
               name: category.category3,
               value: category.category3,
             });

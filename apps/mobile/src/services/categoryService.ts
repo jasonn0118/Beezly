@@ -1,22 +1,17 @@
 import { apiClient } from './api';
 
-export interface category {
-  id: string;
-  parentId: string;
-  name: string;
-  slug?: string;
-  level?: string;
-  use_yn?: boolean;
+export interface CategoryTreeDTO {
+    id: number;
+    name: string;
+    value: string;
+    subcategories: CategoryTreeDTO[];
 }
 
-export class categoryService {
-    static async getAllCategories(): Promise<category[]> {
-        return apiClient.get<category[]>(`/category`);
-    }
-    static async getCategories(id: string): Promise<category[]> {
-        return apiClient.get<category[]>(`/category/${id}`);
-    }
-    static async getCategoriesPivot(): Promise<category[]> {
-        return apiClient.get<category[]>(`/categoryPivot`);
-    }
+export class CategoryService {
+  static async getCategoryTree(): Promise<CategoryTreeDTO[]> {
+    const response = await apiClient.get<{ categories: CategoryTreeDTO[] }>('/category/tree');
+    return response.categories;
+  }
 }
+
+export default CategoryService;

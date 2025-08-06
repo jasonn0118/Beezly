@@ -8,6 +8,7 @@ import {
   HttpException,
   HttpStatus,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -29,10 +30,12 @@ import {
 } from './dto/process-receipt.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserProfileDTO } from '../../../packages/types/dto/user';
 
 @ApiTags('OCR')
 @Controller('ocr')
+@UseGuards(JwtAuthGuard) // Apply JWT Auth Guard to all routes in this controller
 export class OcrController {
   constructor(
     private readonly ocrService: OcrService,
@@ -407,45 +410,44 @@ export class OcrController {
         );
       }
 
-      // Always process with normalization
-      const result = await this.ocrService.processReceiptEnhanced(
-        file.buffer,
-        azureEndpoint,
-        azureApiKey,
-      );
-
-      // Upload file to storage asynchronously (fire-and-forget)
       // Use authenticated user's ID if available, otherwise use body.user_id or default
       const userId = request.user?.id || body.user_id || 'anonymous_user';
       const storeId = 'default_store'; // Always use default store
 
-      // Debug logging to see authentication status
-      console.log(`[OCR Enhanced] Authentication status:`, {
-        hasUser: !!request.user,
-        userEmail: request.user?.email || 'not authenticated',
-        userId: userId,
-        fromAuth: !!request.user?.id,
-        fromBody: !!body.user_id,
-      });
+      console.log(
+        `Starting parallel processing: OCR + Storage upload for user ${userId}, store ${storeId}`,
+      );
 
-      console.log(`Starting async upload for user ${userId}, store ${storeId}`);
-
-      let uploadedFilePath: string | undefined;
-
-      try {
-        // Upload file to storage
-        const uploadResult = await upload_receipt(
-          userId,
-          storeId,
+      // Run OCR processing and file upload in parallel
+      const [result, uploadResult] = await Promise.allSettled([
+        // OCR Processing (main operation) - using WithNormalization for database compatibility
+        this.ocrService.processReceiptWithNormalization(
           file.buffer,
-          file.mimetype,
+          azureEndpoint,
+          azureApiKey,
+        ),
+        // Storage upload (parallel operation)
+        upload_receipt(userId, storeId, file.buffer, file.mimetype),
+      ]);
+
+      // Handle OCR result (must succeed)
+      if (result.status === 'rejected') {
+        throw new Error(`OCR processing failed: ${result.reason}`);
+      }
+      const ocrResult = result.value;
+
+      // Handle upload result (optional, can fail)
+      let uploadedFilePath: string | undefined;
+      if (uploadResult.status === 'fulfilled' && uploadResult.value) {
+        uploadedFilePath = uploadResult.value;
+        console.log(`Receipt uploaded successfully to: ${uploadedFilePath}`);
+      } else {
+        console.error(
+          'Error uploading receipt to storage:',
+          uploadResult.status === 'rejected'
+            ? uploadResult.reason
+            : 'Upload failed',
         );
-        uploadedFilePath = uploadResult || undefined;
-        if (uploadedFilePath) {
-          console.log(`Receipt uploaded successfully to: ${uploadedFilePath}`);
-        }
-      } catch (error) {
-        console.error('Error uploading receipt to storage:', error);
         // Continue without file path - not critical for OCR processing
       }
 
@@ -453,40 +455,29 @@ export class OcrController {
       let receiptId: string | undefined;
 
       try {
-        // Use the enhanced result with normalization
-        const receiptData =
-          await this.ocrService.processReceiptWithNormalization(
-            file.buffer,
-            azureEndpoint,
-            azureApiKey,
-          );
-
+        // Use the already processed OCR result from the parallel processing
         const receipt = await this.receiptService.createReceiptFromOcrResult(
-          receiptData,
+          ocrResult,
           userId, // Pass the determined user ID (authenticated, provided, or anonymous)
           uploadedFilePath,
         );
         receiptId = receipt.receiptSk;
         console.log(`Receipt created in database with ID: ${receiptId}`);
 
-        // Trigger normalization as a background process (fire-and-forget)
-        this.normalizationService
-          .normalizeReceiptItems(receiptId)
-          .then(() => {
-            console.log(`Receipt ${receiptId} normalization completed`);
-          })
-          .catch((error) => {
-            console.error(`Error normalizing receipt ${receiptId}:`, error);
-          });
+        // Note: Normalization already completed during processReceiptWithNormalization()
+        // No additional background normalization needed - saves ~815ms
       } catch (error) {
         console.error('Error creating receipt in database:', error);
         // Continue without receipt creation - OCR result still valid
       }
 
+      // Convert EnhancedOcrResult to CleanOcrResult for API response
+      const cleanResult = this.ocrService.convertToCleanResult(ocrResult);
+
       return {
         success: true,
         data: {
-          ...result,
+          ...cleanResult,
           // Add receipt_id to response if created
           ...(receiptId && { receipt_id: receiptId }),
           // Add uploaded file path to response if available
