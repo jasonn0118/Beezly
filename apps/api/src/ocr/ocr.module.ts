@@ -7,10 +7,16 @@ import { ProductModule } from '../product/product.module';
 import { ReceiptModule } from '../receipt/receipt.module';
 import { AuthModule } from '../auth/auth.module';
 import { NormalizedProduct } from '../entities/normalized-product.entity';
+import { ReceiptItem } from '../entities/receipt-item.entity';
+import { ReceiptItemNormalization } from '../entities/receipt-item-normalization.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([NormalizedProduct]),
+    TypeOrmModule.forFeature([
+      NormalizedProduct,
+      ReceiptItem,
+      ReceiptItemNormalization,
+    ]),
     ProductModule,
     ReceiptModule,
     AuthModule, // Import AuthModule to make AuthService available
