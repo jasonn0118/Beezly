@@ -4,7 +4,6 @@ import { FontAwesome } from '@expo/vector-icons';
 import ProductService, { ProductSearchResult } from '../../services/productService';
  import { useNavigation } from '@react-navigation/native';
  import {useRouter} from 'expo-router';
- import ProductDetailScreen from '../../screens/ProductDetailScreen';
 
 const ResultCard = ({ item, onPress }: { item: ProductSearchResult, onPress: () => void }) => (
     <TouchableOpacity style={styles.cardContainer} onPress={onPress}>
@@ -15,7 +14,7 @@ const ResultCard = ({ item, onPress }: { item: ProductSearchResult, onPress: () 
             //defaultSource={require('./path/to/your/default/placeholder.png')} // Make sure to have a local placeholder image
         />
         <View style={styles.cardInfo}>
-            <Text style={styles.cardBrand}>{item.brand_name || 'Unknown Brand'}</Text>
+            <Text style={styles.cardBrand}>{item.brandName || 'Unknown Brand'}</Text>
             <Text style={styles.cardName}>{item.name}</Text>
         </View>
         <FontAwesome name="chevron-right" size={16} color="#d1d5db" />
@@ -57,6 +56,12 @@ export default function SearchScreen() {
             //return <ProductDetailScreen productId={item.product_sk} />   
              router.push(`/product-detail?productId=${item.product_sk}`);
         }
+    };
+
+    const handleClearSearch = () => {
+        setSearchText('');
+        setResults([]);
+        setHasSearched(false);
     };
 
     // Helper to render content based on state
@@ -110,6 +115,11 @@ export default function SearchScreen() {
                     onSubmitEditing={handleSearchSubmit}
                     returnKeyType="search"
                 />
+                {searchText.length > 0 && (
+                    <TouchableOpacity onPress={handleClearSearch} style={styles.clearIconContainer}>
+                        <FontAwesome name="times-circle" size={20} color="#9ca3af" />
+                    </TouchableOpacity>
+                )}
             </View>
 
             <View style={styles.contentArea}>
@@ -152,6 +162,9 @@ const styles = StyleSheet.create({
         height: 56,
         fontSize: 16,
         color: '#1f2937',
+    },
+    clearIconContainer: {
+        padding: 8,
     },
     contentArea: {
         flex: 1,

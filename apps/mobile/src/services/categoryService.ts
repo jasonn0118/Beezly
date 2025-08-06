@@ -16,4 +16,7 @@ export class categoryService {
     static async getCategories(id: string): Promise<category[]> {
         return apiClient.get<category[]>(`/category/${id}`);
     }
+    static async getCategoriesPivot(): Promise<category[]> {
+        return apiClient.get<category[]>(`/categoryPivot`);
+    }
 }

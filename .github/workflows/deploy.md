@@ -398,14 +398,14 @@ gh run list
 ## 📊 Monitoring & Maintenance
 
 ### What's Monitored
-- **Dependencies**: Dependabot configured for weekly updates
+- **Dependencies**: Manual dependency updates as needed
 - **Security**: Automated vulnerability scanning with reports
 - **Performance**: Build times and cache hit rates
 - **Quality**: Comprehensive linting and testing coverage
 - **Deployments**: Expo build success/failure rates
 
 ### Maintenance Tasks
-- Review and merge Dependabot PRs weekly
+- Review and update dependencies manually as needed
 - Monitor security audit reports
 - Update Node.js and pnpm versions quarterly
 - Review and optimize cache strategies

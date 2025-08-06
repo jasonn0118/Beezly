@@ -23,10 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
-import {
-  MobileProductCreateDto,
-  MobileProductResponseDto,
-} from './dto/mobile-product-create.dto';
+import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
 import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 import {
   EmbeddingSearchRequestDto,
@@ -42,6 +39,11 @@ import { ReceiptPriceIntegrationService } from './receipt-price-integration.serv
 import { ProductConfirmationService } from './product-confirmation.service';
 import { EnhancedReceiptLinkingService } from './enhanced-receipt-linking.service';
 import { ReceiptWorkflowIntegrationService } from './receipt-workflow-integration.service';
+import { EnhancedProductResponseDto } from '../barcode/dto/enhanced-product-response.dto';
+import {
+  AddProductPriceDto,
+  AddProductPriceResponseDto,
+} from '../barcode/dto/add-product-price.dto';
 import {
   ProcessReceiptConfirmationDto,
   ReceiptConfirmationResponseDto,
@@ -64,7 +66,6 @@ import { Product } from '../entities/product.entity';
 @ApiTags('Products')
 @Controller('products')
 export class ProductController {
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.8;
   constructor(
     private readonly productService: ProductService,
     private readonly vectorEmbeddingService: VectorEmbeddingService,
@@ -170,14 +171,30 @@ export class ProductController {
 
   @Post()
   @ApiOperation({
-    summary: 'Create a new product with image, store, and price',
+    summary: 'Create a new product with optional image and store linking',
+    description: `
+      **Unified Product Creation Endpoint**
+      
+      Creates a new product with flexible store linking options. Supports multiple scenarios:
+      
+      🖼️ **Image Upload**: Optional image file upload
+      🏪 **Store Selection**: Choose from three options:
+      - **No Store**: Create product without store linkage
+      - **Existing Store**: Link to existing database store using 'storeSk'
+      - **Google Places Store**: Create new store from Google Places data using 'googlePlacesStore'
+      
+      💰 **Price Information**: Optional price and currency data
+      
+      **Note**: Either 'storeSk' OR 'googlePlacesStore' can be provided, not both.
+    `,
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    description: 'Product data with image file',
+    description: 'Product data with optional image and store selection',
     schema: {
       type: 'object',
       properties: {
+        // Core product fields
         name: { type: 'string', example: 'Organic Apple' },
         barcode: { type: 'string', example: '1234567890123' },
         barcodeType: {
@@ -196,60 +213,133 @@ export class ProductController {
           ],
         },
         category: { type: 'number', example: 101001 },
-        storeName: { type: 'string', example: 'Homeplus' },
-        storeAddress: { type: 'string', example: '123 Main St, Seoul' },
-        price: { type: 'number', example: 5000 },
-        brandName: { type: 'string', example: 'Cheil Jedang' },
-        storeCity: { type: 'string', example: 'Seoul' },
-        storeProvince: {
+        brandName: {
           type: 'string',
-          example: 'Seoul',
+          example: 'Cheil Jedang',
+          description: 'Brand name (optional)',
         },
-        storePostalCode: {
+
+        // Price information
+        price: {
+          type: 'number',
+          example: 5000,
+          description: 'Product price at selected store (optional)',
+        },
+        currency: {
           type: 'string',
-          example: '12345',
+          example: 'CAD',
+          description: 'Currency code (default: CAD)',
         },
+
+        // Store selection (choose ONE)
+        storeSk: {
+          type: 'string',
+          format: 'uuid',
+          example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+          description:
+            'Existing store UUID (use if user selected database store)',
+        },
+        googlePlacesStore: {
+          type: 'object',
+          description:
+            'Google Places store data (use if user selected Google Places result) - matches store search response format',
+          properties: {
+            place_id: {
+              type: 'string',
+              example: 'ChIJ_xkgOm5xhlQRzCy7fF5HHqY',
+            },
+            name: { type: 'string', example: 'Save-On-Foods' },
+            formatted_address: {
+              type: 'string',
+              example: '1234 Main St, Vancouver, BC V6B 2L2, Canada',
+            },
+            streetNumber: { type: 'string', example: '1766' },
+            road: { type: 'string', example: 'Robson St' },
+            streetAddress: { type: 'string', example: '1766 Robson St' },
+            fullAddress: {
+              type: 'string',
+              example: '1234 Main St, Vancouver, BC V6B 2L2, Canada',
+            },
+            city: { type: 'string', example: 'Vancouver' },
+            province: { type: 'string', example: 'BC' },
+            postalCode: { type: 'string', example: 'V6B 2L2' },
+            countryRegion: { type: 'string', example: 'Canada' },
+            latitude: { type: 'number', example: 49.1398 },
+            longitude: { type: 'number', example: -122.6705 },
+            types: {
+              type: 'array',
+              items: { type: 'string' },
+              example: ['supermarket', 'store'],
+            },
+          },
+        },
+
+        // Image upload
         image: {
           type: 'string',
           format: 'binary',
-          description: 'Product image file',
+          description:
+            'Product image file (optional - default placeholder used if not provided)',
         },
       },
-      required: [
-        'name',
-        'barcode',
-        'category',
-        'storeName',
-        'storeAddress',
-        'price',
-        'image',
-      ],
+      required: ['name', 'barcode', 'category'],
     },
   })
   @ApiResponse({
     status: 201,
-    description: 'Product successfully created with store and price info',
-    type: MobileProductResponseDto,
+    description: 'Product successfully created with optional store linkage',
+    type: ProductResponseDto,
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid input data or missing image file',
+    description: 'Bad request - validation errors or conflicting store data',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: {
+          type: 'array',
+          items: { type: 'string' },
+          example: [
+            'Either storeSk or googlePlacesStore can be provided, not both',
+            'Store with ID not found',
+            'Invalid Google Places data',
+            'Category not found',
+          ],
+        },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
   })
   @UseInterceptors(FileInterceptor('image'))
   async createProduct(
-    @Body() productData: MobileProductCreateDto,
-    @UploadedFile() imageFile: Express.Multer.File,
-  ): Promise<MobileProductResponseDto> {
-    if (!imageFile) {
-      throw new BadRequestException('Image file is required');
+    @Body() productData: ProductCreateDto,
+    @UploadedFile() imageFile?: Express.Multer.File,
+  ): Promise<ProductResponseDto> {
+    // Validate store selection logic - either storeSk OR googlePlacesStore, not both
+    const hasStoreSk = !!productData.storeSk;
+    const hasGoogleStore = !!productData.googlePlacesStore;
+
+    if (hasStoreSk && hasGoogleStore) {
+      throw new BadRequestException(
+        'Provide either storeSk OR googlePlacesStore, not both',
+      );
     }
 
-    // Convert Express.Multer.File to Buffer
-    const imageBuffer = imageFile.buffer;
+    // Handle optional image upload
+    let imageBuffer: Buffer | undefined;
+    let mimeType: string | undefined;
+
+    if (imageFile) {
+      imageBuffer = imageFile.buffer;
+      mimeType = imageFile.mimetype;
+    }
 
     return this.productService.createProductWithPriceAndStore(
       productData,
       imageBuffer,
+      mimeType,
+      'default_user', // userSk
     );
   }
 
@@ -284,6 +374,184 @@ export class ProductController {
   async deleteProduct(@Param('id') id: string): Promise<{ message: string }> {
     await this.productService.deleteProduct(id);
     return { message: 'Product deleted successfully' };
+  }
+
+  @Get(':productSk/enhanced')
+  // TODO: Add @UseGuards(JwtAuthGuard) when JWT authentication is implemented
+  @ApiOperation({
+    summary: 'Get product by product ID with store and price information',
+    description:
+      'Returns detailed product information including prices across different stores, location-based filtering, and price comparison data.',
+  })
+  @ApiQuery({
+    name: 'storeSk',
+    description: 'Filter prices from specific store (store UUID)',
+    required: false,
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  @ApiQuery({
+    name: 'latitude',
+    description: 'User latitude for location-based store filtering',
+    required: false,
+    type: Number,
+    example: 49.2827,
+  })
+  @ApiQuery({
+    name: 'longitude',
+    description: 'User longitude for location-based store filtering',
+    required: false,
+    type: Number,
+    example: -123.1207,
+  })
+  @ApiQuery({
+    name: 'maxDistance',
+    description:
+      'Maximum distance in kilometers for nearby stores (default: 10km)',
+    required: false,
+    type: Number,
+    example: 10,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product found with store and price information',
+    type: EnhancedProductResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request - invalid parameters (product ID, location coordinates, store ID format)',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: { type: 'string', example: 'Invalid product ID provided' },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 404 },
+        message: {
+          type: 'string',
+          example: 'Product with ID not found',
+        },
+        error: { type: 'string', example: 'Not Found' },
+      },
+    },
+  })
+  async getProductByIdEnhanced(
+    @Param('productSk') productSk: string,
+    @Query('storeSk') storeSk?: string,
+    @Query('latitude') latitude?: number,
+    @Query('longitude') longitude?: number,
+    @Query('maxDistance') maxDistance?: number,
+  ): Promise<EnhancedProductResponseDto> {
+    return this.productService.getProductByProductSkEnhanced(
+      productSk,
+      storeSk,
+      latitude,
+      longitude,
+      maxDistance || 10, // Default to 10km radius
+    );
+  }
+
+  @Post(':productSk/price')
+  // TODO: Add @UseGuards(JwtAuthGuard) when JWT authentication is implemented
+  @ApiOperation({
+    summary: 'Add store and price information to existing product',
+    description:
+      "Allows users to contribute price and store information for a product. You can either provide complete store location information (which will create a new store or match to an existing one) OR provide an existing storeSk to use an existing store. Only one of 'store' or 'storeSk' should be provided.",
+  })
+  @ApiBody({
+    description: 'Price and store information to add',
+    examples: {
+      withExistingStore: {
+        summary: 'Using existing store SK',
+        description: 'Add price using an existing store ID',
+        value: {
+          storeSk: 'f829b2f6-997e-4400-b3ba-5994753f3ef7',
+          price: {
+            price: 9.99,
+            currency: 'CAD',
+          },
+        },
+      },
+      withNewStore: {
+        summary: 'Creating/matching store by location',
+        description: 'Add price with store location information',
+        value: {
+          store: {
+            name: 'Walmart Supercentre',
+            fullAddress: '9855 Austin Rd, Burnaby, BC V3J 1N5',
+            city: 'Burnaby',
+            province: 'BC',
+            postalCode: 'V3J 1N5',
+            latitude: 49.2520495,
+            longitude: -122.8962265,
+            placeId: 'ChIJOYsF8jt4hlQRDjdIUr1JI2o',
+          },
+          price: {
+            price: 12.99,
+            currency: 'CAD',
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Successfully added price and store information',
+    type: AddProductPriceResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request - invalid product ID, price data, or missing/invalid store information',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: {
+          type: 'string',
+          examples: [
+            'Invalid product ID provided',
+            'Either store information or storeSk must be provided, but not both',
+            'Store with ID not found',
+            'Invalid store ID format',
+          ],
+        },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 404 },
+        message: {
+          type: 'string',
+          example: 'Product not found',
+        },
+        error: { type: 'string', example: 'Not Found' },
+      },
+    },
+  })
+  async addProductPrice(
+    @Param('productSk') productSk: string,
+    @Body() addPriceData: AddProductPriceDto,
+  ): Promise<AddProductPriceResponseDto> {
+    return this.productService.addProductPriceByProductSk(
+      productSk,
+      addPriceData,
+    );
   }
 
   @Post('search/embedding')
@@ -594,7 +862,7 @@ export class ProductController {
     return this.receiptPriceIntegrationService.getPriceSyncStatistics();
   }
 
-  // Receipt Confirmation Endpoints (Mobile Frontend Integration)
+  // Receipt Confirmation Endpoints (Frontend Integration)
 
   @Get('receipt/confirmation-candidates')
   @ApiOperation({

@@ -320,7 +320,7 @@ export class OcrAzureService {
     // Patterns for identifying different line types
     const itemWithNumberPattern = /^(\d{4,7})\s+(.+)$/; // "555107 BLK FRST HAM"
     const pricePattern = /^(\d+\.\d{2})(?:\s+[A-Z]+)?$/; // "143.91" or "16.99 GP"
-    const negPricePattern = /^(\d+\.\d{2})-$/; // "2.00-"
+    const negPricePattern = /^(\d+\.\d{2})-(?:GP|[A-Z]*)?$/; // "2.00-" or "2.00-GP"
     const quantityPattern = /^(\d+)\s*@\s*(\d+\.\d{2})$/; // "9 @ 15.99"
     const feePattern = /^(ENVIRO FEE|DEPOSIT|ECO FEE|TPD\/\d+)/i;
     const skipPattern =
@@ -762,7 +762,6 @@ export class OcrAzureService {
       /TPD.*BATTERY/i,
       /ECO\s*FEE\s*BAT/i,
       /AMBROSIA\s*APP/i,
-      /DOORMAT/i,
       /TPD.*\d{7}/i, // TPD/1648955 pattern
     ];
 
@@ -1152,9 +1151,9 @@ export class OcrAzureService {
 
           const nextLine = lines[j].trim();
 
-          // Look for price patterns
+          // Look for price patterns (including negative prices like "3.00-GP")
           const priceMatch = nextLine.match(
-            /^(\d+\.\d{2}(?:-[A-Z]*)?)(?:\s+GP)?$/,
+            /^(\d+\.\d{2}(?:-(?:GP|[A-Z]*)?)?)\s*(?:GP)?$/,
           );
           if (priceMatch) {
             price = priceMatch[1];
@@ -1189,7 +1188,7 @@ export class OcrAzureService {
         // Special handling for certain patterns
         if (
           line.match(
-            /^(ECO\s*FEE|ENV(?:IRO)?\s*FEE|TPD\/|AMBROSIA|DOORMAT|DEPOSIT)/i,
+            /^(ECO\s*FEE|ENV(?:IRO)?\s*FEE|TPD\/|AMBROSIA|DEPOSIT)/i,
           ) ||
           line.match(/^\d{4,7}\s+/) // Already handled above
         ) {

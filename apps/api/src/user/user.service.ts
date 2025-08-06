@@ -50,7 +50,26 @@ export class UserService {
     const user = this.userRepository.create({
       email: userData.email,
       passwordHash: '', // This should be handled by auth service
-      displayName: userData.displayName,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      points: userData.pointBalance || 0,
+      level: userData.level,
+    });
+
+    const savedUser = await this.userRepository.save(user);
+    return this.mapUserToDTO(savedUser);
+  }
+
+  async createUserWithSupabaseId(
+    supabaseId: string,
+    userData: Partial<UserProfileDTO>,
+  ): Promise<UserProfileDTO> {
+    const user = this.userRepository.create({
+      userSk: supabaseId, // Use Supabase ID as userSk
+      email: userData.email,
+      passwordHash: '', // Supabase handles authentication
+      firstName: userData.firstName,
+      lastName: userData.lastName,
       points: userData.pointBalance || 0,
       level: userData.level,
     });
@@ -70,8 +89,8 @@ export class UserService {
 
     // Update fields
     if (userData.email) user.email = userData.email;
-    if (userData.displayName !== undefined)
-      user.displayName = userData.displayName;
+    if (userData.firstName !== undefined) user.firstName = userData.firstName;
+    if (userData.lastName !== undefined) user.lastName = userData.lastName;
     if (userData.pointBalance !== undefined)
       user.points = userData.pointBalance;
     if (userData.level !== undefined) user.level = userData.level;
@@ -126,7 +145,8 @@ export class UserService {
     return {
       id: user.userSk, // Use UUID as the public ID
       email: user.email,
-      displayName: user.displayName,
+      firstName: user.firstName,
+      lastName: user.lastName,
       pointBalance: user.points,
       level: user.level,
       rank: undefined, // Not implemented in new schema

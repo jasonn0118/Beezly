@@ -1,5 +1,9 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ConfigModule as AppConfigModule } from './config/config.module';
+import { AuthMiddleware } from './auth/middleware/auth.middleware';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
@@ -32,10 +36,12 @@ import { ProductModule } from './product/product.module';
 import { ReceiptModule } from './receipt/receipt.module';
 import { ReceiptItemModule } from './receiptItem/receiptItem.module';
 import { StoreModule } from './store/store.module';
+import { SupabaseModule } from './supabase/supabase.module';
 import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
+    AppConfigModule,
     (() => {
       const rootEnvPath = join(process.cwd(), '../../.env');
       console.log('🔍 Loading .env from:', rootEnvPath);
@@ -108,9 +114,21 @@ import { UserModule } from './user/user.module';
     ReceiptModule,
     ReceiptItemModule,
     StoreModule,
+    SupabaseModule,
     UserModule,
   ],
   controllers: [AppController],
-  providers: [AppService, DatabaseHealthCheckService],
+  providers: [
+    AppService,
+    DatabaseHealthCheckService,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+  ],
 })
-export class AppModule {}
+export class AppModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuthMiddleware).forRoutes('*'); // Apply to all routes
+  }
+}

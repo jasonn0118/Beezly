@@ -59,19 +59,4 @@ export class BarcodeService {
       isVerified: isVerified,
     };
   }
-
-  /**
-   * Attempts to extract brand name from product name
-   * This is a simple implementation that can be enhanced later
-   */
-  // private extractBrandFromName(productName: string): string | undefined {
-  //   // Common patterns: "Brand - Product" or "Brand Product"
-  //   const parts = productName.split(' - ');
-  //   if (parts.length > 1) {
-  //     return parts[0].trim();
-  //   }
-
-  //   // For now, return undefined if we can't determine the brand
-  //   return undefined;
-  // }
 }

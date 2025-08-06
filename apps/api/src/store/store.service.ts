@@ -1,8 +1,24 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { StoreDTO } from '../../../packages/types/dto/store';
 import { Store } from '../entities/store.entity';
+import { StoreCacheService } from './cache/store-cache.service';
+import {
+  GooglePlacesService,
+  GooglePlaceResult,
+} from './google-places.service';
+import {
+  LocationSearchDto,
+  NameSearchDto,
+  CitySearchDto,
+  ProvinceSearchDto,
+  AdvancedSearchDto,
+  PopularStoresDto,
+  PaginatedResponse,
+  UnifiedStoreSearchDto,
+  UnifiedStoreSearchResponse,
+} from './dto/store-search.dto';
 
 export interface LocationSearch {
   latitude: number;
@@ -47,6 +63,8 @@ export class StoreService {
   constructor(
     @InjectRepository(Store)
     private readonly storeRepository: Repository<Store>,
+    private readonly cacheService: StoreCacheService,
+    private readonly googlePlacesService: GooglePlacesService,
   ) {}
 
   async getAllStores(): Promise<StoreDTO[]> {
@@ -94,7 +112,7 @@ export class StoreService {
       city: storeData.city,
       province: storeData.province,
       postalCode: storeData.postalCode,
-      countryRegion: storeData.countryRegion,
+      countryRegion: this.normalizeCountryCode(storeData.countryRegion),
       latitude: storeData.latitude,
       longitude: storeData.longitude,
       placeId: (storeData as StoreDataWithPlaceId).placeId,
@@ -127,7 +145,7 @@ export class StoreService {
     if (storeData.postalCode !== undefined)
       store.postalCode = storeData.postalCode;
     if (storeData.countryRegion !== undefined)
-      store.countryRegion = storeData.countryRegion;
+      store.countryRegion = this.normalizeCountryCode(storeData.countryRegion);
     if (storeData.latitude !== undefined) store.latitude = storeData.latitude;
     if (storeData.longitude !== undefined)
       store.longitude = storeData.longitude;
@@ -174,7 +192,17 @@ export class StoreService {
       ])
       .where('store.latitude IS NOT NULL')
       .andWhere('store.longitude IS NOT NULL')
-      .having('distance <= :radiusKm')
+      .andWhere(
+        `(
+          6371 * acos(
+            cos(radians(:latitude)) * 
+            cos(radians(store.latitude)) * 
+            cos(radians(store.longitude) - radians(:longitude)) + 
+            sin(radians(:latitude)) * 
+            sin(radians(store.latitude))
+          )
+        ) <= :radiusKm`,
+      )
       .orderBy('distance', 'ASC')
       .limit(limit)
       .setParameters({ latitude, longitude, radiusKm })
@@ -182,7 +210,7 @@ export class StoreService {
 
     return stores.map((store: RawStoreQueryResult) => ({
       ...this.mapRawStoreToDTO(store),
-      distance: parseFloat(store.distance || '0'),
+      distance: parseFloat(parseFloat(store.distance || '0').toFixed(2)),
     }));
   }
 
@@ -312,7 +340,17 @@ export class StoreService {
       query = query
         .andWhere('store.latitude IS NOT NULL')
         .andWhere('store.longitude IS NOT NULL')
-        .having('distance <= :radiusKm')
+        .andWhere(
+          `(
+            6371 * acos(
+              cos(radians(:latitude)) * 
+              cos(radians(store.latitude)) * 
+              cos(radians(store.longitude) - radians(:longitude)) + 
+              sin(radians(:latitude)) * 
+              sin(radians(store.latitude))
+            )
+          ) <= :radiusKm`,
+        )
         .setParameter('radiusKm', radiusKm)
         .orderBy('distance', 'ASC');
     } else {
@@ -323,7 +361,9 @@ export class StoreService {
 
     return stores.map((store: RawStoreQueryResult) => ({
       ...this.mapRawStoreToDTO(store),
-      distance: store.distance ? parseFloat(store.distance) : 0,
+      distance: store.distance
+        ? parseFloat(parseFloat(store.distance).toFixed(2))
+        : 0,
     }));
   }
 
@@ -345,7 +385,37 @@ export class StoreService {
     return store;
   }
 
-  private mapStoreToDTO(store: Store): StoreDTO {
+  /**
+   * Normalize country names to standardized codes
+   * Canada -> CAN, United States -> USA
+   */
+  private normalizeCountryCode(countryRegion?: string): string | undefined {
+    if (!countryRegion) {
+      return undefined;
+    }
+
+    const country = countryRegion.toLowerCase().trim();
+
+    // Canada variations
+    if (country === 'canada' || country === 'ca') {
+      return 'CAN';
+    }
+
+    // United States variations
+    if (
+      country === 'united states' ||
+      country === 'united states of america' ||
+      country === 'usa' ||
+      country === 'us'
+    ) {
+      return 'USA';
+    }
+
+    // Return original value if no normalization needed
+    return countryRegion;
+  }
+
+  public mapStoreToDTO(store: Store): StoreDTO {
     return {
       id: store.storeSk, // Use UUID as the public ID
       name: store.name,
@@ -1084,5 +1154,1060 @@ export class StoreService {
     }
 
     return { fullAddress: address };
+  }
+
+  // 🚀 ENHANCED PAGINATED SEARCH METHODS WITH CACHING
+
+  /**
+   * Find stores near location with pagination and caching
+   */
+  async findStoresNearLocationPaginated(
+    params: LocationSearchDto,
+  ): Promise<PaginatedResponse<StoreDistance>> {
+    return this.cacheService.getOrSetPaginated(
+      'findStoresNearLocation',
+      params,
+      async () => {
+        const {
+          latitude,
+          longitude,
+          radiusKm = 10,
+          page = 1,
+          limit = 20,
+        } = params;
+        const offset = (page - 1) * limit;
+
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .select([
+            'store.*',
+            `(
+              6371 * acos(
+                cos(radians(:latitude)) * 
+                cos(radians(store.latitude)) * 
+                cos(radians(store.longitude) - radians(:longitude)) + 
+                sin(radians(:latitude)) * 
+                sin(radians(store.latitude))
+              )
+            ) AS distance`,
+          ])
+          .where('store.latitude IS NOT NULL')
+          .andWhere('store.longitude IS NOT NULL')
+          .andWhere(
+            `(
+              6371 * acos(
+                cos(radians(:latitude)) * 
+                cos(radians(store.latitude)) * 
+                cos(radians(store.longitude) - radians(:longitude)) + 
+                sin(radians(:latitude)) * 
+                sin(radians(store.latitude))
+              )
+            ) <= :radiusKm`,
+          )
+          .orderBy('distance', 'ASC')
+          .setParameters({ latitude, longitude, radiusKm });
+
+        // Get total count for pagination
+        const totalQuery = this.storeRepository
+          .createQueryBuilder('store')
+          .select('COUNT(*)')
+          .where('store.latitude IS NOT NULL')
+          .andWhere('store.longitude IS NOT NULL')
+          .andWhere(
+            `(6371 * acos(cos(radians(:latitude)) * cos(radians(store.latitude)) * cos(radians(store.longitude) - radians(:longitude)) + sin(radians(:latitude)) * sin(radians(store.latitude)))) <= :radiusKm`,
+          )
+          .setParameters({ latitude, longitude, radiusKm });
+
+        const results = await Promise.all([
+          query.offset(offset).limit(limit).getRawMany(),
+          totalQuery.getRawOne(),
+        ]);
+        const stores = results[0] as RawStoreQueryResult[];
+        const total = results[1] as { count: string };
+
+        const data = stores.map((store: RawStoreQueryResult) => ({
+          ...this.mapRawStoreToDTO(store),
+          distance: parseFloat(parseFloat(store.distance || '0').toFixed(2)),
+        }));
+
+        return this.buildPaginatedResponse(
+          data,
+          page,
+          limit,
+          parseInt(total.count),
+        );
+      },
+    );
+  }
+
+  /**
+   * Search stores by name with pagination and caching
+   */
+  async searchStoresByNamePaginated(
+    params: NameSearchDto,
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.cacheService.getOrSetPaginated(
+      'searchStoresByName',
+      params,
+      async () => {
+        const { name, page = 1, limit = 20 } = params;
+        const offset = (page - 1) * limit;
+
+        // Use trigram similarity for better fuzzy matching
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.name % :name OR store.name ILIKE :namePattern', {
+            name,
+            namePattern: `%${name}%`,
+          })
+          .orderBy('similarity(store.name, :name)', 'DESC')
+          .addOrderBy('store.name', 'ASC')
+          .setParameter('name', name);
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getMany(),
+          query.getCount(),
+        ]);
+
+        const data = stores.map((store) => this.mapStoreToDTO(store));
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Find stores by city with pagination and caching
+   */
+  async findStoresByCityPaginated(
+    params: CitySearchDto & { page?: number; limit?: number },
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.cacheService.getOrSetPaginated(
+      'findStoresByCity',
+      params,
+      async () => {
+        const { city, page = 1, limit = 20 } = params;
+        const offset = (page - 1) * limit;
+
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.city ILIKE :city', { city: `%${city}%` })
+          .orderBy('store.name', 'ASC');
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getMany(),
+          query.getCount(),
+        ]);
+
+        const data = stores.map((store) => this.mapStoreToDTO(store));
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Find stores by province with pagination and caching
+   */
+  async findStoresByProvincePaginated(
+    params: ProvinceSearchDto & { page?: number; limit?: number },
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.cacheService.getOrSetPaginated(
+      'findStoresByProvince',
+      params,
+      async () => {
+        const { province, page = 1, limit = 20 } = params;
+        const offset = (page - 1) * limit;
+
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.province ILIKE :province', {
+            province: `%${province}%`,
+          })
+          .orderBy('store.city', 'ASC')
+          .addOrderBy('store.name', 'ASC');
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getMany(),
+          query.getCount(),
+        ]);
+
+        const data = stores.map((store) => this.mapStoreToDTO(store));
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Get popular stores with pagination and caching
+   */
+  async getPopularStoresPaginated(
+    params: PopularStoresDto,
+  ): Promise<PaginatedResponse<StoreDTO>> {
+    return this.cacheService.getOrSetPaginated(
+      'getPopularStores',
+      params,
+      async () => {
+        const { minReceipts = 1, page = 1, limit = 20 } = params;
+        const offset = (page - 1) * limit;
+
+        const query = this.storeRepository
+          .createQueryBuilder('store')
+          .leftJoin('store.receipts', 'receipt')
+          .loadRelationCountAndMap('store.receiptCount', 'store.receipts')
+          .having('COUNT(receipt.id) >= :minReceipts', { minReceipts })
+          .groupBy('store.id')
+          .orderBy('COUNT(receipt.id)', 'DESC')
+          .addOrderBy('store.name', 'ASC');
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getMany(),
+          query.getCount(),
+        ]);
+
+        const data = stores.map((store) => this.mapStoreToDTO(store));
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Advanced search with pagination and caching
+   */
+  async advancedStoreSearchPaginated(
+    params: AdvancedSearchDto,
+  ): Promise<PaginatedResponse<StoreDistance>> {
+    return this.cacheService.getOrSetPaginated(
+      'advancedStoreSearch',
+      params,
+      async () => {
+        const {
+          name,
+          city,
+          province,
+          latitude,
+          longitude,
+          radiusKm = 10,
+          page = 1,
+          limit = 20,
+        } = params;
+        const offset = (page - 1) * limit;
+
+        let query = this.storeRepository.createQueryBuilder('store');
+
+        // Add distance calculation if coordinates provided
+        if (latitude !== undefined && longitude !== undefined) {
+          query = query
+            .select([
+              'store.*',
+              `(
+                6371 * acos(
+                  cos(radians(:latitude)) * 
+                  cos(radians(store.latitude)) * 
+                  cos(radians(store.longitude) - radians(:longitude)) + 
+                  sin(radians(:latitude)) * 
+                  sin(radians(store.latitude))
+                )
+              ) AS distance`,
+            ])
+            .setParameters({ latitude, longitude });
+        } else {
+          query = query.select('store.*');
+        }
+
+        // Add text filters
+        if (name) {
+          query = query.andWhere(
+            'store.name % :name OR store.name ILIKE :namePattern',
+            {
+              name,
+              namePattern: `%${name}%`,
+            },
+          );
+        }
+        if (city) {
+          query = query.andWhere('store.city ILIKE :city', {
+            city: `%${city}%`,
+          });
+        }
+        if (province) {
+          query = query.andWhere('store.province ILIKE :province', {
+            province: `%${province}%`,
+          });
+        }
+
+        // Add distance filter if coordinates provided
+        if (latitude !== undefined && longitude !== undefined) {
+          // Use subquery approach to properly filter by calculated distance
+          const distanceCalculation = `(
+            6371 * acos(
+              cos(radians(:latitude)) * 
+              cos(radians(store.latitude)) * 
+              cos(radians(store.longitude) - radians(:longitude)) + 
+              sin(radians(:latitude)) * 
+              sin(radians(store.latitude))
+            )
+          )`;
+
+          query = query
+            .andWhere('store.latitude IS NOT NULL')
+            .andWhere('store.longitude IS NOT NULL')
+            .andWhere(`${distanceCalculation} <= :radiusKm`)
+            .setParameter('radiusKm', radiusKm)
+            .orderBy('distance', 'ASC');
+        } else if (name) {
+          query = query
+            .orderBy('similarity(store.name, :name)', 'DESC')
+            .addOrderBy('store.name', 'ASC');
+        } else {
+          query = query.orderBy('store.name', 'ASC');
+        }
+
+        // Get total count (simpler query for count)
+        let countQuery = this.storeRepository.createQueryBuilder('store');
+        if (name) {
+          countQuery = countQuery.andWhere(
+            'store.name % :name OR store.name ILIKE :namePattern',
+            {
+              name,
+              namePattern: `%${name}%`,
+            },
+          );
+        }
+        if (city) {
+          countQuery = countQuery.andWhere('store.city ILIKE :city', {
+            city: `%${city}%`,
+          });
+        }
+        if (province) {
+          countQuery = countQuery.andWhere('store.province ILIKE :province', {
+            province: `%${province}%`,
+          });
+        }
+        if (latitude !== undefined && longitude !== undefined) {
+          countQuery = countQuery
+            .andWhere('store.latitude IS NOT NULL')
+            .andWhere('store.longitude IS NOT NULL')
+            .andWhere(
+              `(6371 * acos(cos(radians(:latitude)) * cos(radians(store.latitude)) * cos(radians(store.longitude) - radians(:longitude)) + sin(radians(:latitude)) * sin(radians(store.latitude)))) <= :radiusKm`,
+            )
+            .setParameters({ latitude, longitude, radiusKm });
+        }
+
+        const [stores, total] = await Promise.all([
+          query.offset(offset).limit(limit).getRawMany(),
+          countQuery.getCount(),
+        ]);
+
+        const data = stores.map((store: RawStoreQueryResult) => ({
+          ...this.mapRawStoreToDTO(store),
+          distance: store.distance
+            ? parseFloat(parseFloat(store.distance).toFixed(2))
+            : 0,
+        }));
+
+        return this.buildPaginatedResponse(data, page, limit, total);
+      },
+    );
+  }
+
+  /**
+   * Build paginated response with metadata
+   */
+  private buildPaginatedResponse<T>(
+    data: T[],
+    page: number,
+    limit: number,
+    total: number,
+  ): PaginatedResponse<T> {
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+      meta: {
+        queryTime: 0, // Will be set by cache service
+        indexesUsed: ['idx_store_name_gin_trgm', 'idx_store_coordinates'], // Placeholder
+      },
+    };
+  }
+
+  /**
+   * Clear search cache when stores are modified
+   */
+  invalidateSearchCache(): void {
+    this.cacheService.invalidate('store:');
+  }
+
+  // 🌍 GOOGLE PLACES INTEGRATION METHODS
+
+  /**
+   * Search for stores using Google Places API as fallback
+   */
+  async searchWithGoogleFallback(params: {
+    query?: string;
+    latitude?: number;
+    longitude?: number;
+    radiusKm?: number;
+    limit?: number;
+  }): Promise<{
+    localStores: StoreDistance[];
+    googleStores: GooglePlaceResult[];
+    totalResults: number;
+  }> {
+    const { query, latitude, longitude, radiusKm = 10, limit = 20 } = params;
+
+    this.logger.log(
+      `🔍 Searching with Google fallback - Query: "${query}", Location: ${latitude},${longitude}, Radius: ${radiusKm}km`,
+    );
+
+    // First, search local database
+    let localStores: StoreDistance[] = [];
+
+    if (latitude && longitude) {
+      // Location-based search
+      if (query) {
+        // Advanced search with name and location
+        const advancedParams: AdvancedSearchDto = {
+          name: query,
+          latitude,
+          longitude,
+          radiusKm,
+          page: 1,
+          limit,
+        };
+        const localResults =
+          await this.advancedStoreSearchPaginated(advancedParams);
+        localStores = localResults.data;
+      } else {
+        // Location-only search
+        const locationParams: LocationSearchDto = {
+          latitude,
+          longitude,
+          radiusKm,
+          page: 1,
+          limit,
+        };
+        const localResults =
+          await this.findStoresNearLocationPaginated(locationParams);
+        localStores = localResults.data;
+      }
+    } else if (query) {
+      // Name-only search
+      const nameParams: NameSearchDto = {
+        name: query,
+        page: 1,
+        limit,
+      };
+      const localResults = await this.searchStoresByNamePaginated(nameParams);
+      localStores = localResults.data.map((store) => ({
+        ...store,
+        distance: 0,
+      }));
+    }
+
+    // If we have enough local results, return them
+    if (localStores.length >= Math.min(limit, 5)) {
+      this.logger.log(
+        `✅ Found ${localStores.length} local stores, skipping Google search`,
+      );
+      return {
+        localStores,
+        googleStores: [],
+        totalResults: localStores.length,
+      };
+    }
+
+    // Search Google Places as fallback
+    let googleStores: GooglePlaceResult[] = [];
+    try {
+      if (latitude && longitude) {
+        // Location-based Google search
+        googleStores = await this.googlePlacesService.searchStoresNearLocation({
+          latitude,
+          longitude,
+          radiusKm,
+          query,
+        });
+      } else if (query) {
+        // Text-based Google search
+        googleStores = await this.googlePlacesService.searchStoresByText({
+          query,
+          radiusKm,
+        });
+      }
+
+      // Filter out stores we already have in local database
+      const filteredGoogleStores =
+        await this.filterExistingStores(googleStores);
+
+      this.logger.log(
+        `🌍 Google Places found ${googleStores.length} stores, ${filteredGoogleStores.length} are new`,
+      );
+
+      return {
+        localStores,
+        googleStores: filteredGoogleStores,
+        totalResults: localStores.length + filteredGoogleStores.length,
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ Google Places search failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return {
+        localStores,
+        googleStores: [],
+        totalResults: localStores.length,
+      };
+    }
+  }
+
+  /**
+   * Filter out Google Places results that already exist in our database
+   */
+  private async filterExistingStores(
+    googleStores: GooglePlaceResult[],
+  ): Promise<GooglePlaceResult[]> {
+    if (googleStores.length === 0) return [];
+
+    try {
+      // Get place IDs from Google results
+      const placeIds = googleStores.map((store) => store.place_id);
+
+      // Check which ones already exist in our database
+      const existingStores = await this.storeRepository
+        .createQueryBuilder('store')
+        .where('store.placeId IN (:...placeIds)', { placeIds })
+        .getMany();
+
+      const existingPlaceIds = new Set(
+        existingStores.map((store) => store.placeId).filter(Boolean),
+      );
+
+      // Filter out existing stores
+      const newStores = googleStores.filter(
+        (store) => !existingPlaceIds.has(store.place_id),
+      );
+
+      this.logger.debug(
+        `🔍 Filtered ${googleStores.length - newStores.length} existing stores from Google results`,
+      );
+
+      return newStores;
+    } catch (error) {
+      this.logger.error(
+        `❌ Error filtering existing stores: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return googleStores; // Return all if filtering fails
+    }
+  }
+
+  /**
+   * Create a new store from Google Places data sent by frontend
+   */
+  async createStoreFromGoogleData(googlePlaceData: {
+    place_id: string;
+    name: string;
+    formatted_address: string;
+    streetNumber?: string;
+    road?: string;
+    streetAddress?: string;
+    fullAddress?: string;
+    city?: string;
+    province?: string;
+    postalCode?: string;
+    countryRegion?: string;
+    latitude: number;
+    longitude: number;
+    types: string[];
+  }): Promise<Store> {
+    try {
+      // Create store entity using data from frontend (Google Places result)
+      const storeData: Partial<Store> = {
+        name: googlePlaceData.name,
+        fullAddress:
+          googlePlaceData.fullAddress || googlePlaceData.formatted_address,
+        streetNumber: googlePlaceData.streetNumber,
+        road: googlePlaceData.road,
+        streetAddress: googlePlaceData.streetAddress,
+        city: googlePlaceData.city,
+        province: googlePlaceData.province,
+        postalCode: googlePlaceData.postalCode,
+        countryRegion: this.normalizeCountryCode(googlePlaceData.countryRegion),
+        latitude: googlePlaceData.latitude,
+        longitude: googlePlaceData.longitude,
+        placeId: googlePlaceData.place_id,
+      };
+
+      const store = this.storeRepository.create(storeData);
+      const savedStore = await this.storeRepository.save(store);
+
+      this.logger.log(
+        `✅ Created new store from frontend Google Places data: ${savedStore.name} (${savedStore.storeSk})`,
+      );
+
+      // Invalidate cache after creating new store
+      this.invalidateSearchCache();
+
+      return savedStore;
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to create store from frontend Google Places data: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new store from Google Places data (legacy method - calls Google API)
+   */
+  async createStoreFromGooglePlace(
+    googlePlace: GooglePlaceResult,
+  ): Promise<Store> {
+    try {
+      // Use parsed address data from GooglePlaceResult (no need to parse again)
+
+      // Create store entity using parsed address data from GooglePlaceResult
+      const storeData: Partial<Store> = {
+        name: googlePlace.name,
+        fullAddress: googlePlace.fullAddress,
+        streetNumber: googlePlace.streetNumber,
+        road: googlePlace.road,
+        streetAddress: googlePlace.streetAddress,
+        city: googlePlace.city,
+        province: googlePlace.province,
+        postalCode: googlePlace.postalCode,
+        countryRegion: this.normalizeCountryCode(googlePlace.countryRegion),
+        latitude: googlePlace.latitude,
+        longitude: googlePlace.longitude,
+        placeId: googlePlace.place_id,
+      };
+
+      const store = this.storeRepository.create(storeData);
+      const savedStore = await this.storeRepository.save(store);
+
+      this.logger.log(
+        `✅ Created new store from Google Places: ${savedStore.name} (${savedStore.storeSk})`,
+      );
+
+      // Invalidate cache after creating new store
+      this.invalidateSearchCache();
+
+      return savedStore;
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to create store from Google Place: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Bulk create stores from Google Places results
+   */
+  async createStoresFromGooglePlaces(
+    googlePlaces: GooglePlaceResult[],
+  ): Promise<Store[]> {
+    const createdStores: Store[] = [];
+
+    for (const googlePlace of googlePlaces) {
+      try {
+        const store = await this.createStoreFromGooglePlace(googlePlace);
+        createdStores.push(store);
+      } catch (error) {
+        this.logger.error(
+          `❌ Failed to create store ${googlePlace.name}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        // Continue with other stores even if one fails
+        continue;
+      }
+    }
+
+    this.logger.log(
+      `✅ Successfully created ${createdStores.length}/${googlePlaces.length} stores from Google Places`,
+    );
+
+    return createdStores;
+  }
+
+  /**
+   * Check if a store already exists by name and location
+   */
+  async checkStoreExists(params: {
+    name: string;
+    latitude?: number;
+    longitude?: number;
+    placeId?: string;
+  }): Promise<Store | null> {
+    const { name, latitude, longitude, placeId } = params;
+
+    try {
+      // First check by place ID (most reliable)
+      if (placeId) {
+        const storeByPlaceId = await this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.placeId = :placeId', { placeId })
+          .getOne();
+
+        if (storeByPlaceId) {
+          return storeByPlaceId;
+        }
+      }
+
+      // Then check by name and location (fuzzy matching)
+      if (latitude && longitude && name) {
+        const stores = await this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.name ILIKE :name', { name: `%${name}%` })
+          .andWhere('store.latitude IS NOT NULL')
+          .andWhere('store.longitude IS NOT NULL')
+          .andWhere(
+            `(
+              6371 * acos(
+                cos(radians(:latitude)) * 
+                cos(radians(store.latitude)) * 
+                cos(radians(store.longitude) - radians(:longitude)) + 
+                sin(radians(:latitude)) * 
+                sin(radians(store.latitude))
+              )
+            ) <= 0.5`, // Within 500m
+          )
+          .setParameters({ name, latitude, longitude })
+          .getMany();
+
+        if (stores.length > 0) {
+          return stores[0]; // Return closest match
+        }
+      }
+
+      // Finally check by name only (exact match) - but only if name is provided and not empty
+      if (name && name.trim().length > 0) {
+        const storeByName = await this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.name ILIKE :name', { name: `%${name}%` })
+          .getOne();
+
+        return storeByName;
+      }
+
+      return null;
+    } catch (error) {
+      this.logger.error(
+        `❌ Error checking store existence: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  // 🔍 UNIFIED SEARCH METHOD
+
+  /**
+   * Unified store search - handles all search scenarios intelligently
+   * - Query only (name/address search)
+   * - Location only (nearby search)
+   * - Query + Location (contextual search)
+   * - Always shows Google results alongside local results
+   */
+  async unifiedStoreSearch(
+    params: UnifiedStoreSearchDto,
+  ): Promise<UnifiedStoreSearchResponse> {
+    const startTime = Date.now();
+    const {
+      query,
+      latitude,
+      longitude,
+      radiusKm = 25,
+      page = 1,
+      limit = 20,
+      includeGoogle = true,
+      maxGoogleResults = 10,
+      sortBy = 'relevance',
+    } = params;
+
+    this.logger.log(
+      `🔍 Unified search - Query: "${query}", Location: ${latitude},${longitude}, Radius: ${radiusKm}km, Google: ${includeGoogle}`,
+    );
+
+    // Determine search type
+    const hasQuery = query && query.trim().length > 0;
+    const hasLocation = latitude !== undefined && longitude !== undefined;
+    const searchType: 'query_only' | 'location_only' | 'query_and_location' =
+      hasQuery && hasLocation
+        ? 'query_and_location'
+        : hasQuery
+          ? 'query_only'
+          : hasLocation
+            ? 'location_only'
+            : 'query_only'; // Default fallback
+
+    // Search local database
+    let localStores: (StoreDTO & { distance?: number })[] = [];
+    let cacheHit = false;
+
+    try {
+      if (searchType === 'query_and_location') {
+        // Combined search with both query and location
+        const advancedParams: AdvancedSearchDto = {
+          name: query,
+          latitude,
+          longitude,
+          radiusKm,
+          page,
+          limit,
+        };
+        const localResults =
+          await this.advancedStoreSearchPaginated(advancedParams);
+        localStores = localResults.data;
+        cacheHit = localResults.meta?.cacheHit || false;
+      } else if (searchType === 'location_only') {
+        // Location-only nearby search
+        const locationParams: LocationSearchDto = {
+          latitude: latitude!,
+          longitude: longitude!,
+          radiusKm,
+          page,
+          limit,
+        };
+        const localResults =
+          await this.findStoresNearLocationPaginated(locationParams);
+        localStores = localResults.data;
+        cacheHit = localResults.meta?.cacheHit || false;
+      } else if (searchType === 'query_only') {
+        // Query-only search (name, address, keywords)
+        const nameParams: NameSearchDto = {
+          name: query!,
+          page,
+          limit,
+        };
+        const localResults = await this.searchStoresByNamePaginated(nameParams);
+        localStores = localResults.data.map((store) => ({
+          ...store,
+          distance: 0, // No distance for query-only search
+        }));
+        cacheHit = localResults.meta?.cacheHit || false;
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ Local search failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      localStores = [];
+    }
+
+    // Search Google Places if enabled
+    let googleStores: GooglePlaceResult[] = [];
+    let googleApiCalled = false;
+    let hasMoreGoogle = false;
+
+    if (includeGoogle && maxGoogleResults > 0) {
+      try {
+        googleApiCalled = true;
+
+        if (hasLocation) {
+          // Location-based Google search using includedTypes/excludedTypes pattern
+          googleStores = await this.googlePlacesService.findStoresNearby({
+            location: { lat: latitude, lng: longitude },
+            radius: radiusKm * 1000, // convert km to meters
+            keyword: hasQuery ? query : undefined,
+            includedTypes: ['supermarket', 'grocery_or_supermarket', 'store'],
+            excludedTypes: [
+              'restaurant',
+              'bar',
+              'cafe',
+              'gas_station',
+              'hospital',
+              'doctor',
+            ],
+          });
+        } else if (hasQuery) {
+          // Text-based Google search
+          googleStores = await this.googlePlacesService.searchStoresByText({
+            query: query,
+            location: hasLocation
+              ? { latitude: latitude, longitude: longitude }
+              : undefined,
+            radiusKm,
+          });
+        }
+
+        // Filter out stores we already have in local database
+        googleStores = await this.filterExistingStores(googleStores);
+
+        // Limit Google results and check if there are more
+        if (googleStores.length > maxGoogleResults) {
+          hasMoreGoogle = true;
+          googleStores = googleStores.slice(0, maxGoogleResults);
+        }
+
+        this.logger.log(
+          `🌍 Google Places found ${googleStores.length} new stores (hasMore: ${hasMoreGoogle})`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `❌ Google Places search failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        googleStores = [];
+      }
+    }
+
+    // Apply final radius filtering if location is provided (ensure strict radius enforcement)
+    if (hasLocation) {
+      // Filter local stores by radius (double-check database results)
+      localStores = localStores.filter((store) => {
+        const distance =
+          store.distance ||
+          this.calculateDistance(
+            latitude,
+            longitude,
+            store.latitude || 0,
+            store.longitude || 0,
+          );
+        const withinRadius = distance <= radiusKm;
+        if (!withinRadius) {
+          this.logger.debug(
+            `🚫 Filtered out local store: ${store.name} (${distance.toFixed(2)}km > ${radiusKm}km)`,
+          );
+        }
+        return withinRadius;
+      });
+
+      // Filter Google stores by radius (Google API sometimes returns results slightly outside radius)
+      googleStores = googleStores.filter((store) => {
+        const distance =
+          store.distance ||
+          this.calculateDistance(
+            latitude,
+            longitude,
+            store.latitude,
+            store.longitude,
+          );
+        const withinRadius = distance <= radiusKm;
+        if (!withinRadius) {
+          this.logger.debug(
+            `🚫 Filtered out Google store: ${store.name} (${distance.toFixed(2)}km > ${radiusKm}km)`,
+          );
+        }
+        return withinRadius;
+      });
+
+      this.logger.debug(
+        `📍 After radius filtering (${radiusKm}km): Local=${localStores.length}, Google=${googleStores.length}`,
+      );
+    }
+
+    // Apply sorting if specified
+    if (sortBy === 'distance' && hasLocation) {
+      // Sort local stores by distance (already sorted from query)
+      // Sort Google stores by distance (calculate distance)
+      googleStores = googleStores
+        .map((store) => ({
+          ...store,
+          calculatedDistance: this.calculateDistance(
+            latitude,
+            longitude,
+            store.latitude,
+            store.longitude,
+          ),
+        }))
+        .sort((a, b) => a.calculatedDistance - b.calculatedDistance)
+        .map((item) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { calculatedDistance, ...store } = item;
+          return store; // Remove temp distance field
+        });
+    } else if (sortBy === 'name') {
+      localStores.sort((a, b) => a.name.localeCompare(b.name));
+      googleStores.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    // 'relevance' sorting is already handled by the search algorithms
+
+    const totalResults = localStores.length + googleStores.length;
+    const queryTime = Date.now() - startTime;
+
+    // Build pagination info (based on total combined results)
+    const totalPages = Math.ceil(totalResults / limit);
+
+    const response: UnifiedStoreSearchResponse = {
+      localStores,
+      googleStores,
+      summary: {
+        totalResults,
+        localCount: localStores.length,
+        googleCount: googleStores.length,
+        searchType,
+        hasMoreGoogle,
+      },
+      pagination: {
+        page,
+        limit,
+        total: totalResults,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+      meta: {
+        queryTime,
+        cacheHit,
+        searchStrategy: this.getSearchStrategy(searchType, includeGoogle),
+        googleApiCalled,
+      },
+    };
+
+    this.logger.log(
+      `✅ Unified search completed - Local: ${localStores.length}, Google: ${googleStores.length}, Time: ${queryTime}ms`,
+    );
+
+    return response;
+  }
+
+  /**
+   * Calculate distance between two points using Haversine formula
+   */
+  private calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = this.toRadians(lat2 - lat1);
+    const dLon = this.toRadians(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(this.toRadians(lat1)) *
+        Math.cos(this.toRadians(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return parseFloat((R * c).toFixed(2));
+  }
+
+  /**
+   * Convert degrees to radians
+   */
+  private toRadians(degrees: number): number {
+    return degrees * (Math.PI / 180);
+  }
+
+  /**
+   * Get search strategy description
+   */
+  private getSearchStrategy(
+    searchType: 'query_only' | 'location_only' | 'query_and_location',
+    includeGoogle: boolean,
+  ): string {
+    const base = {
+      query_only: 'text_search',
+      location_only: 'nearby_search',
+      query_and_location: 'contextual_search',
+    }[searchType];
+
+    return includeGoogle ? `${base}_with_google` : `${base}_local_only`;
   }
 }
