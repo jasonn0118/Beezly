@@ -19,6 +19,7 @@ const MOCK_BADGES: Badge[] = [
     // Add more badges as needed
     // { id: '5', name: 'Contributor', icon: 'plus-circle', earned: false },
     // { id: '6', name: 'Super Saver', icon: 'piggy-bank', earned: false },
+    // { id: '6', name: 'Super Saver', icon: 'piggy-bank', earned: false },
 ];
 
 // --- Reusable Badge Item Component ---
