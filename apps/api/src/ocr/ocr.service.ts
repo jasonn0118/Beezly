@@ -1110,11 +1110,19 @@ export class OcrService {
         extractedItemCode = match[1];
         cleanedName = match[2];
       } else {
-        // Extract leading item codes with letters (like "ABC123 PRODUCT")
-        match = cleanedName.match(/^([A-Z]{2,4}\d{3,6})\s+(.+)$/);
+        // Extract leading 3-digit item codes (like "430 XL EGGS")
+        // Be conservative: only match if followed by at least 3 letters/chars to avoid quantities
+        match = cleanedName.match(/^(\d{3})\s+([A-Za-z].{2,}.*)$/);
         if (match) {
           extractedItemCode = match[1];
           cleanedName = match[2];
+        } else {
+          // Extract leading item codes with letters (like "ABC123 PRODUCT")
+          match = cleanedName.match(/^([A-Z]{2,4}\d{3,6})\s+(.+)$/);
+          if (match) {
+            extractedItemCode = match[1];
+            cleanedName = match[2];
+          }
         }
       }
     }
