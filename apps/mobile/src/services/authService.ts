@@ -105,6 +105,7 @@ export class AuthService {
         [AUTH_TOKEN_KEY, authResponse.accessToken],
         [USER_DATA_KEY, JSON.stringify(authResponse.user)],
       ]);
+      
       // Set the token in the API client for immediate use
       apiClient.setAuthToken(authResponse.accessToken);
     } catch (error) {

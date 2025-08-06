@@ -68,12 +68,12 @@ export interface ProcessReceiptResponse {
 }
 
 export class ReceiptService {
-  static async processReceipt(formData: FormData): Promise<ProcessReceiptResponse> {
-    return apiClient.post<ProcessReceiptResponse>('/ocr/process-receipt-enhanced', formData, {
-      // headers: {
-      //   'Content-Type': 'multipart/form-data',
-      // },
-      timeout: 3000000,
+  static async processReceipt(formData: FormData): Promise<UploadReceiptResponse> {
+    return apiClient.post<UploadReceiptResponse>('/ocr/process-receipt-enhanced', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 90000, // 90 seconds for OCR processing
     });
   }
 
