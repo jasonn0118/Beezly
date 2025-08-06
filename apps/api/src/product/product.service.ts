@@ -17,6 +17,7 @@ import {
   ProductResponseDto,
   ProductWithStoreCreateDto,
   ProductWithStoreResponseDto,
+  GooglePlacesStoreDataDto,
 } from './dto/product-create.dto';
 import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 import {
@@ -209,6 +210,7 @@ export class ProductService {
   ): Promise<ProductSearchResponseDto[]> {
     const products = await this.productRepository
       .createQueryBuilder('product')
+      .leftJoinAndSelect('product.categoryEntity', 'categoryEntity') // Join category entity
       .where('product.name ILIKE :query', { query: `%${query}%` })
       .orWhere('product.brandName ILIKE :query', { query: `%${query}%` })
       .orderBy('product.name', 'ASC')
@@ -524,7 +526,7 @@ export class ProductService {
     }
 
     this.logger.log(
-      `Searching for product with ID: ${productSk}${storeSk ? ` in store: ${storeSk}` : ''}${latitude && longitude ? ` near location: ${latitude}, ${longitude}` : ''}`,
+      `Searching for product with ID: ${productSk}${storeSk ? ` in store: ${storeSk}` : ''}`,
     );
 
     try {
@@ -578,7 +580,12 @@ export class ProductService {
         );
       }
 
-      return this.mapProductToEnhancedResponse(product, prices);
+      return this.mapProductToEnhancedResponse(
+        product,
+        prices,
+        latitude,
+        longitude,
+      );
     } catch (error) {
       if (
         error instanceof NotFoundException ||
@@ -725,12 +732,20 @@ export class ProductService {
   }
 
   private mapProductToDTO(product: Product): NormalizedProductDTO {
+    const categoryPath = [
+      product.categoryEntity?.category1,
+      product.categoryEntity?.category2,
+      product.categoryEntity?.category3,
+    ]
+      .filter(Boolean)
+      .join(' > ');
     return {
       product_sk: product.productSk,
       name: product.name,
       barcode: product.barcode,
       barcode_type: product.barcodeType,
       category: product.category,
+      categoryPath: categoryPath, // Use camelCase
       image_url: product.imageUrl,
       brandName: product.brandName,
       created_at: product.createdAt.toISOString(),
@@ -744,11 +759,21 @@ export class ProductService {
   private mapProductToSearchResponse(
     product: Product,
   ): ProductSearchResponseDto {
+    const categoryPath = [
+      product.categoryEntity?.category1,
+      product.categoryEntity?.category2,
+      product.categoryEntity?.category3,
+    ]
+      .filter(Boolean)
+      .join(' > ');
+
     return {
       product_sk: product.productSk,
       name: product.name,
       brandName: product.brandName,
       image_url: product.imageUrl,
+      category: product.category,
+      categoryPath: categoryPath,
     };
   }
 
@@ -781,7 +806,12 @@ export class ProductService {
         );
       } else if (productData.googlePlacesStore) {
         // Scenario 2: Create store from Google Places data
-        const googleStoreData = productData.googlePlacesStore;
+        const googleStoreData: GooglePlacesStoreDataDto =
+          typeof productData.googlePlacesStore === 'string'
+            ? (JSON.parse(
+                productData.googlePlacesStore,
+              ) as GooglePlacesStoreDataDto)
+            : productData.googlePlacesStore;
 
         // Use the StoreService to create the store from Google Places data
         const createdStore =
@@ -1147,18 +1177,21 @@ export class ProductService {
     maxDistanceKm: number,
   ): Promise<Price[]> {
     try {
+      this.logger.debug(
+        `getPricesFromNearbyStores: userLatitude=${latitude}, userLongitude=${longitude}`,
+      );
       // Use PostgreSQL's Earth extension or a simpler calculation
       // For now, let's use a basic bounding box approach
       const earthRadiusKm = 6371;
       const latDelta = (maxDistanceKm / earthRadiusKm) * (180 / Math.PI);
       const lonDelta =
         ((maxDistanceKm / earthRadiusKm) * (180 / Math.PI)) /
-        Math.cos((latitude * Math.PI) / 180);
+        Math.cos((Number(latitude) * Math.PI) / 180);
 
-      const minLat = latitude - latDelta;
-      const maxLat = latitude + latDelta;
-      const minLon = longitude - lonDelta;
-      const maxLon = longitude + lonDelta;
+      const minLat = Number(latitude) - Number(latDelta);
+      const maxLat = Number(latitude) + Number(latDelta);
+      const minLon = Number(longitude) - Number(lonDelta);
+      const maxLon = Number(longitude) + Number(lonDelta);
 
       this.logger.log(
         `Searching for prices near location (${latitude}, ${longitude}) within ${maxDistanceKm}km`,
@@ -1204,20 +1237,31 @@ export class ProductService {
   private mapProductToEnhancedResponse(
     product: Product,
     prices: Price[],
+    userLatitude?: number,
+    userLongitude?: number,
   ): EnhancedProductResponseDto {
-    const priceInfos: PriceInfoDto[] = prices.map((price) => ({
-      priceSk: price.priceSk,
-      price: Number(price.price),
-      currency: price.currency || 'CAD',
-      recordedAt: price.recordedAt,
-      creditScore: price.creditScore ? Number(price.creditScore) : undefined,
-      verifiedCount: price.verifiedCount || undefined,
-      isDiscount: price.isDiscount,
-      originalPrice: price.originalPrice
-        ? Number(price.originalPrice)
-        : undefined,
-      store: this.mapStoreToDto(price.store!),
-    }));
+    const priceInfos: PriceInfoDto[] = prices
+      .filter((price) => price.store) // Filter out prices without an associated store
+      .map((price) => {
+        this.logger.debug(
+          `Mapping price for store: ${price.store!.name}, latitude: ${price.store!.latitude}, longitude: ${price.store!.longitude}`,
+        );
+        return {
+          priceSk: price.priceSk,
+          price: Number(price.price),
+          currency: price.currency || 'CAD',
+          recordedAt: price.recordedAt,
+          creditScore: price.creditScore
+            ? Number(price.creditScore)
+            : undefined,
+          verifiedCount: price.verifiedCount || undefined,
+          isDiscount: price.isDiscount,
+          originalPrice: price.originalPrice
+            ? Number(price.originalPrice)
+            : undefined,
+          store: this.mapStoreToDto(price.store!, userLatitude, userLongitude),
+        };
+      });
 
     // Find the lowest price
     const lowestPrice = priceInfos.reduce(
@@ -1249,8 +1293,40 @@ export class ProductService {
     };
   }
 
-  private mapStoreToDto(store: Store): StoreInfoDto {
-    return {
+  private calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    this.logger.debug(
+      `Calculating distance between (${lat1}, ${lon1}) and (${lat2}, ${lon2})`,
+    );
+    const R = 6371; // Radius of Earth in kilometers
+    const dLat = this.deg2rad(lat2 - lat1);
+    const dLon = this.deg2rad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(this.deg2rad(lat1)) *
+        Math.cos(this.deg2rad(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+    this.logger.debug(`Calculated distance: ${distance} km`);
+    return distance;
+  }
+
+  private deg2rad(deg: number): number {
+    return deg * (Math.PI / 180);
+  }
+
+  private mapStoreToDto(
+    store: Store,
+    userLatitude?: number,
+    userLongitude?: number,
+  ): StoreInfoDto {
+    const storeDto: StoreInfoDto = {
       storeSk: store.storeSk,
       name: store.name,
       fullAddress: store.fullAddress || undefined,
@@ -1259,6 +1335,22 @@ export class ProductService {
       latitude: store.latitude || undefined,
       longitude: store.longitude || undefined,
     };
+
+    if (
+      userLatitude !== undefined &&
+      userLongitude !== undefined &&
+      store.latitude !== undefined &&
+      store.longitude !== undefined
+    ) {
+      storeDto.distance = this.calculateDistance(
+        userLatitude,
+        userLongitude,
+        store.latitude,
+        store.longitude,
+      );
+    }
+
+    return storeDto;
   }
 
   private isValidUUID(uuid: string): boolean {

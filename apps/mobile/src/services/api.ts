@@ -1,17 +1,15 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import { EXPO_PUBLIC_API_URL, EXPO_PUBLIC_API_TIMEOUT } from '@env';
 
 // API configuration
-// @ts-ignore - Expo environment variables are available at runtime
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.11:3006';
-// @ts-ignore - Expo environment variables are available at runtime
-const API_TIMEOUT = parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '10000', 10);
+const API_BASE_URL = EXPO_PUBLIC_API_URL || 'http://10.0.0.183:3006';
+const API_TIMEOUT = parseInt(EXPO_PUBLIC_API_TIMEOUT || '60000', 10);
 
-// Debug environment variables (comment out in production)
-// console.log('🔧 API Configuration:', {
-//   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
-//   API_BASE_URL,
-//   API_TIMEOUT,
-// });
+console.log('🔗 API Configuration:', {
+  url: API_BASE_URL,
+  timeout: API_TIMEOUT
+});
+
 
 class ApiClient {
   private client: AxiosInstance;
@@ -28,13 +26,6 @@ class ApiClient {
     // Request interceptor for authentication
     this.client.interceptors.request.use(
       (config) => {
-        // Debug logging (comment out in production)
-        // console.log('🚀 API Request:', {
-        //   method: config.method?.toUpperCase(),
-        //   url: config.url,
-        //   baseURL: config.baseURL,
-        //   fullUrl: `${config.baseURL}${config.url}`,
-        // });
         
         if (config.data instanceof FormData) {
           delete config.headers['Content-Type'];
@@ -55,12 +46,6 @@ class ApiClient {
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => {
-        // Debug logging (comment out in production)
-        // console.log('✅ API Response:', {
-        //   status: response.status,
-        //   url: response.config.url,
-        //   method: response.config.method?.toUpperCase(),
-        // });
         return response;
       },
       (error) => {

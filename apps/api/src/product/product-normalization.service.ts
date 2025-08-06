@@ -1,14 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { NormalizedProduct } from '../entities/normalized-product.entity';
-import { OpenAIService } from './openai.service';
-import { StorePatternMatcher } from './store-patterns.config';
-import { VectorEmbeddingService } from './vector-embedding.service';
 import {
   findGroceryChainByName,
   getStoreNormalizationCriteria,
 } from '../constants';
+import { NormalizedProduct } from '../entities/normalized-product.entity';
+import { OpenAIService } from './openai.service';
+import { StorePatternMatcher } from './store-patterns.config';
+import { VectorEmbeddingService } from './vector-embedding.service';
 
 export interface ParsedPrice {
   amount: number;
@@ -231,12 +231,53 @@ export class ProductNormalizationService {
 
   // Fee patterns (additional charges, not discounts)
   private readonly feePatterns = [
-    /^ECO\s*FEE/i, // ECO FEE BAT
+    /^ECO\s*FEE/i, // ECO FEE BAT, ECO FEE
     /^ENV(?:IRO)?\s*FEE/i, // ENVIRONMENTAL FEE, ENVIRO FEE
-    /^DEPOSIT/i, // BOTTLE DEPOSIT
+    /^(BOTTLE\s*)?DEPOSIT/i, // DEPOSIT, BOTTLE DEPOSIT
     /^RECYCLING\s*FEE/i, // RECYCLING FEE
     /^BAG\s*FEE/i, // BAG FEE
     /^SERVICE\s*FEE/i, // SERVICE FEE
+  ];
+
+  // Non-product patterns (receipt metadata, store fixtures, etc.)
+  private readonly nonProductPatterns = [
+    // Receipt metadata
+    /^CUSTOMER\s*COPY/i, // CUSTOMER COPY
+    /^MERCHANT\s*COPY/i, // MERCHANT COPY
+    /^STORE\s*COPY/i, // STORE COPY
+    /^RECEIPT\s*(#|NO|NUMBER)/i, // RECEIPT #, RECEIPT NO
+    /^TRANSACTION\s*(#|NO|ID)/i, // TRANSACTION #
+    /^CASHIER\s*(#|NO|ID)/i, // CASHIER #
+    /^REGISTER\s*(#|NO)/i, // REGISTER #
+    /^TILL\s*(#|NO)/i, // TILL #
+    /^THANK\s*YOU/i, // THANK YOU
+    /^HAVE\s*A\s*(NICE|GREAT)\s*DAY/i, // HAVE A NICE DAY
+    /^PLEASE\s*COME\s*AGAIN/i, // PLEASE COME AGAIN
+    /^SURVEY/i, // SURVEY
+
+    // Store fixtures and infrastructure
+    /^SHOPPING\s*CART/i, // SHOPPING CART
+    /^BASKET/i, // BASKET (unless clearly food product)
+    /^HANGAR/i, // HANGAR
+    /^DISPLAY/i, // DISPLAY
+    /^SHELF/i, // SHELF
+    /^FIXTURE/i, // FIXTURE
+
+    // Partial/incomplete product names that are too generic
+    /^[A-Z]{1,3}$/, // Single letters or very short abbreviations (A, B, AB, etc.)
+    /^\d+$/, // Pure numbers
+    /^\.+$/, // Just dots
+    /^-+$/, // Just dashes
+
+    // Common OCR errors
+    /^[^A-Z0-9\s]+$/, // Only special characters
+    /^\s*$/, // Only whitespace
+
+    // Store operational items
+    /^TRAINING\s*MODE/i, // TRAINING MODE
+    /^TEST\s*TRANSACTION/i, // TEST TRANSACTION
+    /^VOID\s*RECEIPT/i, // VOID RECEIPT
+    /^NO\s*SALE/i, // NO SALE
   ];
 
   private readonly adjustmentPatterns = [
@@ -277,7 +318,23 @@ export class ProductNormalizationService {
     // Step 1: Clean the raw name (with store context)
     const cleanedName = this.cleanRawName(rawName, merchant);
 
-    // Step 2: Check if it's a discount, adjustment, or fee line (with store-specific patterns)
+    // Step 2: Check if it's a non-product item first (highest priority filter)
+    const isNonProduct = this.isNonProduct(cleanedName);
+    if (isNonProduct) {
+      this.logger.debug(`Skipping non-product item: ${rawName}`);
+      // Return a special result indicating this should be ignored
+      return {
+        normalizedName: cleanedName,
+        confidenceScore: 0.0, // Zero confidence to indicate this shouldn't be stored
+        isDiscount: false,
+        isAdjustment: false,
+        isFee: false,
+        itemCode,
+        method: 'non_product_filtered',
+      };
+    }
+
+    // Step 3: Check if it's a discount, adjustment, or fee line (with store-specific patterns)
     const isDiscount = this.isDiscountLine(cleanedName, merchant);
     const isAdjustment = this.isAdjustmentLine(cleanedName);
     const isFee = this.isFee(cleanedName);
@@ -285,7 +342,7 @@ export class ProductNormalizationService {
     if (isDiscount || isAdjustment || isFee) {
       const result: NormalizationResult = {
         normalizedName: cleanedName,
-        confidenceScore: 1.0,
+        confidenceScore: isFee ? 0.0 : 1.0, // Don't store fees as products (set confidence to 0)
         isDiscount,
         isAdjustment,
         isFee,
@@ -297,12 +354,16 @@ export class ProductNormalizationService {
             : 'fee_detected',
       };
 
-      // Store the discount/adjustment mapping with embedding
-      await this.storeNormalizationResult(merchant, rawName, result);
+      // Store discounts and adjustments, but skip storing fees as products
+      if (!isFee) {
+        await this.storeNormalizationResult(merchant, rawName, result);
+      } else {
+        this.logger.debug(`Fee detected but not stored as product: ${rawName}`);
+      }
       return result;
     }
 
-    // Step 3: Check for exact match
+    // Step 4: Check for exact match
     const exactMatch = await this.findExactMatch(rawName, merchant);
     if (exactMatch) {
       await this.updateMatchingStatistics(exactMatch);
@@ -311,7 +372,7 @@ export class ProductNormalizationService {
       return result;
     }
 
-    // Step 4: Check for similar products using embeddings
+    // Step 5: Check for similar products using embeddings
     try {
       const embeddingSimilarProducts =
         await this.vectorEmbeddingService.findSimilarProductsEnhanced({
@@ -358,7 +419,7 @@ export class ProductNormalizationService {
       // Continue with other methods if embedding search fails
     }
 
-    // Step 5: Use AI normalization if enabled
+    // Step 6: Use AI normalization if enabled
     if (useAI) {
       const aiResult = await this.callLLMNormalization(
         cleanedName,
@@ -370,7 +431,7 @@ export class ProductNormalizationService {
       return aiResult;
     }
 
-    // Step 6: Fallback - return cleaned name with low confidence
+    // Step 7: Fallback - return cleaned name with low confidence
     const fallbackResult: NormalizationResult = {
       normalizedName: cleanedName,
       confidenceScore: 0.3,
@@ -530,6 +591,13 @@ export class ProductNormalizationService {
    */
   isFee(cleanedName: string): boolean {
     return this.feePatterns.some((pattern) => pattern.test(cleanedName));
+  }
+
+  /**
+   * Check if the line represents a non-product item (receipt metadata, store fixtures, etc.)
+   */
+  isNonProduct(cleanedName: string): boolean {
+    return this.nonProductPatterns.some((pattern) => pattern.test(cleanedName));
   }
 
   /**
@@ -940,13 +1008,68 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
   /**
    * Store normalization result in the database with embedding
+   * Skip storage for non-product items (confidence score 0.0)
    */
   private async storeNormalizationResult(
     merchant: string,
     rawName: string,
     result: NormalizationResult,
   ): Promise<NormalizedProduct> {
-    // Check for comprehensive duplicates before attempting to save
+    // Skip storing non-product items and fees
+    if (
+      (result.confidenceScore === 0.0 &&
+        result.method === 'non_product_filtered') ||
+      (result.confidenceScore === 0.0 && result.method === 'fee_detected')
+    ) {
+      this.logger.debug(`Skipping storage for non-product item: ${rawName}`);
+      // Create a dummy normalized product object to satisfy the return type
+      // This won't be saved to the database
+      return this.normalizedProductRepository.create({
+        rawName,
+        merchant,
+        itemCode: result.itemCode,
+        normalizedName: result.normalizedName,
+        brand: result.brand,
+        category: result.category,
+        confidenceScore: result.confidenceScore,
+        embedding: undefined,
+        isDiscount: result.isDiscount,
+        isAdjustment: result.isAdjustment,
+        matchCount: 0, // Zero match count for non-products
+        lastMatchedAt: new Date(),
+      });
+    }
+    // First check for exact match to avoid duplicate key errors
+    const exactMatch = await this.findExactMatch(rawName, merchant);
+    if (exactMatch) {
+      this.logger.debug(
+        `Exact match found for ${rawName} from ${merchant}. Using existing record.`,
+      );
+
+      // IMPORTANT: Re-validate if this should be a discount/adjustment based on current rules
+      // This handles cases where items were previously saved incorrectly as products
+      const cleanedName = this.cleanRawName(rawName);
+      const isDiscount = this.isDiscountLine(cleanedName, merchant);
+      const isAdjustment = this.isAdjustmentLine(cleanedName);
+
+      if (isDiscount || isAdjustment) {
+        this.logger.debug(
+          `Existing record for ${rawName} should be a ${isDiscount ? 'discount' : 'adjustment'}. Updating database record.`,
+        );
+        // Update the existing record's flags in database and return it
+        exactMatch.isDiscount = isDiscount;
+        exactMatch.isAdjustment = isAdjustment;
+        await this.normalizedProductRepository.save(exactMatch);
+        await this.updateMatchingStatistics(exactMatch);
+        return exactMatch;
+      }
+
+      // Update match statistics and return existing product (unchanged)
+      await this.updateMatchingStatistics(exactMatch);
+      return exactMatch;
+    }
+
+    // Check for comprehensive duplicates (similar products)
     const existingProduct = await this.findComprehensiveDuplicate(
       merchant,
       rawName,
@@ -987,15 +1110,13 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
 
       return savedProduct;
     } catch (error: any) {
-      // Handle duplicate key constraint violation as fallback
+      // Handle ANY duplicate key error (PostgreSQL error code 23505)
+      // Don't rely on specific constraint names since they can change
       /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-      if (
-        error.code === '23505' &&
-        error.constraint === 'UQ_raw_name_merchant'
-      ) {
+      if (error.code === '23505') {
         /* eslint-enable @typescript-eslint/no-unsafe-member-access */
         this.logger.debug(
-          `Product already exists: ${rawName} from ${merchant}. Retrieving existing record.`,
+          `Concurrent insert detected for ${rawName} from ${merchant}. Retrieving existing record.`,
         );
 
         // Another request created this product concurrently, retrieve the existing one
@@ -1008,6 +1129,13 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
           await this.updateMatchingStatistics(concurrentExistingProduct);
           return concurrentExistingProduct;
         }
+
+        // If we still can't find it, log warning but don't crash
+        this.logger.warn(
+          `Could not find product after duplicate key error: ${rawName} from ${merchant}`,
+        );
+        // Return a minimal product object to prevent crash
+        return normalizedProduct;
       }
 
       // Re-throw other errors
@@ -1789,6 +1917,7 @@ ${this.getStoreSpecificInstructions(storePattern.storeId)}`;
     }
 
     // Strategy 2: ECO FEE pattern handling (e.g., "ECO FEE BAT" links to battery products)
+    // Note: "ECO FEE BAT" is treated as a product name, not an environmental fee
     const ecoFeeMatch = fee.normalizedName.match(/^ECO\s*FEE\s*(.+)$/i);
     if (ecoFeeMatch) {
       const feeType = ecoFeeMatch[1].trim().toUpperCase();

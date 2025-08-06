@@ -100,7 +100,8 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT || 3006;
-  await app.listen(port);
+  const host = process.env.HOST || '0.0.0.0';
+  await app.listen(port, host);
 
   console.log(`🚀 Beezly API is running on: http://localhost:${port}`);
   console.log(`📚 API Documentation: http://localhost:${port}/api-docs`);
