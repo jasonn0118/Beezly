@@ -149,8 +149,11 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
               <Text style={styles.productBrand}>{productInfo.brandName}</Text>
               <Text style={styles.productName}>{productInfo.name}</Text>
               <Text style={styles.productCategory}>{productInfo.categoryPath}</Text>
-              <Text style={styles.productCategory}>{productInfo.barcode}</Text>
+              <Text style={styles.productBarcode}>{productInfo.barcode}</Text>
               {/* <Text style={styles.pointsText}>Points Earned: <Text style={styles.pointsValue}>+ 10 P</Text></Text> */}
+            </View>
+            <View style={styles.chevronContainer}>
+              <FontAwesome name="chevron-right" size={20} color="#6c757d" />
             </View>
           </View>
         </TouchableOpacity>
@@ -273,6 +276,11 @@ const styles = StyleSheet.create({
         marginLeft: 16,
         flex: 1,
     },
+    chevronContainer: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingLeft: 10,
+    },
     productBrand: {
         color: '#6c757d',
         fontSize: 14,
@@ -287,6 +295,11 @@ const styles = StyleSheet.create({
         color: '#6c757d',
         fontSize: 14,
         marginTop: 4,
+    },
+    productBarcode: {
+        color: '#adb5bd',
+        fontSize: 12,
+        marginTop: 8,
     },
     pointsText: {
         fontSize: 14,

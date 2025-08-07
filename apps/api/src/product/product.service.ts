@@ -147,6 +147,8 @@ export class ProductService {
       product.barcodeType = productData.barcode_type;
     if (productData.image_url !== undefined)
       product.imageUrl = productData.image_url;
+    if (productData.brandName !== undefined)
+      product.brandName = productData.brandName;
 
     // ✅ Update category by ID (FK)
     if (productData.category !== undefined) {
@@ -160,9 +162,10 @@ export class ProductService {
             `Category with ID ${productData.category} not found`,
           );
         }
-
+        product.categoryEntity = category;
         product.category = category.id;
       } else {
+        product.categoryEntity = undefined;
         product.category = undefined;
       }
     }
