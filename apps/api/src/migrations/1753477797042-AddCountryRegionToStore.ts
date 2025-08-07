@@ -12,6 +12,8 @@ export class AddCountryRegionToStore1753477797042
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "Store" DROP COLUMN IF EXISTS "country_region"`);
+    await queryRunner.query(
+      `ALTER TABLE "Store" DROP COLUMN IF EXISTS "country_region"`,
+    );
   }
 }

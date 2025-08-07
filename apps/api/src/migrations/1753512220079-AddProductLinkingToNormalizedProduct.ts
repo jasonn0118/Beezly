@@ -7,15 +7,15 @@ export class AddProductLinkingToNormalizedProduct1753512220079
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Check if columns already exist before adding them
-    const columns = await queryRunner.query(`
+    const columns = (await queryRunner.query(`
       SELECT column_name 
       FROM information_schema.columns 
       WHERE table_name = 'normalized_products' 
       AND column_name IN ('linked_product_sk', 'linking_confidence', 'linking_method', 'linked_at')
-    `);
-    
-    const existingColumns = columns.map((row: any) => row.column_name);
-    
+    `)) as { column_name: string }[];
+
+    const existingColumns = columns.map((row) => row.column_name);
+
     // Add product linking columns to normalized_products table (only if they don't exist)
     if (existingColumns.length === 0) {
       await queryRunner.query(`
@@ -28,26 +28,34 @@ export class AddProductLinkingToNormalizedProduct1753512220079
     } else {
       // Add columns individually if some already exist
       if (!existingColumns.includes('linked_product_sk')) {
-        await queryRunner.query(`ALTER TABLE "normalized_products" ADD COLUMN "linked_product_sk" uuid`);
+        await queryRunner.query(
+          `ALTER TABLE "normalized_products" ADD COLUMN "linked_product_sk" uuid`,
+        );
       }
       if (!existingColumns.includes('linking_confidence')) {
-        await queryRunner.query(`ALTER TABLE "normalized_products" ADD COLUMN "linking_confidence" decimal(5,4)`);
+        await queryRunner.query(
+          `ALTER TABLE "normalized_products" ADD COLUMN "linking_confidence" decimal(5,4)`,
+        );
       }
       if (!existingColumns.includes('linking_method')) {
-        await queryRunner.query(`ALTER TABLE "normalized_products" ADD COLUMN "linking_method" varchar(50)`);
+        await queryRunner.query(
+          `ALTER TABLE "normalized_products" ADD COLUMN "linking_method" varchar(50)`,
+        );
       }
       if (!existingColumns.includes('linked_at')) {
-        await queryRunner.query(`ALTER TABLE "normalized_products" ADD COLUMN "linked_at" timestamp with time zone`);
+        await queryRunner.query(
+          `ALTER TABLE "normalized_products" ADD COLUMN "linked_at" timestamp with time zone`,
+        );
       }
     }
 
     // Check if foreign key constraint exists
-    const constraintExists = await queryRunner.query(`
+    const constraintExists = (await queryRunner.query(`
       SELECT constraint_name 
       FROM information_schema.table_constraints 
       WHERE table_name = 'normalized_products' 
       AND constraint_name = 'FK_normalized_products_linked_product'
-    `);
+    `)) as { constraint_name: string }[];
 
     // Add foreign key constraint only if it doesn't exist
     if (constraintExists.length === 0) {

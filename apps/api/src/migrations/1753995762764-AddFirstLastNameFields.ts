@@ -13,11 +13,11 @@ export class AddFirstLastNameFields1753995762764 implements MigrationInterface {
     );
 
     // Check if display_name column exists before trying to migrate data
-    const displayNameExists = await queryRunner.query(`
+    const displayNameExists = (await queryRunner.query(`
       SELECT column_name 
       FROM information_schema.columns 
       WHERE table_name = 'User' AND column_name = 'display_name'
-    `);
+    `)) as { column_name: string }[];
 
     if (displayNameExists.length > 0) {
       // Migrate existing displayName data to first_name and last_name
@@ -38,7 +38,9 @@ export class AddFirstLastNameFields1753995762764 implements MigrationInterface {
       `);
 
       // Remove the old display_name column
-      await queryRunner.query(`ALTER TABLE "User" DROP COLUMN IF EXISTS "display_name"`);
+      await queryRunner.query(
+        `ALTER TABLE "User" DROP COLUMN IF EXISTS "display_name"`,
+      );
     }
   }
 
@@ -64,7 +66,11 @@ export class AddFirstLastNameFields1753995762764 implements MigrationInterface {
     `);
 
     // Drop the new columns if they exist
-    await queryRunner.query(`ALTER TABLE "User" DROP COLUMN IF EXISTS "last_name"`);
-    await queryRunner.query(`ALTER TABLE "User" DROP COLUMN IF EXISTS "first_name"`);
+    await queryRunner.query(
+      `ALTER TABLE "User" DROP COLUMN IF EXISTS "last_name"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "User" DROP COLUMN IF EXISTS "first_name"`,
+    );
   }
 }
