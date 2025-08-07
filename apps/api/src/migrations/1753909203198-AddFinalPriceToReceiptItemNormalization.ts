@@ -6,6 +6,44 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
   name = 'AddFinalPriceToReceiptItemNormalization1753909203198';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Helper function to safely create index if it doesn't exist
+    const createIndexIfNotExists = async (
+      indexQuery: string,
+      indexName: string,
+    ) => {
+      const indexExists = (await queryRunner.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM pg_indexes 
+          WHERE schemaname = 'public' 
+          AND indexname = '${indexName}'
+        );
+      `)) as [{ exists: boolean }];
+
+      if (!indexExists[0]?.exists) {
+        await queryRunner.query(indexQuery);
+      }
+    };
+
+    // Helper function to safely add constraint if it doesn't exist
+    const addConstraintIfNotExists = async (
+      constraintQuery: string,
+      tableName: string,
+      constraintName: string,
+    ) => {
+      const constraintExists = (await queryRunner.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE table_schema = 'public' 
+          AND table_name = '${tableName}'
+          AND constraint_name = '${constraintName}'
+        );
+      `)) as [{ exists: boolean }];
+
+      if (!constraintExists[0]?.exists) {
+        await queryRunner.query(constraintQuery);
+      }
+    };
+
     // Helper function to safely drop index if it exists
     const dropIndexIfExists = async (indexName: string) => {
       const indexExists = (await queryRunner.query(`
@@ -82,9 +120,22 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
       'CHK_confidence_score_range',
     );
     await dropConstraintIfExists('normalized_products', 'UQ_raw_name_merchant');
-    await queryRunner.query(
-      `ALTER TABLE "receipt_item_normalizations" ADD "final_price" numeric(10,2)`,
-    );
+
+    // Check if final_price column exists before adding it
+    const finalPriceExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'receipt_item_normalizations'
+        AND column_name = 'final_price'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (!finalPriceExists[0]?.exists) {
+      await queryRunner.query(
+        `ALTER TABLE "receipt_item_normalizations" ADD "final_price" numeric(10,2)`,
+      );
+    }
     await queryRunner.query(
       `COMMENT ON COLUMN "receipt_item_normalizations"."final_price" IS 'Final price after applying discounts or fees'`,
     );
@@ -100,12 +151,32 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
     await queryRunner.query(
       `COMMENT ON COLUMN "receipt_item_normalizations"."similarity_score" IS 'Similarity score if using embedding-based matching'`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" DROP COLUMN "embedding"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" ADD "embedding" text`,
-    );
+
+    // Check if embedding column exists and its type before modifying
+    const embeddingColumn = (await queryRunner.query(`
+      SELECT data_type 
+      FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'normalized_products'
+      AND column_name = 'embedding'
+    `)) as { data_type: string }[];
+
+    if (embeddingColumn.length > 0) {
+      // Only modify if it's not already text type
+      if (embeddingColumn[0].data_type !== 'text') {
+        await queryRunner.query(
+          `ALTER TABLE "normalized_products" DROP COLUMN "embedding"`,
+        );
+        await queryRunner.query(
+          `ALTER TABLE "normalized_products" ADD "embedding" text`,
+        );
+      }
+    } else {
+      // Column doesn't exist, add it
+      await queryRunner.query(
+        `ALTER TABLE "normalized_products" ADD "embedding" text`,
+      );
+    }
     await queryRunner.query(
       `ALTER TABLE "normalized_products" ALTER COLUMN "last_matched_at" SET NOT NULL`,
     );
@@ -124,18 +195,59 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
     await queryRunner.query(
       `ALTER TABLE "normalized_products" ALTER COLUMN "updated_at" SET DEFAULT now()`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" DROP COLUMN "linked_product_sk"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" ADD "linked_product_sk" integer`,
-    );
-    await queryRunner.query(
-      `ALTER TYPE "public"."unprocessed_product_status_enum" RENAME TO "unprocessed_product_status_enum_old"`,
-    );
-    await queryRunner.query(
-      `CREATE TYPE "public"."unprocessed_products_status_enum" AS ENUM('pending_review', 'under_review', 'approved_for_creation', 'rejected', 'processed')`,
-    );
+
+    // Check if linked_product_sk column exists and its type before modifying
+    const linkedProductColumn = (await queryRunner.query(`
+      SELECT data_type 
+      FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'normalized_products'
+      AND column_name = 'linked_product_sk'
+    `)) as { data_type: string }[];
+
+    if (linkedProductColumn.length > 0) {
+      // Only modify if it's not already integer type
+      if (linkedProductColumn[0].data_type !== 'integer') {
+        await queryRunner.query(
+          `ALTER TABLE "normalized_products" DROP COLUMN "linked_product_sk"`,
+        );
+        await queryRunner.query(
+          `ALTER TABLE "normalized_products" ADD "linked_product_sk" integer`,
+        );
+      }
+    } else {
+      // Column doesn't exist, add it
+      await queryRunner.query(
+        `ALTER TABLE "normalized_products" ADD "linked_product_sk" integer`,
+      );
+    }
+    // Check if the enum types exist and need to be modified
+    const statusEnumExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_type 
+        WHERE typname = 'unprocessed_product_status_enum'
+      );
+    `)) as [{ exists: boolean }];
+
+    const newStatusEnumExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_type 
+        WHERE typname = 'unprocessed_products_status_enum'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (statusEnumExists[0]?.exists && !newStatusEnumExists[0]?.exists) {
+      await queryRunner.query(
+        `ALTER TYPE "public"."unprocessed_product_status_enum" RENAME TO "unprocessed_product_status_enum_old"`,
+      );
+      await queryRunner.query(
+        `CREATE TYPE "public"."unprocessed_products_status_enum" AS ENUM('pending_review', 'under_review', 'approved_for_creation', 'rejected', 'processed')`,
+      );
+    } else if (!newStatusEnumExists[0]?.exists) {
+      await queryRunner.query(
+        `CREATE TYPE "public"."unprocessed_products_status_enum" AS ENUM('pending_review', 'under_review', 'approved_for_creation', 'rejected', 'processed')`,
+      );
+    }
     await queryRunner.query(
       `ALTER TABLE "unprocessed_products" ALTER COLUMN "status" DROP DEFAULT`,
     );
@@ -145,56 +257,119 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
     await queryRunner.query(
       `ALTER TABLE "unprocessed_products" ALTER COLUMN "status" SET DEFAULT 'pending_review'`,
     );
-    await queryRunner.query(
-      `DROP TYPE "public"."unprocessed_product_status_enum_old"`,
-    );
-    await queryRunner.query(
-      `ALTER TYPE "public"."unprocessed_product_reason_enum" RENAME TO "unprocessed_product_reason_enum_old"`,
-    );
-    await queryRunner.query(
-      `CREATE TYPE "public"."unprocessed_products_reason_enum" AS ENUM('no_barcode_match', 'no_embedding_match', 'low_similarity_score', 'multiple_matches_found', 'user_created_new_item', 'no_suitable_match_found')`,
-    );
+    // Only drop the old enum if it exists
+    const oldStatusEnumExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_type 
+        WHERE typname = 'unprocessed_product_status_enum_old'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (oldStatusEnumExists[0]?.exists) {
+      await queryRunner.query(
+        `DROP TYPE "public"."unprocessed_product_status_enum_old"`,
+      );
+    }
+
+    // Handle reason enum similar to status enum
+    const reasonEnumExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_type 
+        WHERE typname = 'unprocessed_product_reason_enum'
+      );
+    `)) as [{ exists: boolean }];
+
+    const newReasonEnumExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_type 
+        WHERE typname = 'unprocessed_products_reason_enum'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (reasonEnumExists[0]?.exists && !newReasonEnumExists[0]?.exists) {
+      await queryRunner.query(
+        `ALTER TYPE "public"."unprocessed_product_reason_enum" RENAME TO "unprocessed_product_reason_enum_old"`,
+      );
+      await queryRunner.query(
+        `CREATE TYPE "public"."unprocessed_products_reason_enum" AS ENUM('no_barcode_match', 'no_embedding_match', 'low_similarity_score', 'multiple_matches_found', 'user_created_new_item', 'no_suitable_match_found')`,
+      );
+    } else if (!newReasonEnumExists[0]?.exists) {
+      await queryRunner.query(
+        `CREATE TYPE "public"."unprocessed_products_reason_enum" AS ENUM('no_barcode_match', 'no_embedding_match', 'low_similarity_score', 'multiple_matches_found', 'user_created_new_item', 'no_suitable_match_found')`,
+      );
+    }
     await queryRunner.query(
       `ALTER TABLE "unprocessed_products" ALTER COLUMN "reason" TYPE "public"."unprocessed_products_reason_enum" USING "reason"::"text"::"public"."unprocessed_products_reason_enum"`,
     );
-    await queryRunner.query(
-      `DROP TYPE "public"."unprocessed_product_reason_enum_old"`,
+
+    // Only drop the old reason enum if it exists
+    const oldReasonEnumExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_type 
+        WHERE typname = 'unprocessed_product_reason_enum_old'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (oldReasonEnumExists[0]?.exists) {
+      await queryRunner.query(
+        `DROP TYPE "public"."unprocessed_product_reason_enum_old"`,
+      );
+    }
+    // Create indexes safely
+    await createIndexIfNotExists(
+      `CREATE INDEX "IDX_23de44dbb43853f1b14d2418f5" ON "receipt_item_normalizations" ("normalized_product_sk")`,
+      'IDX_23de44dbb43853f1b14d2418f5',
     );
-    await queryRunner.query(
-      `CREATE INDEX "IDX_23de44dbb43853f1b14d2418f5" ON "receipt_item_normalizations" ("normalized_product_sk") `,
+    await createIndexIfNotExists(
+      `CREATE INDEX "IDX_10b4ad9461a10c3efdae3e7798" ON "receipt_item_normalizations" ("receipt_item_sk")`,
+      'IDX_10b4ad9461a10c3efdae3e7798',
     );
-    await queryRunner.query(
-      `CREATE INDEX "IDX_10b4ad9461a10c3efdae3e7798" ON "receipt_item_normalizations" ("receipt_item_sk") `,
+    await createIndexIfNotExists(
+      `CREATE UNIQUE INDEX "IDX_055fedcd8632c4b861f017b637" ON "receipt_item_normalizations" ("receipt_item_sk", "normalized_product_sk")`,
+      'IDX_055fedcd8632c4b861f017b637',
     );
-    await queryRunner.query(
-      `CREATE UNIQUE INDEX "IDX_055fedcd8632c4b861f017b637" ON "receipt_item_normalizations" ("receipt_item_sk", "normalized_product_sk") `,
+    await createIndexIfNotExists(
+      `CREATE UNIQUE INDEX "IDX_ccd63d0fe22190bef5fa2ad73f" ON "normalized_products" ("raw_name", "merchant")`,
+      'IDX_ccd63d0fe22190bef5fa2ad73f',
     );
-    await queryRunner.query(
-      `CREATE UNIQUE INDEX "IDX_ccd63d0fe22190bef5fa2ad73f" ON "normalized_products" ("raw_name", "merchant") `,
+    await createIndexIfNotExists(
+      `CREATE INDEX "IDX_2be41c838a5d8ccbadb33f9e7d" ON "unprocessed_products" ("merchant")`,
+      'IDX_2be41c838a5d8ccbadb33f9e7d',
     );
-    await queryRunner.query(
-      `CREATE INDEX "IDX_2be41c838a5d8ccbadb33f9e7d" ON "unprocessed_products" ("merchant") `,
+    await createIndexIfNotExists(
+      `CREATE INDEX "IDX_8aa4eaa5147c6de344bda3f01d" ON "unprocessed_products" ("reason", "status")`,
+      'IDX_8aa4eaa5147c6de344bda3f01d',
     );
-    await queryRunner.query(
-      `CREATE INDEX "IDX_8aa4eaa5147c6de344bda3f01d" ON "unprocessed_products" ("reason", "status") `,
+    await createIndexIfNotExists(
+      `CREATE INDEX "IDX_05315c0f3d0f2b3d01c2c2b7eb" ON "unprocessed_products" ("status", "created_at")`,
+      'IDX_05315c0f3d0f2b3d01c2c2b7eb',
     );
-    await queryRunner.query(
-      `CREATE INDEX "IDX_05315c0f3d0f2b3d01c2c2b7eb" ON "unprocessed_products" ("status", "created_at") `,
-    );
-    await queryRunner.query(
+
+    // Add constraints safely
+    await addConstraintIfNotExists(
       `ALTER TABLE "normalized_products" ADD CONSTRAINT "CHK_11389528bf377235119bb858db" CHECK ("confidence_score" >= 0 AND "confidence_score" <= 1)`,
+      'normalized_products',
+      'CHK_11389528bf377235119bb858db',
     );
-    await queryRunner.query(
+    await addConstraintIfNotExists(
       `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_10b4ad9461a10c3efdae3e7798e" FOREIGN KEY ("receipt_item_sk") REFERENCES "ReceiptItem"("receiptitem_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
+      'receipt_item_normalizations',
+      'FK_10b4ad9461a10c3efdae3e7798e',
     );
-    await queryRunner.query(
+    await addConstraintIfNotExists(
       `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_23de44dbb43853f1b14d2418f53" FOREIGN KEY ("normalized_product_sk") REFERENCES "normalized_products"("normalized_product_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+      'receipt_item_normalizations',
+      'FK_23de44dbb43853f1b14d2418f53',
     );
-    await queryRunner.query(
+    await addConstraintIfNotExists(
       `ALTER TABLE "normalized_products" ADD CONSTRAINT "FK_8988cdcae12e54d0c88e196ad38" FOREIGN KEY ("linked_product_sk") REFERENCES "Product"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+      'normalized_products',
+      'FK_8988cdcae12e54d0c88e196ad38',
     );
-    await queryRunner.query(
+    await addConstraintIfNotExists(
       `ALTER TABLE "unprocessed_products" ADD CONSTRAINT "FK_f60e47db84d583439510fc7dfcf" FOREIGN KEY ("normalized_product_sk") REFERENCES "normalized_products"("normalized_product_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
+      'unprocessed_products',
+      'FK_f60e47db84d583439510fc7dfcf',
     );
   }
 
