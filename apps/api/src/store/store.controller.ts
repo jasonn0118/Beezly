@@ -208,6 +208,75 @@ export class StoreController {
     return this.storeService.unifiedStoreSearch(params);
   }
 
+  @Post('ocr-suggestions')
+  @ApiOperation({
+    summary: 'Get store suggestions from OCR data',
+    description: `
+    **Get store suggestions based on OCR-extracted merchant name and address**
+    
+    🎯 **Purpose:**
+    - Prevent duplicate store creation from OCR misreads
+    - Provide user with existing store suggestions
+    - Allow manual store selection when confidence is low
+    
+    📊 **Returns:**
+    - List of potential store matches with confidence scores
+    - Sorted by confidence (highest first)
+    - Empty array if no matches found
+    
+    💡 **Use Case:**
+    - After OCR processing, if store not found with high confidence
+    - User sees suggestions and can select correct store
+    - Or user can search for store manually
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Store suggestions with confidence scores',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          store: { $ref: '#/components/schemas/StoreDTO' },
+          confidence: {
+            type: 'number',
+            description: 'Confidence score (0-1)',
+            minimum: 0,
+            maximum: 1,
+          },
+          matchMethod: {
+            type: 'string',
+            description: 'How the match was found',
+            enum: [
+              'exact_name',
+              'fuzzy_name',
+              'postal_code',
+              'address',
+              'city',
+            ],
+          },
+          matchDetails: {
+            type: 'string',
+            description: 'Human-readable explanation of the match',
+          },
+        },
+      },
+    },
+  })
+  async getOcrStoreSuggestions(
+    @Body() ocrData: { merchant: string; store_address?: string },
+  ): Promise<
+    Array<{
+      store: StoreDTO;
+      confidence: number;
+      matchMethod: string;
+      matchDetails?: string;
+    }>
+  > {
+    return this.storeService.getOcrStoreSuggestions(ocrData);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a store by ID' })
   @ApiResponse({

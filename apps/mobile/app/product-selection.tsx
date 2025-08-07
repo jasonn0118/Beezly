@@ -33,7 +33,7 @@ const ProductSelectionScreen = () => {
     const [isSaving, setIsSaving] = useState(false);
 
     const sections = useMemo(() => pendingSelectionProducts.map((product: any, index: number) => ({
-        title: product.name,
+        title: product.normalizedProduct?.normalizedName || product.normalizedProduct?.rawName || 'Unknown Product',
         index: index,
         data: [...product.topMatches, { productSk: NO_MATCH_SK, name: 'None of these match' }],
     })), [pendingSelectionProducts]);
@@ -140,6 +140,7 @@ const ProductSelectionScreen = () => {
                 sections={sections}
                 keyExtractor={(item, index) => item.productSk + index}
                 contentContainerStyle={styles.listContentContainer}
+                stickySectionHeadersEnabled={false}
                 renderItem={({ item, section }) => {
                     const isSelected = selections[section.index]?.productSk === item.productSk;
                     if (item.productSk === NO_MATCH_SK) {
