@@ -44,8 +44,6 @@ export default function StoreSearch({
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
-  console.log('StoreSearch mounted with initialQuery:', initialQuery);
-
   const searchStores = async (query: string) => {
     if (!query || !query.trim()) {
       setStores([]);
@@ -56,17 +54,13 @@ export default function StoreSearch({
     setLoading(true);
     try {
       // In a real app, you might want to get user location for better results
-      console.log('Searching for:', query.trim());
       const response = await StoreService.searchStores({
         query: query.trim(),
         limit: 10,
       });
       
-      console.log('Search response:', response);
-      
       // Ensure response exists and has expected structure
       if (!response) {
-        console.warn('Search response is null/undefined');
         setStores([]);
         setHasSearched(true);
         return;
@@ -76,13 +70,10 @@ export default function StoreSearch({
       const localStores = Array.isArray(response.localStores) ? response.localStores : [];
       const googleStores = Array.isArray(response.googleStores) ? response.googleStores : [];
       const allStores = [...localStores, ...googleStores];
-      
-      console.log('Combined stores:', allStores.length, 'stores found');
       setStores(allStores);
       setHasSearched(true);
     } catch (error) {
       console.error('Store search failed:', error);
-      console.log('Error details:', JSON.stringify(error, null, 2));
       Alert.alert('Search Error', 'Failed to search for stores. Please try again.');
       setStores([]);
       setHasSearched(true);
