@@ -265,8 +265,8 @@ describe('OcrService', () => {
           products_with_discounts: 0,
         },
       };
-      
-      jest
+
+      const mockSpy = jest
         .spyOn(service, 'processReceiptWithNormalization')
         .mockResolvedValue(mockResult);
 
@@ -288,7 +288,7 @@ describe('OcrService', () => {
       );
 
       // Verify the method was called and returned expected results
-      expect(service.processReceiptWithNormalization).toHaveBeenCalledTimes(2);
+      expect(mockSpy).toHaveBeenCalledTimes(2);
       expect(result1).toEqual(mockResult);
       expect(result2).toEqual(mockResult);
     });
