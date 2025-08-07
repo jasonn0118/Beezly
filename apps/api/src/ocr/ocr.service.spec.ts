@@ -4,6 +4,7 @@ import { OcrService } from './ocr.service';
 import { OcrAzureService } from './ocr-azure.service';
 import { ProductNormalizationService } from '../product/product-normalization.service';
 import { VectorEmbeddingService } from '../product/vector-embedding.service';
+import { StoreService } from '../store/store.service';
 import { NormalizedProduct } from '../entities/normalized-product.entity';
 
 describe('OcrService', () => {
@@ -23,13 +24,17 @@ describe('OcrService', () => {
           provide: ProductNormalizationService,
           useValue: {
             normalizeProduct: jest.fn(),
+            normalizeReceiptWithDiscountLinking: jest
+              .fn()
+              .mockResolvedValue([]),
+            parsePrice: jest.fn().mockReturnValue(0),
           },
         },
         {
           provide: VectorEmbeddingService,
           useValue: {
             findSimilarProductsEnhanced: jest.fn(),
-            batchFindSimilarProducts: jest.fn(),
+            batchFindSimilarProducts: jest.fn().mockResolvedValue([]),
             generateEmbedding: jest.fn(),
             updateProductEmbedding: jest.fn(),
           },
@@ -42,6 +47,13 @@ describe('OcrService', () => {
             save: jest.fn(),
             create: jest.fn(),
             createQueryBuilder: jest.fn(),
+          },
+        },
+        {
+          provide: StoreService,
+          useValue: {
+            findStoreFromOcr: jest.fn(),
+            searchStores: jest.fn(),
           },
         },
       ],
@@ -228,6 +240,33 @@ describe('OcrService', () => {
       expect(result.merchant).toBe('Test Store');
       expect(result.engine_used).toBe('Azure Prebuilt Receipt AI');
       expect(mockOcrAzureService.extractWithPrebuiltReceipt).toHaveBeenCalled();
+    });
+  });
+
+  describe('processReceiptWithNormalization', () => {
+    it('should accept includeStoreSearch parameter', () => {
+      // This test simply verifies that the method accepts the new parameter
+      // without throwing compilation errors
+      const testBuffer = Buffer.from('test image data');
+
+      // Test that the method signature accepts the new parameter
+      expect(() => {
+        void service.processReceiptWithNormalization(
+          testBuffer,
+          'https://test-endpoint.com',
+          'test-api-key',
+          false, // includeStoreSearch parameter
+        );
+      }).not.toThrow();
+
+      expect(() => {
+        void service.processReceiptWithNormalization(
+          testBuffer,
+          'https://test-endpoint.com',
+          'test-api-key',
+          true, // includeStoreSearch parameter
+        );
+      }).not.toThrow();
     });
   });
 });

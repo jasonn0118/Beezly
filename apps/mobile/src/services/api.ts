@@ -5,10 +5,6 @@ import { EXPO_PUBLIC_API_URL, EXPO_PUBLIC_API_TIMEOUT } from '@env';
 const API_BASE_URL = EXPO_PUBLIC_API_URL || 'http://10.0.0.183:3006';
 const API_TIMEOUT = parseInt(EXPO_PUBLIC_API_TIMEOUT || '60000', 10);
 
-console.log('🔗 API Configuration:', {
-  url: API_BASE_URL,
-  timeout: API_TIMEOUT
-});
 
 
 class ApiClient {
@@ -38,7 +34,6 @@ class ApiClient {
         return config;
       },
       (error) => {
-        console.error('❌ API Request Error:', error);
         return Promise.reject(error);
       }
     );
@@ -49,14 +44,6 @@ class ApiClient {
         return response;
       },
       (error) => {
-        // Always log errors for debugging
-        console.error('❌ API Response Error:', {
-          message: error.message,
-          code: error.code,
-          status: error.response?.status,
-          url: error.config?.url,
-          method: error.config?.method?.toUpperCase(),
-        });
         
         if (error.response?.status === 401) {
           // Handle unauthorized - redirect to login
@@ -82,7 +69,6 @@ class ApiClient {
   }
 
   private handleUnauthorized(): void {
-    console.warn('Unauthorized access - user needs to login');
     // Clear the cached token
     this.cachedToken = null;
     // The app should handle navigation to login screen

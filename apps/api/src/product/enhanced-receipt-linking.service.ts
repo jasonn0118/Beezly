@@ -9,6 +9,7 @@ import { Receipt } from '../entities/receipt.entity';
 import { ReceiptItem } from '../entities/receipt-item.entity';
 import { ReceiptItemNormalization } from '../entities/receipt-item-normalization.entity';
 import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
+import { StoreService } from '../store/store.service';
 
 interface ReceiptItemRawResult {
   rin_final_price?: string;
@@ -75,6 +76,7 @@ export class EnhancedReceiptLinkingService {
     @InjectRepository(ReceiptItemNormalization)
     private readonly receiptItemNormalizationRepository: Repository<ReceiptItemNormalization>,
     private readonly receiptPriceIntegrationService: ReceiptPriceIntegrationService,
+    private readonly storeService: StoreService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -123,13 +125,16 @@ export class EnhancedReceiptLinkingService {
           `Successfully linked normalized product ${context.normalizedProductSk} to product ${context.linkedProductSk}`,
         );
 
-        // Step 2: Ensure store relationship exists
+        // Step 2: Enhanced store resolution with fuzzy matching
+        let resolvedStore: Store | null = null;
+
         if (context.storeSk) {
-          const storeExists = await manager.findOne(Store, {
+          // If we have a storeSk, validate it exists
+          resolvedStore = await manager.findOne(Store, {
             where: { storeSk: context.storeSk },
           });
 
-          if (storeExists) {
+          if (resolvedStore) {
             result.storeLinked = true;
             result.storeSk = context.storeSk;
             this.logger.debug(
@@ -138,17 +143,24 @@ export class EnhancedReceiptLinkingService {
           } else {
             result.errors.push(`Store not found: ${context.storeSk}`);
           }
-        } else {
-          // Try to find or create store from merchant name
-          const store = await this.findOrCreateStoreFromMerchant(
-            context.merchant,
+        }
+
+        // If no store resolved yet, use enhanced store resolution
+        if (!resolvedStore) {
+          resolvedStore = await this.resolveStoreWithEnhancedMatching(
+            context,
             manager,
           );
-          if (store) {
+
+          if (resolvedStore) {
             result.storeLinked = true;
-            result.storeSk = store.storeSk;
+            result.storeSk = resolvedStore.storeSk;
             this.logger.debug(
-              `Store created/found for merchant ${context.merchant}: ${store.storeSk}`,
+              `Store resolved for merchant ${context.merchant}: ${resolvedStore.storeSk} (${resolvedStore.name})`,
+            );
+          } else {
+            result.errors.push(
+              `Could not resolve store for merchant: ${context.merchant}`,
             );
           }
         }
@@ -334,34 +346,144 @@ export class EnhancedReceiptLinkingService {
 
   // Private helper methods
 
-  private async findOrCreateStoreFromMerchant(
-    merchantName: string,
+  /**
+   * Enhanced store resolution with multiple strategies:
+   * 1. Use StoreService's findOrCreateStoreFromOcr for robust fuzzy matching
+   * 2. Try to extract additional store info from receipt context
+   * 3. Fallback to simple merchant name creation if needed
+   */
+  private async resolveStoreWithEnhancedMatching(
+    context: ProductLinkingContext,
     manager: EntityManager,
   ): Promise<Store | null> {
     try {
-      // Try to find existing store by name (case-insensitive)
-      let store = await manager.findOne(Store, {
-        where: { name: merchantName },
-      });
+      // First, try to get additional store info from the receipt if available
+      let storeAddress: string | undefined;
 
-      if (!store) {
-        // Create new store if it doesn't exist
-        store = manager.create(Store, {
-          name: merchantName,
-          // Add other default store properties as needed
+      if (context.receiptSk) {
+        const receipt = await manager.findOne(Receipt, {
+          where: { receiptSk: context.receiptSk },
+          select: ['storeSk', 'ocrData', 'parsedData'],
         });
 
-        store = await manager.save(store);
-        this.logger.debug(`Created new store: ${merchantName}`);
+        if (receipt) {
+          // If receipt already has a store linked, use it
+          if (receipt.storeSk) {
+            const existingStore = await manager.findOne(Store, {
+              where: { storeSk: receipt.storeSk },
+            });
+            if (existingStore) {
+              this.logger.debug(
+                `Using store from receipt: ${existingStore.name}`,
+              );
+              return existingStore;
+            }
+          }
+
+          // Try to extract store address from OCR data or parsed data
+          // Check ocrData first (more structured)
+          if (receipt.ocrData && typeof receipt.ocrData === 'object') {
+            const ocrDataObj = receipt.ocrData as { store_address?: string };
+            if (
+              ocrDataObj.store_address &&
+              typeof ocrDataObj.store_address === 'string'
+            ) {
+              storeAddress = ocrDataObj.store_address;
+            }
+          }
+
+          // Fallback to parsedData if no address found in ocrData
+          if (
+            !storeAddress &&
+            receipt.parsedData &&
+            typeof receipt.parsedData === 'object'
+          ) {
+            const parsedDataObj = receipt.parsedData as {
+              store_address?: string;
+              address?: string;
+            };
+            if (
+              parsedDataObj.store_address &&
+              typeof parsedDataObj.store_address === 'string'
+            ) {
+              storeAddress = parsedDataObj.store_address;
+            } else if (
+              parsedDataObj.address &&
+              typeof parsedDataObj.address === 'string'
+            ) {
+              storeAddress = parsedDataObj.address;
+            }
+          }
+        }
       }
 
-      return store;
-    } catch (error) {
-      this.logger.error(
-        `Failed to find/create store for merchant ${merchantName}:`,
-        error,
+      // Use StoreService's robust OCR store resolution
+      const ocrData = {
+        merchant: context.merchant,
+        store_address: storeAddress,
+      };
+
+      this.logger.debug(
+        `Attempting store resolution with OCR data: ${JSON.stringify(ocrData)}`,
+      );
+
+      // StoreService.findOrCreateStoreFromOcr handles:
+      // - Store name normalization (Walmart #1234 -> Walmart)
+      // - Fuzzy name matching with similarity scoring
+      // - Address-based matching for chain stores
+      // - Postal code matching
+      // - Street-level matching
+      // - Automatic store creation if no match found
+      const resolvedStore =
+        await this.storeService.findOrCreateStoreFromOcr(ocrData);
+
+      if (resolvedStore) {
+        this.logger.debug(
+          `Store resolved using enhanced matching: ${resolvedStore.name} (${resolvedStore.storeSk})`,
+        );
+
+        // Update receipt with resolved store if we have a receipt context
+        if (context.receiptSk && !storeAddress) {
+          await manager.update(
+            Receipt,
+            { receiptSk: context.receiptSk },
+            { storeSk: resolvedStore.storeSk },
+          );
+          this.logger.debug(
+            `Updated receipt ${context.receiptSk} with store ${resolvedStore.storeSk}`,
+          );
+        }
+
+        return resolvedStore;
+      }
+
+      // This shouldn't happen as findOrCreateStoreFromOcr always creates if not found
+      // But keeping as safety fallback
+      this.logger.warn(
+        `Store resolution failed for merchant: ${context.merchant}`,
       );
       return null;
+    } catch (error) {
+      this.logger.error(
+        `Error during enhanced store resolution for ${context.merchant}:`,
+        error,
+      );
+
+      // Last resort fallback - create a simple store entry
+      try {
+        const fallbackStore = manager.create(Store, {
+          name: context.merchant,
+        });
+
+        const savedStore = await manager.save(fallbackStore);
+        this.logger.debug(
+          `Created fallback store: ${savedStore.name} (${savedStore.storeSk})`,
+        );
+        return savedStore;
+      } catch (fallbackError) {
+        this.logger.error(`Failed to create fallback store:`, fallbackError);
+        return null;
+      }
     }
   }
 
