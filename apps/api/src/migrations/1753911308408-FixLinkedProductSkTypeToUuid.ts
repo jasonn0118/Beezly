@@ -6,6 +6,30 @@ export class FixLinkedProductSkTypeToUuid1753911308408
   name = 'FixLinkedProductSkTypeToUuid1753911308408';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Check if the column exists and get its type
+    const columnExists = (await queryRunner.query(`
+      SELECT data_type 
+      FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'normalized_products'
+      AND column_name = 'linked_product_sk'
+    `)) as { data_type: string }[];
+
+    // If column doesn't exist or is already UUID, skip
+    if (columnExists.length === 0) {
+      console.log(
+        'linked_product_sk column does not exist. Skipping type change.',
+      );
+      return;
+    }
+
+    if (columnExists[0].data_type === 'uuid') {
+      console.log(
+        'linked_product_sk column is already UUID type. No changes needed.',
+      );
+      return;
+    }
+
     // Drop foreign key constraint first
     await queryRunner.query(
       `ALTER TABLE "normalized_products" DROP CONSTRAINT IF EXISTS "FK_8988cdcae12e54d0c88e196ad38"`,
