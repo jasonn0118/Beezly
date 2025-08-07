@@ -9,6 +9,7 @@ const API_TIMEOUT = parseInt(EXPO_PUBLIC_API_TIMEOUT || '60000', 10);
 
 class ApiClient {
   private client: AxiosInstance;
+  private authStateCallback: (() => void) | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -71,8 +72,15 @@ class ApiClient {
   private handleUnauthorized(): void {
     // Clear the cached token
     this.cachedToken = null;
-    // The app should handle navigation to login screen
-    // This could be done via a navigation service or event system
+    // Notify AuthContext about session expiration
+    if (this.authStateCallback) {
+      this.authStateCallback();
+    }
+  }
+
+  // Method to set a callback for auth state changes
+  setAuthStateCallback(callback: (() => void) | null): void {
+    this.authStateCallback = callback;
   }
 
   // Generic API methods
