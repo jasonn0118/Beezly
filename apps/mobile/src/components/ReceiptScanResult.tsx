@@ -33,7 +33,6 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const [scanFailed, setScanFailed] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [productInfo, setProductInfo] = useState<ReceiptItem[]>([]);
-    // const [receiptId, setReceiptId] = useState<string | null>(null);
     const [merchantName, setMerchantName] = useState<string | null>(null);
     const [storeAddress, setStoreAddress] = useState<string | null>(null);
     const [editingItem, setEditingItem] = useState<ReceiptItem | null>(null);
@@ -99,24 +98,26 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
             formData.append('file', { uri: pictureData, name: 'receipt.jpg', type: 'image/jpeg' } as any);
             const response = await ReceiptService.processReceipt(formData);
             if (response.success && response.data) {
-                // Handle product items
-                setProductInfo(response.data.items.map((item: any, index: number) => ({ 
-                    ...item, 
-                    id: item.id || `temp-${index}`, 
-                    price: parseFloat(item.price) || 0 
-                })) || []);
-                
-                // Handle merchant and address
-                setMerchantName(response.data.merchant || null);
-                setStoreAddress(response.data.store_address || null);
-                setReceiptId(response.data.receipt_id || null);
-                
-                // Handle store search result
-                if (response.data.store_search) {
-                    setStoreSearchResult(response.data.store_search);
-                    if (response.data.store_search.storeFound && response.data.store_search.store) {
-                        // Store was found automatically
-                        setSelectedStore(response.data.store_search.store);
+                if (response.data.items.length > 0) {
+                    // Handle product items
+                    setProductInfo(response.data.items.map((item: any, index: number) => ({ 
+                        ...item, 
+                        id: item.id || `temp-${index}`, 
+                        price: parseFloat(item.price) || 0 
+                    })) || []);
+                    
+                    // Handle merchant and address
+                    setMerchantName(response.data.merchant || null);
+                    setStoreAddress(response.data.store_address || null);
+                    setReceiptId(response.data.receipt_id || null);
+                    
+                    // Handle store search result
+                    if (response.data.store_search) {
+                        setStoreSearchResult(response.data.store_search);
+                        if (response.data.store_search.storeFound && response.data.store_search.store) {
+                            // Store was found automatically
+                            setSelectedStore(response.data.store_search.store);
+                        }
                     }
                 }
             } else {
@@ -141,8 +142,39 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         fetchProductData();
     }, [pictureData]);
 
-    const handleSaveReceipt = () => {
-        // TODO: Implement receipt saving logic
+    const handleSaveReceipt = async () => {
+        if (!receiptId || !productInfo) {
+            return;
+        }
+
+        // TODO: 현재 로그인된 사용자의 ID를 가져와야 합니다.
+        const userId = "123e4567-e89b-12d3-a456-426614174000";
+        console.log('Save button pressed');
+
+        const itemsToConfirm = productInfo.map(item => ({
+            normalizedProductSk: item.normalized_product_sk,
+            normalizedName: item.normalized_name,
+            brand: item.brand || '',
+        }))
+
+        try {
+            const response = await ReceiptService.processConfirmations(userId, receiptId, itemsToConfirm);
+            console.log('Confirmation reponse:', response);
+            if (response.pendingSelectionProducts && response.pendingSelectionProducts.length > 0) {
+                router.push({
+                    pathname: '/product-selection',
+                    params: { 
+                        pendingSelectionProductsString: JSON.stringify(response.pendingSelectionProducts),
+                        receiptId: receiptId
+                    },
+                });
+            } else {
+                alert('The receipt was successfully saved');
+                router.push('/');
+            }
+        } catch (error) {
+            alert('Save failed, please try again.');
+        }
     };
     
     const handleStoreSelect = async (store: Store) => {
