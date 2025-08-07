@@ -2,9 +2,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Animated, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
+import StoreService, { Store, StoreSearchResult } from "../services/storeService";
 import ReceiptService, { ReceiptItem, ProcessReceiptResponse } from "../services/receiptService";
 import { Swipeable } from 'react-native-gesture-handler';
 import ReceiptScanFailed from './ReceiptScanFailed';
+import StoreSearch from './StoreSearch';
 import { isAxiosError } from 'axios';
 
 // Enhanced Design System Colors
@@ -31,7 +33,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const [scanFailed, setScanFailed] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [productInfo, setProductInfo] = useState<ReceiptItem[]>([]);
-    const [receiptId, setReceiptId] = useState<string | null>(null);
+    // const [receiptId, setReceiptId] = useState<string | null>(null);
     const [merchantName, setMerchantName] = useState<string | null>(null);
     const [storeAddress, setStoreAddress] = useState<string | null>(null);
     const [editingItem, setEditingItem] = useState<ReceiptItem | null>(null);
@@ -42,6 +44,11 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const [isPriceFocused, setIsPriceFocused] = useState(false);
     const [isBrandFocused, setIsBrandFocused] = useState(false);
     
+    // Store-related state
+    const [storeSearchResult, setStoreSearchResult] = useState<StoreSearchResult | null>(null);
+    const [selectedStore, setSelectedStore] = useState<Store | null>(null);
+    const [showStoreSearch, setShowStoreSearch] = useState(false);
+    const [receiptId, setReceiptId] = useState<string | null>(null);
     const handleDeleteItem = (itemId: string) => {
         setProductInfo((prev) => prev.filter((item) => item.id !== itemId));
     };
@@ -84,25 +91,33 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         if (!pictureData) return;
         setLoading(true);
         setScanFailed(false);
+        setStoreSearchResult(null);
+        setSelectedStore(null);
+        
         try {
             const formData = new FormData();
             formData.append('file', { uri: pictureData, name: 'receipt.jpg', type: 'image/jpeg' } as any);
             const response = await ReceiptService.processReceipt(formData);
             if (response.success && response.data) {
-                if (response.data.item_count > 0) {
-                    const processedItems = response.data.items.map((item, index) => ({
-                        ...item,
-                        id: item.id || `temp-${index}`,
-                        final_price: Number(item.final_price) || 0,
-                    }));
-                    setProductInfo(processedItems);
-                    setReceiptId(response.data.receipt_id || null);
-                    setMerchantName(response.data.merchant || null);
-                    setStoreAddress(response.data.store_address || null);
-                } else {
-                    // receipt scan => no item
-                    setError('Sorry, the receipt failed to scan, please try again.');
-                    setScanFailed(true);
+                // Handle product items
+                setProductInfo(response.data.items.map((item: any, index: number) => ({ 
+                    ...item, 
+                    id: item.id || `temp-${index}`, 
+                    price: parseFloat(item.price) || 0 
+                })) || []);
+                
+                // Handle merchant and address
+                setMerchantName(response.data.merchant || null);
+                setStoreAddress(response.data.store_address || null);
+                setReceiptId(response.data.receipt_id || null);
+                
+                // Handle store search result
+                if (response.data.store_search) {
+                    setStoreSearchResult(response.data.store_search);
+                    if (response.data.store_search.storeFound && response.data.store_search.store) {
+                        // Store was found automatically
+                        setSelectedStore(response.data.store_search.store);
+                    }
                 }
             } else {
                 setError(response.message || 'Failed to analyze receipt.');
@@ -126,38 +141,52 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         fetchProductData();
     }, [pictureData]);
 
-    const handleSaveReceipt = async () => {
-        if (!receiptId || !productInfo) {
-            return;
-        }
-
-        // TODO: 현재 로그인된 사용자의 ID를 가져와야 합니다.
-        const userId = "123e4567-e89b-12d3-a456-426614174000";
-        console.log('Save button pressed');
-
-        const itemsToConfirm = productInfo.map(item => ({
-            normalizedProductSk: item.normalized_product_sk,
-            normalizedName: item.normalized_name,
-            brand: item.brand || '',
-        }))
-
-        try {
-            const response = await ReceiptService.processConfirmations(userId, receiptId, itemsToConfirm);
-            console.log('Confirmation reponse:', response);
-            if (response.pendingSelectionProducts && response.pendingSelectionProducts.length > 0) {
-                router.push({
-                    pathname: '/product-selection',
-                    params: { 
-                        pendingSelectionProductsString: JSON.stringify(response.pendingSelectionProducts),
-                        receiptId: receiptId
-                    },
+    const handleSaveReceipt = () => {
+        // TODO: Implement receipt saving logic
+    };
+    
+    const handleStoreSelect = async (store: Store) => {
+        setSelectedStore(store);
+        setShowStoreSearch(false);
+        
+        // TODO: If receiptId exists, confirm the store selection with the backend
+        if (receiptId) {
+            try {
+                await StoreService.confirmStoreForReceipt({
+                    receiptId,
+                    storeId: store.id,
+                    continueProcessing: true
                 });
-            } else {
-                alert('The receipt was successfully saved');
-                router.push('/');
+            } catch (error) {
+                // Handle error silently or show user feedback
+            }
+        }
+    };
+    
+    const handleEditStore = () => {
+        setShowStoreSearch(true);
+    };
+    
+    const handleCreateNewStore = async (storeName: string) => {
+        try {
+            // In a real implementation, you'd want to collect more info
+            const newStore = await StoreService.createStore({
+                name: storeName,
+                fullAddress: storeAddress || `${storeName} - Address not specified`,
+                city: 'Unknown',
+            });
+            setSelectedStore(newStore);
+            setShowStoreSearch(false);
+            
+            if (receiptId) {
+                await StoreService.confirmStoreForReceipt({
+                    receiptId,
+                    storeId: newStore.id,
+                    continueProcessing: true
+                });
             }
         } catch (error) {
-            alert('Save failed, please try again.');
+            // Handle error silently or show user feedback
         }
     };
 
@@ -193,12 +222,60 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
-                {(merchantName || storeAddress) && (
-                    <View style={styles.merchantCard}>
-                        {merchantName && <Text style={styles.merchantName}>{merchantName}</Text>}
-                        {storeAddress && <Text style={styles.storeAddress}>{storeAddress}</Text>}
-                    </View>
-                )}
+                {/* Store Section */}
+                <View style={styles.storeSection}>
+                    {selectedStore ? (
+                        // Store Found UI
+                        <View style={styles.storeCard}>
+                            <View style={styles.storeCardHeader}>
+                                <FontAwesome name="map-marker" size={20} color={COLORS.primary} />
+                                <Text style={styles.storeCardTitle}>Store</Text>
+                                <TouchableOpacity onPress={handleEditStore} style={styles.editButton}>
+                                    <FontAwesome name="edit" size={16} color={COLORS.primary} />
+                                </TouchableOpacity>
+                            </View>
+                            <Text style={styles.storeName}>{selectedStore.name}</Text>
+                            {selectedStore.fullAddress && (
+                                <Text style={styles.storeAddress}>{selectedStore.fullAddress}</Text>
+                            )}
+                            {selectedStore.confidence && (
+                                <Text style={styles.storeConfidence}>
+                                    Match: {Math.round(selectedStore.confidence * 100)}%
+                                </Text>
+                            )}
+                        </View>
+                    ) : storeSearchResult ? (
+                        // Store Not Found UI
+                        <View style={styles.storeNotFoundCard}>
+                            <View style={styles.storeCardHeader}>
+                                <FontAwesome name="exclamation-triangle" size={20} color={COLORS.warning} />
+                                <Text style={styles.storeCardTitle}>Store Not Found</Text>
+                            </View>
+                            <Text style={styles.storeNotFoundMessage}>
+                                {storeSearchResult.message}
+                            </Text>
+                            <Text style={styles.extractedInfo}>
+                                From receipt: {storeSearchResult.extractedMerchant}
+                                {storeSearchResult.extractedAddress && ` - ${storeSearchResult.extractedAddress}`}
+                            </Text>
+                            <TouchableOpacity
+                                style={styles.searchStoreButton}
+                                onPress={() => setShowStoreSearch(true)}
+                            >
+                                <FontAwesome name="search" size={16} color={COLORS.primary} style={styles.searchButtonIcon} />
+                                <Text style={styles.searchStoreButtonText}>Search & Select Store</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        // Fallback - Original merchant card
+                        (merchantName || storeAddress) && (
+                            <View style={styles.merchantCard}>
+                                {merchantName && <Text style={styles.merchantName}>{merchantName}</Text>}
+                                {storeAddress && <Text style={styles.storeAddress}>{storeAddress}</Text>}
+                            </View>
+                        )
+                    )}
+                </View>
 
                 <Text style={styles.sectionTitle}>Products</Text>
                 {productInfo.map((item, index) => (
@@ -278,6 +355,30 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
+
+            {/* Store Search Modal */}
+            <Modal
+                animationType="slide"
+                transparent={false}
+                visible={showStoreSearch}
+                onRequestClose={() => setShowStoreSearch(false)}
+            >
+                <View style={styles.storeSearchModal}>
+                    <View style={styles.storeSearchHeader}>
+                        <TouchableOpacity onPress={() => setShowStoreSearch(false)} style={styles.storeSearchCloseButton}>
+                            <FontAwesome name="arrow-left" size={20} color={COLORS.primary} />
+                        </TouchableOpacity>
+                        <Text style={styles.storeSearchTitle}>Find Store</Text>
+                        <View style={styles.storeSearchPlaceholder} />
+                    </View>
+                    <StoreSearch
+                        onStoreSelect={handleStoreSelect}
+                        onCreateNew={handleCreateNewStore}
+                        initialQuery={storeSearchResult?.extractedMerchant || merchantName || ''}
+                        showCreateOption={true}
+                    />
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -335,6 +436,7 @@ const styles = StyleSheet.create({
     storeAddress: {
         fontSize: 14,
         color: COLORS.textSecondary,
+        marginBottom: 8,
     },
     sectionTitle: {
         fontSize: 22,
@@ -469,5 +571,111 @@ const styles = StyleSheet.create({
     },
     cancelButtonText: {
         color: COLORS.textPrimary,
+    },
+    
+    // Store section styles
+    storeSection: {
+        marginBottom: 24,
+    },
+    storeCard: {
+        backgroundColor: COLORS.card,
+        borderRadius: 12,
+        padding: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: COLORS.success,
+    },
+    storeNotFoundCard: {
+        backgroundColor: COLORS.card,
+        borderRadius: 12,
+        padding: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: COLORS.warning,
+    },
+    storeCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    storeCardTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.textSecondary,
+        marginLeft: 8,
+        flex: 1,
+    },
+    editButton: {
+        padding: 8,
+        backgroundColor: COLORS.background,
+        borderRadius: 8,
+    },
+    storeName: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginBottom: 4,
+    },
+    storeConfidence: {
+        fontSize: 12,
+        color: COLORS.primary,
+        fontWeight: '500',
+    },
+    storeNotFoundMessage: {
+        fontSize: 14,
+        color: COLORS.textPrimary,
+        marginBottom: 12,
+        lineHeight: 20,
+    },
+    extractedInfo: {
+        fontSize: 12,
+        color: COLORS.textSecondary,
+        marginBottom: 16,
+        fontStyle: 'italic',
+    },
+    searchStoreButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: COLORS.background,
+        borderWidth: 1,
+        borderColor: COLORS.primary,
+        borderRadius: 10,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+    },
+    searchButtonIcon: {
+        marginRight: 8,
+    },
+    searchStoreButtonText: {
+        color: COLORS.primary,
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    
+    // Store search modal styles
+    storeSearchModal: {
+        flex: 1,
+        backgroundColor: COLORS.background,
+    },
+    storeSearchHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingTop: 50,
+        paddingBottom: 15,
+        paddingHorizontal: 16,
+        backgroundColor: COLORS.card,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.separator,
+    },
+    storeSearchCloseButton: {
+        padding: 8,
+    },
+    storeSearchTitle: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+    },
+    storeSearchPlaceholder: {
+        width: 44, // Same width as close button for centering
     },
 });

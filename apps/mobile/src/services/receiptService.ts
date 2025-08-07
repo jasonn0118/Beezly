@@ -1,4 +1,5 @@
 import { apiClient } from './api';
+import { StoreSearchResult } from './storeService';
 
 export interface ProcessReceiptRequest {
   file: {
@@ -43,6 +44,21 @@ export interface ReceiptItem {
 
 export interface UploadReceiptResponse {
   success: boolean;
+  data?: {
+    merchant: string;
+    store_address?: string;
+    items: ReceiptItem[];
+    receipt_id?: string;
+    store_search?: StoreSearchResult;
+    normalization_summary: {
+      total_items: number;
+      product_items: number;
+      average_confidence: number;
+    };
+    raw_text: string;
+    azure_confidence: number;
+    engine_used: string;
+  };
   receipt?: Receipt;
   message?: string;
 }

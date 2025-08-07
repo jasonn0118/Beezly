@@ -8,6 +8,8 @@ import {
   NormalizationResult,
 } from '../product/product-normalization.service';
 import { VectorEmbeddingService } from '../product/vector-embedding.service';
+import { StoreService } from '../store/store.service';
+import { Store } from '../entities/store.entity';
 
 export interface OcrItem {
   name: string;
@@ -100,6 +102,21 @@ export interface EnhancedOcrResult extends Omit<OcrResult, 'items'> {
     total_discount_amount: number;
     products_with_discounts: number;
   };
+  // Store search result information
+  store_search?: {
+    storeFound: boolean;
+    store?: {
+      id: string;
+      name: string;
+      fullAddress?: string;
+      confidence: number;
+      matchMethod: string;
+    };
+    extractedMerchant: string;
+    extractedAddress?: string;
+    message: string;
+    requiresUserConfirmation: boolean;
+  };
 }
 
 export interface CleanOcrResult extends Omit<OcrResult, 'items'> {
@@ -124,6 +141,7 @@ export class OcrService {
     private readonly ocrAzureService: OcrAzureService,
     private readonly productNormalizationService: ProductNormalizationService,
     private readonly vectorEmbeddingService: VectorEmbeddingService,
+    private readonly storeService: StoreService,
   ) {}
 
   /**
@@ -540,6 +558,7 @@ export class OcrService {
     buffer: Buffer,
     endpoint?: string,
     apiKey?: string,
+    includeStoreSearch?: boolean,
   ): Promise<EnhancedOcrResult> {
     const startTime = performance.now();
     try {
@@ -747,11 +766,97 @@ export class OcrService {
         `📈 Embedding Hit Rate: ${embeddingHitRate.toFixed(1)}% (${embeddingLookups.filter((lookup) => lookup.found).length}/${embeddingLookups.length})`,
       );
 
-      return {
+      // Step 10: Optional store search (for new user-controlled workflow)
+      let storeSearchResult:
+        | {
+            storeFound: boolean;
+            store?: {
+              id: string;
+              name: string;
+              fullAddress?: string;
+              confidence: number;
+              matchMethod: string;
+            };
+            extractedMerchant: string;
+            extractedAddress?: string;
+            message: string;
+            requiresUserConfirmation: boolean;
+          }
+        | undefined = undefined;
+
+      if (includeStoreSearch) {
+        try {
+          const storeSearchStartTime = performance.now();
+          console.log('🏪 Starting store search...');
+
+          // Extract store information from OCR data
+          const extractedMerchant = ocrResult.merchant || 'Unknown Store';
+          const extractedAddress = ocrResult.store_address;
+
+          // Search for store (NO auto-creation)
+          const searchResult = await this.storeService.findStoreFromOcr({
+            merchant: extractedMerchant,
+            store_address: extractedAddress,
+          });
+
+          if (searchResult && searchResult.confidence >= 0.7) {
+            // Store found with good confidence
+            storeSearchResult = {
+              storeFound: true,
+              store: {
+                id: searchResult.store.storeSk,
+                name: searchResult.store.name,
+                fullAddress: searchResult.store.fullAddress,
+                confidence: searchResult.confidence,
+                matchMethod: searchResult.matchMethod,
+              },
+              extractedMerchant,
+              extractedAddress,
+              message: `Found matching store: ${searchResult.store.name}`,
+              requiresUserConfirmation: false,
+            };
+          } else {
+            // Store not found or low confidence - user needs to search and confirm
+            storeSearchResult = {
+              storeFound: false,
+              extractedMerchant,
+              extractedAddress,
+              message: searchResult
+                ? `Found possible match with low confidence (${Math.round(searchResult.confidence * 100)}%). Please search and confirm the correct store.`
+                : 'Store not found in database. Please search and select the correct store.',
+              requiresUserConfirmation: true,
+            };
+          }
+
+          const storeSearchDuration = performance.now() - storeSearchStartTime;
+          console.log(
+            `🏪 Store Search: ${storeSearchDuration.toFixed(1)}ms - ${storeSearchResult.storeFound ? 'Found' : 'Not found'}`,
+          );
+        } catch (storeError) {
+          console.error('Error in store search:', storeError);
+          // Continue without store search result - not critical for receipt processing
+          storeSearchResult = {
+            storeFound: false,
+            extractedMerchant: ocrResult.merchant || 'Unknown Store',
+            extractedAddress: ocrResult.store_address,
+            message:
+              'Store search failed. Please search and select the correct store manually.',
+            requiresUserConfirmation: true,
+          };
+        }
+      }
+
+      const result: EnhancedOcrResult = {
         ...ocrResult,
         items: enhancedItems,
         normalization_summary: normalizationSummary,
       };
+
+      if (storeSearchResult) {
+        result.store_search = storeSearchResult;
+      }
+
+      return result;
     } catch (error) {
       throw new Error(
         `Error processing receipt with normalization: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -1221,5 +1326,228 @@ export class OcrService {
       apiKey,
     );
     return this.convertToCleanResult(enhancedResult);
+  }
+
+  /**
+   * Enhanced store resolution using StoreService's robust fuzzy matching
+   * This method can be called after OCR to resolve stores with better accuracy
+   */
+  async resolveStoreFromOcrData(
+    merchant: string,
+    storeAddress?: string,
+  ): Promise<Store | null> {
+    try {
+      if (!merchant || merchant.trim() === '') {
+        console.warn('Cannot resolve store: merchant name is empty');
+        return null;
+      }
+
+      console.log(
+        `Attempting to resolve store: merchant="${merchant}", address="${storeAddress || 'N/A'}"`,
+      );
+
+      // Use StoreService's robust OCR store resolution
+      // This handles:
+      // - Store name normalization (e.g., "WALMART #1234" -> "Walmart")
+      // - Fuzzy name matching with similarity scoring
+      // - Address-based matching for chain stores
+      // - Postal code and street-level matching
+      // - Automatic store creation if no match found
+      const resolvedStore = await this.storeService.findOrCreateStoreFromOcr({
+        merchant,
+        store_address: storeAddress,
+      });
+
+      if (resolvedStore) {
+        console.log(
+          `✅ Store resolved: ${resolvedStore.name} (${resolvedStore.storeSk})`,
+        );
+
+        // Log additional details if address was matched
+        if (resolvedStore.fullAddress) {
+          console.log(`   Address: ${resolvedStore.fullAddress}`);
+        }
+        if (resolvedStore.city && resolvedStore.province) {
+          console.log(
+            `   Location: ${resolvedStore.city}, ${resolvedStore.province}`,
+          );
+        }
+      } else {
+        console.warn(`⚠️ Could not resolve store for merchant: ${merchant}`);
+      }
+
+      return resolvedStore;
+    } catch (error) {
+      console.error(`Error resolving store for merchant "${merchant}":`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Enhanced OCR processing with automatic store resolution
+   * This wraps the existing processReceiptWithNormalization to add store resolution
+   */
+  async processReceiptWithStoreResolution(
+    buffer: Buffer,
+    endpoint?: string,
+    apiKey?: string,
+  ): Promise<EnhancedOcrResult & { resolvedStore?: Store }> {
+    // First, process the receipt normally
+    const ocrResult = await this.processReceiptWithNormalization(
+      buffer,
+      endpoint,
+      apiKey,
+    );
+
+    // Extract store address if available from OCR result
+    const storeAddress = ocrResult.store_address;
+
+    // Attempt to resolve the store using enhanced matching
+    const resolvedStore = await this.resolveStoreFromOcrData(
+      ocrResult.merchant,
+      storeAddress,
+    );
+
+    // Return the enhanced result with resolved store
+    return {
+      ...ocrResult,
+      resolvedStore: resolvedStore || undefined,
+    };
+  }
+
+  /**
+   * Batch process multiple receipts with store resolution
+   * Useful for processing multiple receipts from the same shopping trip
+   */
+  async batchProcessReceiptsWithStoreResolution(
+    receipts: Array<{ buffer: Buffer; metadata?: any }>,
+    endpoint?: string,
+    apiKey?: string,
+  ): Promise<
+    Array<{
+      ocrResult: EnhancedOcrResult | null;
+      resolvedStore?: Store | null;
+      metadata?: any;
+      error?: string;
+    }>
+  > {
+    const results: Array<{
+      ocrResult: EnhancedOcrResult | null;
+      resolvedStore?: Store | null;
+      metadata?: any;
+      error?: string;
+    }> = [];
+
+    for (const receipt of receipts) {
+      try {
+        const result = await this.processReceiptWithStoreResolution(
+          receipt.buffer,
+          endpoint,
+          apiKey,
+        );
+
+        results.push({
+          ocrResult: result,
+          resolvedStore: result.resolvedStore,
+          metadata: receipt.metadata,
+        });
+      } catch (error) {
+        console.error('Error processing receipt in batch:', error);
+        // Continue processing other receipts even if one fails
+        results.push({
+          ocrResult: null,
+          resolvedStore: null,
+          metadata: receipt.metadata,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * NEW WORKFLOW: Process receipt with store search (no auto-creation)
+   * Step 1: OCR processing
+   * Step 2: Store search (no creation)
+   * Step 3: Return result with store confirmation requirement if needed
+   */
+  async processReceiptWithStoreSearch(
+    imageBuffer: Buffer,
+    endpoint: string,
+    apiKey: string,
+  ): Promise<{
+    storeFound: boolean;
+    store?: {
+      id: string;
+      name: string;
+      fullAddress?: string;
+      confidence: number;
+      matchMethod: string;
+    };
+    extractedMerchant: string;
+    extractedAddress?: string;
+    message: string;
+    requiresUserConfirmation: boolean;
+    receiptId?: string;
+    ocrData?: any;
+    itemsCount?: number;
+  }> {
+    try {
+      // Step 1: Process OCR
+      const ocrResult = await this.processReceipt(
+        imageBuffer,
+        endpoint,
+        apiKey,
+      );
+
+      // Extract store information from OCR data
+      const extractedMerchant = ocrResult.merchant || 'Unknown Store';
+      const extractedAddress = ocrResult.store_address;
+
+      // Step 2: Search for store (NO auto-creation)
+      const storeSearchResult = await this.storeService.findStoreFromOcr({
+        merchant: extractedMerchant,
+        store_address: extractedAddress,
+      });
+
+      if (storeSearchResult && storeSearchResult.confidence >= 0.7) {
+        // Store found with good confidence
+        return {
+          storeFound: true,
+          store: {
+            id: storeSearchResult.store.storeSk,
+            name: storeSearchResult.store.name,
+            fullAddress: storeSearchResult.store.fullAddress,
+            confidence: storeSearchResult.confidence,
+            matchMethod: storeSearchResult.matchMethod,
+          },
+          extractedMerchant,
+          extractedAddress,
+          message: `Found matching store: ${storeSearchResult.store.name}`,
+          requiresUserConfirmation: false,
+          ocrData: ocrResult,
+          itemsCount: ocrResult.items?.length || 0,
+        };
+      } else {
+        // Store not found - user needs to search and confirm
+        return {
+          storeFound: false,
+          extractedMerchant,
+          extractedAddress,
+          message: storeSearchResult
+            ? `Found possible match with low confidence (${Math.round(storeSearchResult.confidence * 100)}%). Please search and confirm the correct store.`
+            : 'Store not found in database. Please search and select the correct store.',
+          requiresUserConfirmation: true,
+          ocrData: ocrResult,
+          itemsCount: ocrResult.items?.length || 0,
+        };
+      }
+    } catch (error) {
+      console.error('Error in processReceiptWithStoreSearch:', error);
+      throw new Error(
+        `Receipt processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
   }
 }
