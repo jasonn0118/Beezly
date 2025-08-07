@@ -1,29 +1,32 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Animated, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import ReceiptService, { ReceiptItem } from "../services/receiptService";
 import StoreService, { Store, StoreSearchResult } from "../services/storeService";
+import ReceiptService, { ReceiptItem, ProcessReceiptResponse } from "../services/receiptService";
 import { Swipeable } from 'react-native-gesture-handler';
 import ReceiptScanFailed from './ReceiptScanFailed';
 import StoreSearch from './StoreSearch';
+import { isAxiosError } from 'axios';
 
-// 디자인 시스템 색상 정의
+// Enhanced Design System Colors
 const COLORS = {
-  primary: '#007AFF', // 활성/브랜드 색상 (Apple Blue)
-  background: '#F2F2F7', // 화면 배경색
-  card: '#FFFFFF', // 카드 배경색
-  textPrimary: '#1C1C1E', // 주요 텍스트
-  textSecondary: '#8A8A8E', // 보조 텍스트
-  textTertiary: '#C7C7CC', // 가장 연한 텍스트
-  separator: '#E5E5EA', // 구분선
-  success: '#34C759', // 성공 (신뢰도 높음)
-  warning: '#FF9500', // 경고 (신뢰도 보통)
-  danger: '#FF3B30', // 위험 (신뢰도 낮음)
+  primary: '#007AFF',
+  background: '#F2F2F7',
+  card: '#FFFFFF',
+  textPrimary: '#1C1C1E',
+  textSecondary: '#8A8A8E',
+  textTertiary: '#C7C7CC',
+  separator: '#E5E5EA',
+  success: '#34C759',
+  warning: '#FF9500',
+  danger: '#FF3B30',
   white: '#FFFFFF',
   black: '#000000',
 };
 
 export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictureData: string | null, onScanAgain: () => void }) {
+    const router = useRouter();
     const [loading, setLoading] = useState(true);
     const swipeableRefs = useRef<Swipeable[]>([]);
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -35,15 +38,37 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const [editingItem, setEditingItem] = useState<ReceiptItem | null>(null);
     const [editedName, setEditedName] = useState('');
     const [editedPrice, setEditedPrice] = useState('');
+    const [editedBrand, setEditedBrand] = useState('');
     const [isNameFocused, setIsNameFocused] = useState(false);
     const [isPriceFocused, setIsPriceFocused] = useState(false);
+    const [isBrandFocused, setIsBrandFocused] = useState(false);
+    const pulseAnim = useRef(new Animated.Value(0.5)).current;
+
+    useEffect(() => {
+        if (!loading) return; // Only run animation when loading
+        const sharedAnimation = Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulseAnim, {
+                    toValue: 1,
+                    duration: 700,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pulseAnim, {
+                    toValue: 0.5,
+                    duration: 700,
+                    useNativeDriver: true,
+                }),
+            ])
+        );
+        sharedAnimation.start();
+        return () => sharedAnimation.stop();
+    }, [loading, pulseAnim]);
     
     // Store-related state
     const [storeSearchResult, setStoreSearchResult] = useState<StoreSearchResult | null>(null);
     const [selectedStore, setSelectedStore] = useState<Store | null>(null);
     const [showStoreSearch, setShowStoreSearch] = useState(false);
     const [receiptId, setReceiptId] = useState<string | null>(null);
-
     const handleDeleteItem = (itemId: string) => {
         setProductInfo((prev) => prev.filter((item) => item.id !== itemId));
     };
@@ -51,7 +76,8 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const handleOpenModal = (item: ReceiptItem) => {
         setEditingItem(item);
         setEditedName(item.normalized_name || item.name);
-        setEditedPrice(item.price.toString());
+        setEditedPrice(item.final_price.toString());
+        setEditedBrand(item.brand || '');
         setIsModalVisible(true);
     };
 
@@ -59,7 +85,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         if (!editingItem) return;
         setProductInfo(productInfo.map(item =>
             item.id === editingItem.id
-                ? { ...item, normalized_name: editedName, price: parseFloat(editedPrice) || 0 }
+                ? { ...item, normalized_name: editedName, final_price: parseFloat(editedPrice) || 0, brand: editedBrand }
                 : item
         ));
         setIsModalVisible(false);
@@ -91,35 +117,42 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         try {
             const formData = new FormData();
             formData.append('file', { uri: pictureData, name: 'receipt.jpg', type: 'image/jpeg' } as any);
-            const response: any = await ReceiptService.processReceipt(formData);
-            
+            const response = await ReceiptService.processReceipt(formData);
             if (response.success && response.data) {
-                // Handle product items
-                setProductInfo(response.data.items.map((item: any, index: number) => ({ 
-                    ...item, 
-                    id: item.id || `temp-${index}`, 
-                    price: parseFloat(item.price) || 0 
-                })) || []);
-                
-                // Handle merchant and address
-                setMerchantName(response.data.merchant || null);
-                setStoreAddress(response.data.store_address || null);
-                setReceiptId(response.data.receipt_id || null);
-                
-                // Handle store search result
-                if (response.data.store_search) {
-                    setStoreSearchResult(response.data.store_search);
-                    if (response.data.store_search.storeFound && response.data.store_search.store) {
-                        // Store was found automatically
-                        setSelectedStore(response.data.store_search.store);
+                if (response.data.items.length > 0) {
+                    // Handle product items
+                    setProductInfo(response.data.items.map((item: any, index: number) => ({ 
+                        ...item, 
+                        id: item.id || `temp-${index}`, 
+                        price: parseFloat(item.price) || 0 
+                    })) || []);
+                    
+                    // Handle merchant and address
+                    setMerchantName(response.data.merchant || null);
+                    setStoreAddress(response.data.store_address || null);
+                    setReceiptId(response.data.receipt_id || null);
+                    
+                    // Handle store search result
+                    if (response.data.store_search) {
+                        setStoreSearchResult(response.data.store_search);
+                        if (response.data.store_search.storeFound && response.data.store_search.store) {
+                            // Store was found automatically
+                            setSelectedStore(response.data.store_search.store);
+                        }
                     }
                 }
             } else {
-                setError((response as any).message || 'Failed to analyze receipt.');
+                setError(response.message || 'Failed to analyze receipt.');
                 setScanFailed(true);
             }
-        } catch (err: any) {
-            setError(err.response?.data?.message || err.message || 'A network error occurred.');
+        } catch (err) {
+            let errorMessage = 'A network error occurred.';
+            if (isAxiosError(err)) {
+                errorMessage = err.response?.data?.message || err.message;
+            } else if (err instanceof Error) {
+                errorMessage = err.message;
+            }
+            setError(errorMessage);
             setScanFailed(true);
         } finally {
             setLoading(false);
@@ -130,8 +163,39 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         fetchProductData();
     }, [pictureData]);
 
-    const handleSaveReceipt = () => {
-        // TODO: Implement receipt saving logic
+    const handleSaveReceipt = async () => {
+        if (!receiptId || !productInfo) {
+            return;
+        }
+
+        // TODO: 현재 로그인된 사용자의 ID를 가져와야 합니다.
+        const userId = "123e4567-e89b-12d3-a456-426614174000";
+        console.log('Save button pressed');
+
+        const itemsToConfirm = productInfo.map(item => ({
+            normalizedProductSk: item.normalized_product_sk,
+            normalizedName: item.normalized_name,
+            brand: item.brand || '',
+        }))
+
+        try {
+            const response = await ReceiptService.processConfirmations(userId, receiptId, itemsToConfirm);
+            console.log('Confirmation reponse:', response);
+            if (response.pendingSelectionProducts && response.pendingSelectionProducts.length > 0) {
+                router.push({
+                    pathname: '/product-selection',
+                    params: { 
+                        pendingSelectionProductsString: JSON.stringify(response.pendingSelectionProducts),
+                        receiptId: receiptId
+                    },
+                });
+            } else {
+                alert('The receipt was successfully saved');
+                router.push('/');
+            }
+        } catch (error) {
+            alert('Save failed, please try again.');
+        }
     };
     
     const handleStoreSelect = async (store: Store) => {
@@ -181,8 +245,8 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
 
     const getConfidenceColor = (score: number) => {
         const percentage = score * 100;
-        if (percentage >= 90) return COLORS.success;
-        if (percentage >= 70) return COLORS.warning;
+        if (percentage >= 80) return COLORS.success;
+        // if (percentage >= 70) return COLORS.warning;
         return COLORS.danger;
     };
 
@@ -192,8 +256,32 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
 
     if (loading) {
         return (
-            <View style={styles.loadingContainer}>
-                <Text style={styles.loadingText}>Analyzing Receipt...</Text>
+            <View style={styles.container}>
+                <View style={styles.header}>
+                    <View style={[styles.headerButton, { width: 40 }]} />
+                    <View style={[styles.skeleton, styles.headerTitleSkeleton]} />
+                    <View style={[styles.headerButton, { width: 40 }]} />
+                </View>
+                <ScrollView contentContainerStyle={styles.scrollContent}>
+                    <Animated.View style={[styles.merchantCard, { opacity: pulseAnim }]}>
+                        <View style={[styles.skeleton, styles.merchantNameSkeleton]} />
+                        <View style={[styles.skeleton, styles.storeAddressSkeleton]} />
+                    </Animated.View>
+                    <View style={[styles.skeleton, styles.sectionTitleSkeleton]} />
+                    {[...Array(5)].map((_, index) => (
+                        <Animated.View key={index} style={[styles.productCard, { opacity: pulseAnim, marginBottom: 12 }]}>
+                            <View style={styles.statusDot} />
+                            <View style={styles.productDetails}>
+                                <View style={[styles.skeleton, styles.productNameSkeleton]} />
+                                <View style={[styles.skeleton, styles.productOriginalNameSkeleton]} />
+                            </View>
+                            <View style={styles.priceContainer}>
+                                <View style={[styles.skeleton, styles.productPriceSkeleton]} />
+                                <View style={[styles.skeleton, styles.confidenceScoreSkeleton]} />
+                            </View>
+                        </Animated.View>
+                    ))}
+                </ScrollView>
             </View>
         );
     }
@@ -205,9 +293,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     <FontAwesome name="arrow-left" size={20} color={COLORS.primary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Scan Result</Text>
-                <TouchableOpacity onPress={handleSaveReceipt} style={styles.headerButton}>
-                    <FontAwesome name="check" size={22} color={COLORS.primary} />
-                </TouchableOpacity>
+                <View style={styles.headerButton} />
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -276,14 +362,27 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                             swipeableRefs.current.forEach((ref, i) => { if (i !== index && ref) ref.close(); });
                         }}
                     >
-                        <TouchableOpacity style={styles.productCard} activeOpacity={0.8} onPress={() => handleOpenModal(item)}>
+                        <TouchableOpacity style={styles.productCard} activeOpacity={0.8} onPress={() => { handleOpenModal(item); }}>
                             <View style={[styles.statusDot, { backgroundColor: getConfidenceColor(item.confidence_score) }]} />
                             <View style={styles.productDetails}>
-                                <Text style={styles.productName}>{item.normalized_name || item.name}</Text>
+                                <Text style={styles.productName}>{item.brand && <Text>{item.brand} - </Text>}{item.normalized_name || item.name}</Text>
                                 <Text style={styles.productOriginalName}>{item.name}</Text>
                             </View>
                             <View style={styles.priceContainer}>
-                                <Text style={styles.productPrice}>{typeof item.price === 'number' ? "$"+ `${item.price.toFixed(2)}` : '$--.--'}</Text>
+                                {item.original_price && typeof item.final_price === 'number' && item.original_price !== item.final_price ? (
+                                    <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                                        <Text style={styles.originalPrice}>
+                                            {`${item.original_price.toFixed(2)}`}
+                                        </Text>
+                                        <Text style={styles.productPrice}>
+                                            {` ${item.final_price.toFixed(2)}`}
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <Text style={styles.productPrice}>
+                                        {typeof item.final_price === 'number' ? `${item.final_price.toFixed(2)}` : '$--.--'}
+                                    </Text>
+                                )}
                                 <Text style={styles.confidenceScore}>{(item.confidence_score * 100).toFixed(0)}%</Text>
                             </View>
                             <FontAwesome name="chevron-right" size={16} color={COLORS.textTertiary} />
@@ -321,6 +420,17 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                                 />
                             </View>
 
+                            <Text style={styles.inputLabel}>Brand</Text>
+                            <View style={[styles.inputContainer, isBrandFocused && styles.inputContainerFocused]}>
+                                <TextInput
+                                    style={styles.input}
+                                    value={editedBrand}
+                                    onChangeText={setEditedBrand}
+                                    onFocus={() => setIsBrandFocused(true)}
+                                    onBlur={() => setIsBrandFocused(false)}
+                                />
+                            </View>
+
                             <View style={styles.modalButtons}>
                                 <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setIsModalVisible(false)}>
                                     <Text style={[styles.modalButtonText, styles.cancelButtonText]}>Cancel</Text>
@@ -333,6 +443,9 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
+            <TouchableOpacity style={styles.fab} onPress={handleSaveReceipt}>
+                <FontAwesome name="check" size={24} color={COLORS.white} />
+            </TouchableOpacity>
 
             {/* Store Search Modal */}
             <Modal
@@ -445,6 +558,11 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         color: COLORS.textPrimary,
     },
+    productBrand: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        marginTop: 2,
+    },
     productOriginalName: {
         fontSize: 13,
         color: COLORS.textSecondary,
@@ -458,6 +576,12 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: COLORS.textPrimary,
+    },
+    originalPrice: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        textDecorationLine: 'line-through',
+        marginRight: 8,
     },
     confidenceScore: {
         fontSize: 13,
@@ -650,5 +774,62 @@ const styles = StyleSheet.create({
     },
     storeSearchPlaceholder: {
         width: 44, // Same width as close button for centering
+    },
+
+    skeleton: {
+        backgroundColor: COLORS.separator,
+        borderRadius: 4,
+    },
+    headerTitleSkeleton: {
+        height: 20,
+        width: 120,
+    },
+    merchantNameSkeleton: {
+        height: 22,
+        width: '70%',
+        marginBottom: 8,
+    },
+    storeAddressSkeleton: {
+        height: 16,
+        width: '90%',
+    },
+    sectionTitleSkeleton: {
+        height: 28,
+        width: 150,
+        marginBottom: 16,
+    },
+    productNameSkeleton: {
+        height: 20,
+        width: '80%',
+        marginBottom: 4,
+    },
+    productOriginalNameSkeleton: {
+        height: 16,
+        width: '60%',
+    },
+    productPriceSkeleton: {
+        height: 20,
+        width: 60,
+        marginBottom: 4,
+    },
+    confidenceScoreSkeleton: {
+        height: 16,
+        width: 40,
+    },
+    fab: {
+        position: 'absolute',
+        right: 24,
+        bottom: 24,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: COLORS.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
 });

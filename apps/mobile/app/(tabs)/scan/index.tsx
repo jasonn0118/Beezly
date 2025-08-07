@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, StatusBar, Button, Animated, Dimensions, SafeAreaView, Platform } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+
+
 import { BarcodeType } from '@beezly/types/dto/barcode'; // Assuming this path is correct
 import { useRouter } from 'expo-router';
 import ReceiptScanResult from '../../../src/components/ReceiptScanResult'; // Assuming this path is correct
@@ -96,8 +98,11 @@ export default function ScanPage() {
 
     const scanLineStyle = {
         transform: [
-            {
-                translateY: barcodeScanLineTranslation
+            { 
+                translateY: scanAnimation.interpolate({ 
+                    inputRange: [0, 1], 
+                    outputRange: [0, height * 0.25] 
+                }) 
             }
         ],
     };

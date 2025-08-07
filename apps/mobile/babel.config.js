@@ -10,7 +10,15 @@ module.exports = function (api) {
         allowlist: null,
         safe: false,
         allowUndefined: true,
-      }]
-    ]
+      }],
+      [
+    'module-resolver',
+        {
+          alias: {
+            '@shared': '../../packages/types',
+          },
+        },
+      ],
+    ],
   };
 };

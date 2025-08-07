@@ -29,7 +29,6 @@ export interface Receipt {
 export interface ReceiptItem {
   id: string;
   name: string;
-  price: number;
   quantity: number;
   unit_price: number;
   item_number: number;
@@ -37,10 +36,9 @@ export interface ReceiptItem {
   brand: string;
   category: string;
   confidence_score: number;
-  is_discount: boolean;
-  is_adjustment: boolean;
-  normalization_method: string;
-  original_price_numeric: number;
+  normalized_product_sk: string;
+  linked_discounts:[];
+  original_price: number;
   final_price: number;
 }
 
@@ -62,6 +60,26 @@ export interface UploadReceiptResponse {
     engine_used: string;
   };
   receipt?: Receipt;
+  message?: string;
+}
+
+export interface ConfirmationResponse {
+  success: boolean;
+  message?: string;
+  pendingSelectionProducts?: any[];
+}
+
+export interface ReceiptData {
+  item_count: number;
+  items: ReceiptItem[];
+  receipt_id: string;
+  merchant: string | null;
+  store_address: string | null;
+}
+
+export interface ProcessReceiptResponse {
+  success: boolean;
+  data?: ReceiptData;
   message?: string;
 }
 
@@ -89,6 +107,20 @@ export class ReceiptService {
 
   static async deleteReceipt(id: string): Promise<void> {
     return apiClient.delete<void>(`/receipt/${id}`);
+  }
+
+  static async processConfirmations(userId: string, receiptId: string, items: { normalizedProductSk: string, normalizedName: string, brand: string }[]): Promise<ConfirmationResponse> {
+    const processedItems = items.map(item => ({ ...item, isConfirmed: true }));
+    const payload = {
+      userId,
+      receiptId,
+      items: processedItems,
+    };
+    return apiClient.post<ConfirmationResponse>('/products/receipt/process-confirmations', payload, { timeout: 300000 });
+  }
+
+  static async processPendingSelections(payload: { selections: { normalizedProductSk: string, selectedProductSk: string | null, selectionReason: string }[], userId: string, receiptId: string }): Promise<ConfirmationResponse> {
+    return apiClient.post<ConfirmationResponse>('/products/receipt/process-selections', payload, { timeout: 300000 });
   }
 }
 
