@@ -42,6 +42,27 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const [isNameFocused, setIsNameFocused] = useState(false);
     const [isPriceFocused, setIsPriceFocused] = useState(false);
     const [isBrandFocused, setIsBrandFocused] = useState(false);
+    const pulseAnim = useRef(new Animated.Value(0.5)).current;
+
+    useEffect(() => {
+        if (!loading) return; // Only run animation when loading
+        const sharedAnimation = Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulseAnim, {
+                    toValue: 1,
+                    duration: 700,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pulseAnim, {
+                    toValue: 0.5,
+                    duration: 700,
+                    useNativeDriver: true,
+                }),
+            ])
+        );
+        sharedAnimation.start();
+        return () => sharedAnimation.stop();
+    }, [loading, pulseAnim]);
     
     // Store-related state
     const [storeSearchResult, setStoreSearchResult] = useState<StoreSearchResult | null>(null);
@@ -235,8 +256,32 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
 
     if (loading) {
         return (
-            <View style={styles.loadingContainer}>
-                <Text style={styles.loadingText}>Analyzing Receipt...</Text>
+            <View style={styles.container}>
+                <View style={styles.header}>
+                    <View style={[styles.headerButton, { width: 40 }]} />
+                    <View style={[styles.skeleton, styles.headerTitleSkeleton]} />
+                    <View style={[styles.headerButton, { width: 40 }]} />
+                </View>
+                <ScrollView contentContainerStyle={styles.scrollContent}>
+                    <Animated.View style={[styles.merchantCard, { opacity: pulseAnim }]}>
+                        <View style={[styles.skeleton, styles.merchantNameSkeleton]} />
+                        <View style={[styles.skeleton, styles.storeAddressSkeleton]} />
+                    </Animated.View>
+                    <View style={[styles.skeleton, styles.sectionTitleSkeleton]} />
+                    {[...Array(5)].map((_, index) => (
+                        <Animated.View key={index} style={[styles.productCard, { opacity: pulseAnim, marginBottom: 12 }]}>
+                            <View style={styles.statusDot} />
+                            <View style={styles.productDetails}>
+                                <View style={[styles.skeleton, styles.productNameSkeleton]} />
+                                <View style={[styles.skeleton, styles.productOriginalNameSkeleton]} />
+                            </View>
+                            <View style={styles.priceContainer}>
+                                <View style={[styles.skeleton, styles.productPriceSkeleton]} />
+                                <View style={[styles.skeleton, styles.confidenceScoreSkeleton]} />
+                            </View>
+                        </Animated.View>
+                    ))}
+                </ScrollView>
             </View>
         );
     }
@@ -248,9 +293,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     <FontAwesome name="arrow-left" size={20} color={COLORS.primary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Scan Result</Text>
-                <TouchableOpacity onPress={handleSaveReceipt} style={styles.headerButton}>
-                    <FontAwesome name="check" size={22} color={COLORS.primary} />
-                </TouchableOpacity>
+                <View style={styles.headerButton} />
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -326,7 +369,20 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                                 <Text style={styles.productOriginalName}>{item.name}</Text>
                             </View>
                             <View style={styles.priceContainer}>
-                                <Text style={styles.productPrice}>{typeof item.final_price === 'number' ? "$"+ `${item.final_price.toFixed(2)}` : '$--.--'}</Text>
+                                {item.original_price && typeof item.final_price === 'number' && item.original_price !== item.final_price ? (
+                                    <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                                        <Text style={styles.originalPrice}>
+                                            {`${item.original_price.toFixed(2)}`}
+                                        </Text>
+                                        <Text style={styles.productPrice}>
+                                            {` ${item.final_price.toFixed(2)}`}
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <Text style={styles.productPrice}>
+                                        {typeof item.final_price === 'number' ? `${item.final_price.toFixed(2)}` : '$--.--'}!!!
+                                    </Text>
+                                )}
                                 <Text style={styles.confidenceScore}>{(item.confidence_score * 100).toFixed(0)}%</Text>
                             </View>
                             <FontAwesome name="chevron-right" size={16} color={COLORS.textTertiary} />
@@ -387,6 +443,9 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
+            <TouchableOpacity style={styles.fab} onPress={handleSaveReceipt}>
+                <FontAwesome name="check" size={24} color={COLORS.white} />
+            </TouchableOpacity>
 
             {/* Store Search Modal */}
             <Modal
@@ -517,6 +576,12 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: COLORS.textPrimary,
+    },
+    originalPrice: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        textDecorationLine: 'line-through',
+        marginRight: 8,
     },
     confidenceScore: {
         fontSize: 13,
@@ -709,5 +774,62 @@ const styles = StyleSheet.create({
     },
     storeSearchPlaceholder: {
         width: 44, // Same width as close button for centering
+    },
+
+    skeleton: {
+        backgroundColor: COLORS.separator,
+        borderRadius: 4,
+    },
+    headerTitleSkeleton: {
+        height: 20,
+        width: 120,
+    },
+    merchantNameSkeleton: {
+        height: 22,
+        width: '70%',
+        marginBottom: 8,
+    },
+    storeAddressSkeleton: {
+        height: 16,
+        width: '90%',
+    },
+    sectionTitleSkeleton: {
+        height: 28,
+        width: 150,
+        marginBottom: 16,
+    },
+    productNameSkeleton: {
+        height: 20,
+        width: '80%',
+        marginBottom: 4,
+    },
+    productOriginalNameSkeleton: {
+        height: 16,
+        width: '60%',
+    },
+    productPriceSkeleton: {
+        height: 20,
+        width: 60,
+        marginBottom: 4,
+    },
+    confidenceScoreSkeleton: {
+        height: 16,
+        width: 40,
+    },
+    fab: {
+        position: 'absolute',
+        right: 24,
+        bottom: 24,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: COLORS.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
 });
