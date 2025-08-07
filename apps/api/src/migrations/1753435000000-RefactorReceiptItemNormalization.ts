@@ -273,13 +273,13 @@ export class RefactorReceiptItemNormalization1753435000000
     columnDefinition: string,
   ): Promise<void> {
     // First check if the table exists
-    const tableExists = await queryRunner.query(`
+    const tableExists = (await queryRunner.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
         AND table_name = '${tableName}'
       );
-    `);
+    `)) as [{ exists: boolean }];
 
     if (!tableExists[0].exists) {
       console.log(
@@ -289,10 +289,10 @@ export class RefactorReceiptItemNormalization1753435000000
     }
 
     // Check if column already exists
-    const columnExists = await queryRunner.query(`
+    const columnExists = (await queryRunner.query(`
       SELECT 1 FROM information_schema.columns 
       WHERE table_name = '${tableName}' AND column_name = '${columnName}'
-    `);
+    `)) as Array<{ '?column?': number }>;
 
     if (columnExists.length === 0) {
       await queryRunner.query(
@@ -315,13 +315,13 @@ export class RefactorReceiptItemNormalization1753435000000
     columnName: string,
   ): Promise<void> {
     // First check if the table exists
-    const tableExists = await queryRunner.query(`
+    const tableExists = (await queryRunner.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
         AND table_name = '${tableName}'
       );
-    `);
+    `)) as [{ exists: boolean }];
 
     if (!tableExists[0].exists) {
       console.log(
@@ -331,10 +331,10 @@ export class RefactorReceiptItemNormalization1753435000000
     }
 
     // Check if column exists
-    const columnExists = await queryRunner.query(`
+    const columnExists = (await queryRunner.query(`
       SELECT 1 FROM information_schema.columns 
       WHERE table_name = '${tableName}' AND column_name = '${columnName}'
-    `);
+    `)) as Array<{ '?column?': number }>;
 
     if (columnExists.length > 0) {
       await queryRunner.query(

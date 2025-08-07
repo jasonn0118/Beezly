@@ -7,13 +7,13 @@ export class AddProductLinkingToNormalizedProduct1753512220079
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // First check if the table exists
-    const tableExists = await queryRunner.query(`
+    const tableExists = (await queryRunner.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
         AND table_name = 'normalized_products'
       );
-    `);
+    `)) as [{ exists: boolean }];
 
     if (!tableExists[0].exists) {
       console.log(
@@ -106,13 +106,13 @@ export class AddProductLinkingToNormalizedProduct1753512220079
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // First check if the table exists
-    const tableExists = await queryRunner.query(`
+    const tableExists = (await queryRunner.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
         AND table_name = 'normalized_products'
       );
-    `);
+    `)) as [{ exists: boolean }];
 
     if (!tableExists[0].exists) {
       console.log(
