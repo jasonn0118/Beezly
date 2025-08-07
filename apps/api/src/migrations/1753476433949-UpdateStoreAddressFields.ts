@@ -29,11 +29,11 @@ export class UpdateStoreAddressFieldsSafe1753476433949
     `);
 
     // Step 2: Copy existing address data to full_address to preserve data (only if address column exists)
-    const addressColumnExists = await queryRunner.query(`
+    const addressColumnExists = (await queryRunner.query(`
       SELECT column_name 
       FROM information_schema.columns 
       WHERE table_name = 'Store' AND column_name = 'address'
-    `);
+    `)) as Array<{ column_name: string }>;
 
     if (addressColumnExists.length > 0) {
       await queryRunner.query(
@@ -58,17 +58,22 @@ export class UpdateStoreAddressFieldsSafe1753476433949
       `);
 
       // Step 4: Only NOW drop the old address column (after data is preserved)
-      await queryRunner.query(`ALTER TABLE "Store" DROP COLUMN IF EXISTS "address"`);
+      await queryRunner.query(
+        `ALTER TABLE "Store" DROP COLUMN IF EXISTS "address"`,
+      );
     }
 
     // ReceiptItem changes (unrelated to Store address) - only if not already NOT NULL
-    const rawNameNullable = await queryRunner.query(`
+    const rawNameNullable = (await queryRunner.query(`
       SELECT is_nullable 
       FROM information_schema.columns 
       WHERE table_name = 'ReceiptItem' AND column_name = 'raw_name'
-    `);
+    `)) as Array<{ is_nullable: string }>;
 
-    if (rawNameNullable.length > 0 && rawNameNullable[0].is_nullable === 'YES') {
+    if (
+      rawNameNullable.length > 0 &&
+      rawNameNullable[0].is_nullable === 'YES'
+    ) {
       await queryRunner.query(
         `ALTER TABLE "ReceiptItem" ALTER COLUMN "raw_name" SET NOT NULL`,
       );
@@ -118,11 +123,11 @@ export class UpdateStoreAddressFieldsSafe1753476433949
     );
 
     // Restore address column and preserve data (only if it doesn't exist)
-    const addressColumnExists = await queryRunner.query(`
+    const addressColumnExists = (await queryRunner.query(`
       SELECT column_name 
       FROM information_schema.columns 
       WHERE table_name = 'Store' AND column_name = 'address'
-    `);
+    `)) as Array<{ column_name: string }>;
 
     if (addressColumnExists.length === 0) {
       await queryRunner.query(
@@ -136,9 +141,15 @@ export class UpdateStoreAddressFieldsSafe1753476433949
     }
 
     // Drop new columns (safely)
-    await queryRunner.query(`ALTER TABLE "Store" DROP COLUMN IF EXISTS "full_address"`);
-    await queryRunner.query(`ALTER TABLE "Store" DROP COLUMN IF EXISTS "street_address"`);
+    await queryRunner.query(
+      `ALTER TABLE "Store" DROP COLUMN IF EXISTS "full_address"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "Store" DROP COLUMN IF EXISTS "street_address"`,
+    );
     await queryRunner.query(`ALTER TABLE "Store" DROP COLUMN IF EXISTS "road"`);
-    await queryRunner.query(`ALTER TABLE "Store" DROP COLUMN IF EXISTS "street_number"`);
+    await queryRunner.query(
+      `ALTER TABLE "Store" DROP COLUMN IF EXISTS "street_number"`,
+    );
   }
 }
