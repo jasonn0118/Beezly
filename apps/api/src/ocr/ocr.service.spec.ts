@@ -4,6 +4,7 @@ import { OcrService } from './ocr.service';
 import { OcrAzureService } from './ocr-azure.service';
 import { ProductNormalizationService } from '../product/product-normalization.service';
 import { VectorEmbeddingService } from '../product/vector-embedding.service';
+import { StoreService } from '../store/store.service';
 import { NormalizedProduct } from '../entities/normalized-product.entity';
 
 describe('OcrService', () => {
@@ -23,13 +24,17 @@ describe('OcrService', () => {
           provide: ProductNormalizationService,
           useValue: {
             normalizeProduct: jest.fn(),
+            normalizeReceiptWithDiscountLinking: jest
+              .fn()
+              .mockResolvedValue([]),
+            parsePrice: jest.fn().mockReturnValue(0),
           },
         },
         {
           provide: VectorEmbeddingService,
           useValue: {
             findSimilarProductsEnhanced: jest.fn(),
-            batchFindSimilarProducts: jest.fn(),
+            batchFindSimilarProducts: jest.fn().mockResolvedValue([]),
             generateEmbedding: jest.fn(),
             updateProductEmbedding: jest.fn(),
           },
@@ -42,6 +47,13 @@ describe('OcrService', () => {
             save: jest.fn(),
             create: jest.fn(),
             createQueryBuilder: jest.fn(),
+          },
+        },
+        {
+          provide: StoreService,
+          useValue: {
+            findStoreFromOcr: jest.fn(),
+            searchStores: jest.fn(),
           },
         },
       ],
@@ -133,13 +145,10 @@ describe('OcrService', () => {
 
   describe('processReceipt', () => {
     it('should throw error when no Azure credentials provided', async () => {
-      // Mock the image loading to succeed but fail at Azure check
+      // Mock the image optimization to succeed but fail at Azure credentials check
       jest
-        .spyOn(service as any, 'loadImageWithFormatSupport')
-        .mockResolvedValue(Buffer.from('mocked image data'));
-      jest
-        .spyOn(service as any, 'compressImageForAzure')
-        .mockResolvedValue(Buffer.from('compressed image data'));
+        .spyOn(service as any, 'optimizeImageForOcr')
+        .mockResolvedValue(Buffer.from('optimized image data'));
 
       const testBuffer = Buffer.from('test image data');
 
@@ -149,13 +158,10 @@ describe('OcrService', () => {
     });
 
     it('should throw error when Azure credentials are invalid', async () => {
-      // Mock the image loading to succeed
+      // Mock the image optimization to succeed
       jest
-        .spyOn(service as any, 'loadImageWithFormatSupport')
-        .mockResolvedValue(Buffer.from('mocked image data'));
-      jest
-        .spyOn(service as any, 'compressImageForAzure')
-        .mockResolvedValue(Buffer.from('compressed image data'));
+        .spyOn(service as any, 'optimizeImageForOcr')
+        .mockResolvedValue(Buffer.from('optimized image data'));
 
       // Mock the Azure service to throw an error
       const mockOcrAzureService = {
@@ -234,6 +240,57 @@ describe('OcrService', () => {
       expect(result.merchant).toBe('Test Store');
       expect(result.engine_used).toBe('Azure Prebuilt Receipt AI');
       expect(mockOcrAzureService.extractWithPrebuiltReceipt).toHaveBeenCalled();
+    });
+  });
+
+  describe('processReceiptWithNormalization', () => {
+    it('should accept includeStoreSearch parameter', async () => {
+      // Mock the method to avoid actual image processing in tests
+      const mockResult = {
+        merchant: 'Test Store',
+        date: '2024-01-01',
+        total: 0,
+        items: [],
+        item_count: 0,
+        raw_text: 'Test receipt text',
+        engine_used: 'Azure Prebuilt Receipt AI',
+        normalization_summary: {
+          total_items: 0,
+          product_items: 0,
+          discount_items: 0,
+          adjustment_items: 0,
+          average_confidence: 0,
+          linked_discounts: 0,
+          total_discount_amount: 0,
+          products_with_discounts: 0,
+        },
+      };
+
+      const mockSpy = jest
+        .spyOn(service, 'processReceiptWithNormalization')
+        .mockResolvedValue(mockResult);
+
+      const testBuffer = Buffer.from('test image data');
+
+      // Test that the method signature accepts the new parameter
+      const result1 = await service.processReceiptWithNormalization(
+        testBuffer,
+        'https://test-endpoint.com',
+        'test-api-key',
+        false, // includeStoreSearch parameter
+      );
+
+      const result2 = await service.processReceiptWithNormalization(
+        testBuffer,
+        'https://test-endpoint.com',
+        'test-api-key',
+        true, // includeStoreSearch parameter
+      );
+
+      // Verify the method was called and returned expected results
+      expect(mockSpy).toHaveBeenCalledTimes(2);
+      expect(result1).toEqual(mockResult);
+      expect(result2).toEqual(mockResult);
     });
   });
 });

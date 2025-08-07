@@ -121,7 +121,7 @@ export class NormalizedProduct {
 
   // Product linking fields
   @ManyToOne(() => Product, { nullable: true })
-  @JoinColumn({ name: 'linked_product_sk' })
+  @JoinColumn({ name: 'linked_product_sk', referencedColumnName: 'productSk' })
   linkedProduct?: Product;
 
   @Column({ name: 'linked_product_sk', type: 'uuid', nullable: true })

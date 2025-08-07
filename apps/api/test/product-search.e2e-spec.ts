@@ -8,6 +8,8 @@ import { VectorEmbeddingService } from '../src/product/vector-embedding.service'
 import { ProductLinkingService } from '../src/product/product-linking.service';
 import { ReceiptPriceIntegrationService } from '../src/product/receipt-price-integration.service';
 import { ProductConfirmationService } from '../src/product/product-confirmation.service';
+import { EnhancedReceiptLinkingService } from '../src/product/enhanced-receipt-linking.service';
+import { ReceiptWorkflowIntegrationService } from '../src/product/receipt-workflow-integration.service';
 import { UnprocessedProductService } from '../src/product/unprocessed-product.service';
 
 describe('Product Search (e2e)', () => {
@@ -31,7 +33,7 @@ describe('Product Search (e2e)', () => {
             {
               product_sk: '550e8400-e29b-41d4-a716-446655440001',
               name: 'Organic Apple',
-              brand_name: 'Cheil Jedang',
+              brandName: 'Cheil Jedang',
               image_url: 'https://example.com/apple.jpg',
             },
           ]);
@@ -42,7 +44,7 @@ describe('Product Search (e2e)', () => {
             {
               product_sk: '550e8400-e29b-41d4-a716-446655440002',
               name: 'Rice Cake',
-              brand_name: 'Cheil Jedang',
+              brandName: 'Cheil Jedang',
               image_url: 'https://example.com/rice-cake.jpg',
             },
           ]);
@@ -103,6 +105,21 @@ describe('Product Search (e2e)', () => {
           },
         },
         {
+          provide: EnhancedReceiptLinkingService,
+          useValue: {
+            processReceiptWithEnhancedLinking: jest.fn(),
+            getProcessingStats: jest.fn(),
+            getReceiptProcessingHistory: jest.fn(),
+          },
+        },
+        {
+          provide: ReceiptWorkflowIntegrationService,
+          useValue: {
+            processReceiptWorkflow: jest.fn(),
+            getWorkflowStatus: jest.fn(),
+          },
+        },
+        {
           provide: UnprocessedProductService,
           useValue: {
             getUnprocessedProductsForReview: jest.fn(),
@@ -140,7 +157,7 @@ describe('Product Search (e2e)', () => {
       expect(response.body[0]).toMatchObject({
         product_sk: '550e8400-e29b-41d4-a716-446655440001',
         name: 'Organic Apple',
-        brand_name: 'Cheil Jedang',
+        brandName: 'Cheil Jedang',
         image_url: 'https://example.com/apple.jpg',
       });
     });
@@ -157,7 +174,7 @@ describe('Product Search (e2e)', () => {
       expect(response.body[0]).toMatchObject({
         product_sk: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Rice Cake',
-        brand_name: 'Cheil Jedang',
+        brandName: 'Cheil Jedang',
         image_url: 'https://example.com/rice-cake.jpg',
       });
     });

@@ -95,7 +95,7 @@ export class NormalizedProductDTO {
     example: "Cheil Jedang",
     description: "Optional product brand name",
   })
-  brand_name?: string;
+  brandName?: string;
 
   @ApiPropertyOptional({
     example: 80.5,
@@ -132,4 +132,10 @@ export class NormalizedProductDTO {
     description: "Foreign key category ID (integer)",
   })
   category?: number;
+
+  @ApiPropertyOptional({
+    example: "food > vege > onion",
+    description: "Foreign key category Path",
+  })
+  categoryPath?: string;
 }

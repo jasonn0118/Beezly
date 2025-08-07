@@ -122,7 +122,8 @@ beezly/
 | **Backend** | NestJS, FastAPI + Python | API services, AI processing |
 | **Database** | PostgreSQL + pgvector | Relational data + vector embeddings |
 | **AI/ML** | OpenAI GPT-4, Azure Form Recognizer | Receipt processing, OCR |
-| **Infrastructure** | Turborepo, Supabase | Monorepo management, auth |
+| **Authentication** | Supabase Auth + JWT | Secure auth with Google OAuth |
+| **Infrastructure** | Turborepo, Docker | Monorepo management, containerization |
 | **DevOps** | GitHub Actions, TypeScript | CI/CD, type safety |
 
 ### 🧠 **AI Intelligence Stack**
@@ -209,10 +210,24 @@ pnpm test         # Run all tests
 pnpm type-check   # TypeScript validation
 ```
 
+### 📚 **App-Specific Documentation**
+
+| **App** | **Purpose** | **Documentation** | **Key Features** |
+|---------|-------------|-------------------|------------------|
+| **🚀 [API](./apps/api/README.md)** | NestJS Backend | **[Complete Guide](./apps/api/README.md)** <br/> [Authentication](./apps/api/docs/AUTH_USAGE_GUIDE.md) \| [OAuth Setup](./apps/api/docs/OAUTH_SETUP.md) \| [Database](./apps/api/docs/DATABASE.md) | Receipt processing, JWT auth, PostgreSQL, Supabase integration |
+| **🌐 [Web](./apps/web/README.md)** | Next.js Frontend | **[Setup Guide](./apps/web/README.md)** | Receipt feedback, viral microsite, App Router |
+| **📱 [Mobile](./apps/mobile/README.md)** | React Native + Expo | **[Mobile App Guide](./apps/mobile/README.md)** \| [Authentication](./apps/mobile/AUTHENTICATION.md) | Receipt scanning, profile, leaderboard, OAuth |
+
+**Quick Navigation:**
+- **New Developer?** → Start with [API Guide](./apps/api/README.md) for backend setup
+- **Frontend Work?** → See [Web App Guide](./apps/web/README.md) for Next.js setup  
+- **Mobile Development?** → Check [Mobile App Guide](./apps/mobile/README.md)
+- **Authentication?** → Go to [Auth Usage Guide](./apps/api/docs/AUTH_USAGE_GUIDE.md)
+
 ### 📋 **Project Structure**
 
 <details>
-<summary>Click to explore the codebase organization</summary>
+<summary>Click to explore the detailed codebase organization</summary>
 
 ```
 beezly/

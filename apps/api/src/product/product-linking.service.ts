@@ -478,12 +478,12 @@ export class ProductLinkingService {
     }
 
     // For other methods, require a higher threshold (adjusted score includes brand compatibility)
-    if (bestCandidate.score >= 0.6) {
+    if (bestCandidate.score >= 0.8) {
       return bestCandidate;
     }
 
     this.logger.debug(
-      `No suitable match found. Best candidate: ${bestCandidate.name} (score: ${bestCandidate.score}, brand: ${bestCandidate.brand})`,
+      `No suitable match found for ${normalizedProduct.normalizedName}. Best candidate: ${bestCandidate.name} (method: ${bestCandidate.method}, score: ${bestCandidate.score}, original: ${bestCandidate.originalScore}, brand_compatibility: ${bestCandidate.brandCompatibilityScore}, normalized_brand: ${normalizedProduct.brand}, candidate_brand: ${bestCandidate.brand})`,
     );
 
     return null;

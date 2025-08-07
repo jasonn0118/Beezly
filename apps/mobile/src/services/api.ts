@@ -1,13 +1,15 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import { EXPO_PUBLIC_API_URL, EXPO_PUBLIC_API_TIMEOUT } from '@env';
 
 // API configuration
-// @ts-ignore - Expo environment variables are available at runtime
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
-// @ts-ignore - Expo environment variables are available at runtime
-const API_TIMEOUT = parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '10000', 10);
+const API_BASE_URL = EXPO_PUBLIC_API_URL || 'http://10.0.0.183:3006';
+const API_TIMEOUT = parseInt(EXPO_PUBLIC_API_TIMEOUT || '60000', 10);
+
+
 
 class ApiClient {
   private client: AxiosInstance;
+  private authStateCallback: (() => void) | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -21,6 +23,7 @@ class ApiClient {
     // Request interceptor for authentication
     this.client.interceptors.request.use(
       (config) => {
+        
         if (config.data instanceof FormData) {
           delete config.headers['Content-Type'];
         }
@@ -38,8 +41,11 @@ class ApiClient {
 
     // Response interceptor for error handling
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        return response;
+      },
       (error) => {
+        
         if (error.response?.status === 401) {
           // Handle unauthorized - redirect to login
           this.handleUnauthorized();
@@ -50,13 +56,31 @@ class ApiClient {
   }
 
   private getAuthToken(): string | null {
-    // TODO: Implement token storage/retrieval
-    return null;
+    // This will be called synchronously, so we need to store the token in a way that's accessible
+    // The AuthService will handle the async storage, but we need a sync way to get it
+    // We'll use a pattern where the token is cached in memory after login
+    return this.cachedToken;
+  }
+
+  private cachedToken: string | null = null;
+
+  // Method to set the cached token (called by AuthService after login)
+  setAuthToken(token: string | null): void {
+    this.cachedToken = token;
   }
 
   private handleUnauthorized(): void {
-    // TODO: Implement logout and redirect to login
-    console.warn('Unauthorized access - user needs to login');
+    // Clear the cached token
+    this.cachedToken = null;
+    // Notify AuthContext about session expiration
+    if (this.authStateCallback) {
+      this.authStateCallback();
+    }
+  }
+
+  // Method to set a callback for auth state changes
+  setAuthStateCallback(callback: (() => void) | null): void {
+    this.authStateCallback = callback;
   }
 
   // Generic API methods

@@ -23,10 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
-import {
-  MobileProductCreateDto,
-  MobileProductResponseDto,
-} from './dto/mobile-product-create.dto';
+import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
 import { ProductSearchResponseDto } from './dto/product-search-response.dto';
 import {
   EmbeddingSearchRequestDto,
@@ -40,6 +37,13 @@ import { VectorEmbeddingService } from './vector-embedding.service';
 import { ProductLinkingService } from './product-linking.service';
 import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
 import { ProductConfirmationService } from './product-confirmation.service';
+import { EnhancedReceiptLinkingService } from './enhanced-receipt-linking.service';
+import { ReceiptWorkflowIntegrationService } from './receipt-workflow-integration.service';
+import { EnhancedProductResponseDto } from '../barcode/dto/enhanced-product-response.dto';
+import {
+  AddProductPriceDto,
+  AddProductPriceResponseDto,
+} from '../barcode/dto/add-product-price.dto';
 import {
   ProcessReceiptConfirmationDto,
   ReceiptConfirmationResponseDto,
@@ -62,13 +66,14 @@ import { Product } from '../entities/product.entity';
 @ApiTags('Products')
 @Controller('products')
 export class ProductController {
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.8;
   constructor(
     private readonly productService: ProductService,
     private readonly vectorEmbeddingService: VectorEmbeddingService,
     private readonly productLinkingService: ProductLinkingService,
     private readonly receiptPriceIntegrationService: ReceiptPriceIntegrationService,
     private readonly productConfirmationService: ProductConfirmationService,
+    private readonly enhancedReceiptLinkingService: EnhancedReceiptLinkingService,
+    private readonly receiptWorkflowIntegrationService: ReceiptWorkflowIntegrationService,
     private readonly unprocessedProductService: UnprocessedProductService,
   ) {}
 
@@ -166,14 +171,30 @@ export class ProductController {
 
   @Post()
   @ApiOperation({
-    summary: 'Create a new product with image, store, and price',
+    summary: 'Create a new product with optional image and store linking',
+    description: `
+      **Unified Product Creation Endpoint**
+      
+      Creates a new product with flexible store linking options. Supports multiple scenarios:
+      
+      🖼️ **Image Upload**: Optional image file upload
+      🏪 **Store Selection**: Choose from three options:
+      - **No Store**: Create product without store linkage
+      - **Existing Store**: Link to existing database store using 'storeSk'
+      - **Google Places Store**: Create new store from Google Places data using 'googlePlacesStore'
+      
+      💰 **Price Information**: Optional price and currency data
+      
+      **Note**: Either 'storeSk' OR 'googlePlacesStore' can be provided, not both.
+    `,
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    description: 'Product data with image file',
+    description: 'Product data with optional image and store selection',
     schema: {
       type: 'object',
       properties: {
+        // Core product fields
         name: { type: 'string', example: 'Organic Apple' },
         barcode: { type: 'string', example: '1234567890123' },
         barcodeType: {
@@ -192,60 +213,133 @@ export class ProductController {
           ],
         },
         category: { type: 'number', example: 101001 },
-        storeName: { type: 'string', example: 'Homeplus' },
-        storeAddress: { type: 'string', example: '123 Main St, Seoul' },
-        price: { type: 'number', example: 5000 },
-        brandName: { type: 'string', example: 'Cheil Jedang' },
-        storeCity: { type: 'string', example: 'Seoul' },
-        storeProvince: {
+        brandName: {
           type: 'string',
-          example: 'Seoul',
+          example: 'Cheil Jedang',
+          description: 'Brand name (optional)',
         },
-        storePostalCode: {
+
+        // Price information
+        price: {
+          type: 'number',
+          example: 5000,
+          description: 'Product price at selected store (optional)',
+        },
+        currency: {
           type: 'string',
-          example: '12345',
+          example: 'CAD',
+          description: 'Currency code (default: CAD)',
         },
+
+        // Store selection (choose ONE)
+        storeSk: {
+          type: 'string',
+          format: 'uuid',
+          example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+          description:
+            'Existing store UUID (use if user selected database store)',
+        },
+        googlePlacesStore: {
+          type: 'object',
+          description:
+            'Google Places store data (use if user selected Google Places result) - matches store search response format',
+          properties: {
+            place_id: {
+              type: 'string',
+              example: 'ChIJ_xkgOm5xhlQRzCy7fF5HHqY',
+            },
+            name: { type: 'string', example: 'Save-On-Foods' },
+            formatted_address: {
+              type: 'string',
+              example: '1234 Main St, Vancouver, BC V6B 2L2, Canada',
+            },
+            streetNumber: { type: 'string', example: '1766' },
+            road: { type: 'string', example: 'Robson St' },
+            streetAddress: { type: 'string', example: '1766 Robson St' },
+            fullAddress: {
+              type: 'string',
+              example: '1234 Main St, Vancouver, BC V6B 2L2, Canada',
+            },
+            city: { type: 'string', example: 'Vancouver' },
+            province: { type: 'string', example: 'BC' },
+            postalCode: { type: 'string', example: 'V6B 2L2' },
+            countryRegion: { type: 'string', example: 'Canada' },
+            latitude: { type: 'number', example: 49.1398 },
+            longitude: { type: 'number', example: -122.6705 },
+            types: {
+              type: 'array',
+              items: { type: 'string' },
+              example: ['supermarket', 'store'],
+            },
+          },
+        },
+
+        // Image upload
         image: {
           type: 'string',
           format: 'binary',
-          description: 'Product image file',
+          description:
+            'Product image file (optional - default placeholder used if not provided)',
         },
       },
-      required: [
-        'name',
-        'barcode',
-        'category',
-        'storeName',
-        'storeAddress',
-        'price',
-        'image',
-      ],
+      required: ['name', 'barcode', 'category'],
     },
   })
   @ApiResponse({
     status: 201,
-    description: 'Product successfully created with store and price info',
-    type: MobileProductResponseDto,
+    description: 'Product successfully created with optional store linkage',
+    type: ProductResponseDto,
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid input data or missing image file',
+    description: 'Bad request - validation errors or conflicting store data',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: {
+          type: 'array',
+          items: { type: 'string' },
+          example: [
+            'Either storeSk or googlePlacesStore can be provided, not both',
+            'Store with ID not found',
+            'Invalid Google Places data',
+            'Category not found',
+          ],
+        },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
   })
   @UseInterceptors(FileInterceptor('image'))
   async createProduct(
-    @Body() productData: MobileProductCreateDto,
-    @UploadedFile() imageFile: Express.Multer.File,
-  ): Promise<MobileProductResponseDto> {
-    if (!imageFile) {
-      throw new BadRequestException('Image file is required');
+    @Body() productData: ProductCreateDto,
+    @UploadedFile() imageFile?: Express.Multer.File,
+  ): Promise<ProductResponseDto> {
+    // Validate store selection logic - either storeSk OR googlePlacesStore, not both
+    const hasStoreSk = !!productData.storeSk;
+    const hasGoogleStore = !!productData.googlePlacesStore;
+
+    if (hasStoreSk && hasGoogleStore) {
+      throw new BadRequestException(
+        'Provide either storeSk OR googlePlacesStore, not both',
+      );
     }
 
-    // Convert Express.Multer.File to Buffer
-    const imageBuffer = imageFile.buffer;
+    // Handle optional image upload
+    let imageBuffer: Buffer | undefined;
+    let mimeType: string | undefined;
+
+    if (imageFile) {
+      imageBuffer = imageFile.buffer;
+      mimeType = imageFile.mimetype;
+    }
 
     return this.productService.createProductWithPriceAndStore(
       productData,
       imageBuffer,
+      mimeType,
+      'default_user', // userSk
     );
   }
 
@@ -280,6 +374,184 @@ export class ProductController {
   async deleteProduct(@Param('id') id: string): Promise<{ message: string }> {
     await this.productService.deleteProduct(id);
     return { message: 'Product deleted successfully' };
+  }
+
+  @Get(':productSk/enhanced')
+  // TODO: Add @UseGuards(JwtAuthGuard) when JWT authentication is implemented
+  @ApiOperation({
+    summary: 'Get product by product ID with store and price information',
+    description:
+      'Returns detailed product information including prices across different stores, location-based filtering, and price comparison data.',
+  })
+  @ApiQuery({
+    name: 'storeSk',
+    description: 'Filter prices from specific store (store UUID)',
+    required: false,
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  @ApiQuery({
+    name: 'latitude',
+    description: 'User latitude for location-based store filtering',
+    required: false,
+    type: Number,
+    example: 49.2827,
+  })
+  @ApiQuery({
+    name: 'longitude',
+    description: 'User longitude for location-based store filtering',
+    required: false,
+    type: Number,
+    example: -123.1207,
+  })
+  @ApiQuery({
+    name: 'maxDistance',
+    description:
+      'Maximum distance in kilometers for nearby stores (default: 10km)',
+    required: false,
+    type: Number,
+    example: 10,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product found with store and price information',
+    type: EnhancedProductResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request - invalid parameters (product ID, location coordinates, store ID format)',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: { type: 'string', example: 'Invalid product ID provided' },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 404 },
+        message: {
+          type: 'string',
+          example: 'Product with ID not found',
+        },
+        error: { type: 'string', example: 'Not Found' },
+      },
+    },
+  })
+  async getProductByIdEnhanced(
+    @Param('productSk') productSk: string,
+    @Query('storeSk') storeSk?: string,
+    @Query('latitude') latitude?: number,
+    @Query('longitude') longitude?: number,
+    @Query('maxDistance') maxDistance?: number,
+  ): Promise<EnhancedProductResponseDto> {
+    return this.productService.getProductByProductSkEnhanced(
+      productSk,
+      storeSk,
+      latitude,
+      longitude,
+      maxDistance || 10, // Default to 10km radius
+    );
+  }
+
+  @Post(':productSk/price')
+  // TODO: Add @UseGuards(JwtAuthGuard) when JWT authentication is implemented
+  @ApiOperation({
+    summary: 'Add store and price information to existing product',
+    description:
+      "Allows users to contribute price and store information for a product. You can either provide complete store location information (which will create a new store or match to an existing one) OR provide an existing storeSk to use an existing store. Only one of 'store' or 'storeSk' should be provided.",
+  })
+  @ApiBody({
+    description: 'Price and store information to add',
+    examples: {
+      withExistingStore: {
+        summary: 'Using existing store SK',
+        description: 'Add price using an existing store ID',
+        value: {
+          storeSk: 'f829b2f6-997e-4400-b3ba-5994753f3ef7',
+          price: {
+            price: 9.99,
+            currency: 'CAD',
+          },
+        },
+      },
+      withNewStore: {
+        summary: 'Creating/matching store by location',
+        description: 'Add price with store location information',
+        value: {
+          store: {
+            name: 'Walmart Supercentre',
+            fullAddress: '9855 Austin Rd, Burnaby, BC V3J 1N5',
+            city: 'Burnaby',
+            province: 'BC',
+            postalCode: 'V3J 1N5',
+            latitude: 49.2520495,
+            longitude: -122.8962265,
+            placeId: 'ChIJOYsF8jt4hlQRDjdIUr1JI2o',
+          },
+          price: {
+            price: 12.99,
+            currency: 'CAD',
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Successfully added price and store information',
+    type: AddProductPriceResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request - invalid product ID, price data, or missing/invalid store information',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: {
+          type: 'string',
+          examples: [
+            'Invalid product ID provided',
+            'Either store information or storeSk must be provided, but not both',
+            'Store with ID not found',
+            'Invalid store ID format',
+          ],
+        },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 404 },
+        message: {
+          type: 'string',
+          example: 'Product not found',
+        },
+        error: { type: 'string', example: 'Not Found' },
+      },
+    },
+  })
+  async addProductPrice(
+    @Param('productSk') productSk: string,
+    @Body() addPriceData: AddProductPriceDto,
+  ): Promise<AddProductPriceResponseDto> {
+    return this.productService.addProductPriceByProductSk(
+      productSk,
+      addPriceData,
+    );
   }
 
   @Post('search/embedding')
@@ -590,7 +862,7 @@ export class ProductController {
     return this.receiptPriceIntegrationService.getPriceSyncStatistics();
   }
 
-  // Receipt Confirmation Endpoints (Mobile Frontend Integration)
+  // Receipt Confirmation Endpoints (Frontend Integration)
 
   @Get('receipt/confirmation-candidates')
   @ApiOperation({
@@ -742,6 +1014,361 @@ export class ProductController {
       selectionsRequest.selections,
       selectionsRequest.userId,
       selectionsRequest.receiptId,
+    );
+  }
+
+  // Enhanced Product-Price-Store Linking Endpoints
+
+  @Post('enhanced-linking/link-product')
+  @ApiOperation({
+    summary: 'Link product with automatic price and store synchronization',
+    description:
+      'Enhanced linking that automatically syncs price and store information when a product is successfully linked to a normalized product.',
+  })
+  @ApiBody({
+    description: 'Product linking context with price and store information',
+    schema: {
+      properties: {
+        receiptSk: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Receipt UUID',
+        },
+        normalizedProductSk: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Normalized product UUID',
+        },
+        linkedProductSk: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Catalog product UUID to link to',
+        },
+        linkingConfidence: {
+          type: 'number',
+          minimum: 0,
+          maximum: 1,
+          description: 'Confidence score (0-1)',
+        },
+        linkingMethod: {
+          type: 'string',
+          description: 'Method used for linking',
+          example: 'barcode_match',
+        },
+        merchant: {
+          type: 'string',
+          description: 'Merchant/store name',
+          example: 'Homeplus',
+        },
+        storeSk: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Store UUID (optional)',
+        },
+        receiptDate: {
+          type: 'string',
+          format: 'date-time',
+          description: 'Receipt date (optional)',
+        },
+      },
+      required: [
+        'receiptSk',
+        'normalizedProductSk',
+        'linkedProductSk',
+        'linkingConfidence',
+        'linkingMethod',
+        'merchant',
+      ],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Enhanced linking completed successfully',
+    schema: {
+      properties: {
+        success: { type: 'boolean', example: true },
+        productLinked: { type: 'boolean', example: true },
+        pricesSynced: { type: 'number', example: 3 },
+        storeLinked: { type: 'boolean', example: true },
+        errors: { type: 'array', items: { type: 'string' } },
+        linkedProductSk: { type: 'string', format: 'uuid' },
+        storeSk: { type: 'string', format: 'uuid' },
+        pricesSyncResult: {
+          type: 'object',
+          properties: {
+            regularPrices: { type: 'number', example: 2 },
+            discounts: { type: 'number', example: 1 },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid linking context or failed to link',
+  })
+  async enhancedProductLinking(
+    @Body()
+    linkingContext: {
+      receiptSk: string;
+      normalizedProductSk: string;
+      linkedProductSk: string;
+      linkingConfidence: number;
+      linkingMethod: string;
+      merchant: string;
+      storeSk?: string;
+      receiptDate?: Date;
+    },
+  ) {
+    return this.enhancedReceiptLinkingService.linkProductWithPriceAndStore(
+      linkingContext,
+    );
+  }
+
+  @Post('enhanced-linking/batch-link')
+  @ApiOperation({
+    summary: 'Batch link multiple products with price and store sync',
+    description:
+      'Process multiple product linkings in batch with automatic price and store synchronization.',
+  })
+  @ApiBody({
+    description: 'Array of product linking contexts',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          receiptSk: { type: 'string', format: 'uuid' },
+          normalizedProductSk: { type: 'string', format: 'uuid' },
+          linkedProductSk: { type: 'string', format: 'uuid' },
+          linkingConfidence: { type: 'number', minimum: 0, maximum: 1 },
+          linkingMethod: { type: 'string' },
+          merchant: { type: 'string' },
+          storeSk: { type: 'string', format: 'uuid' },
+          receiptDate: { type: 'string', format: 'date-time' },
+        },
+        required: [
+          'receiptSk',
+          'normalizedProductSk',
+          'linkedProductSk',
+          'linkingConfidence',
+          'linkingMethod',
+          'merchant',
+        ],
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Batch linking results',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean' },
+          productLinked: { type: 'boolean' },
+          pricesSynced: { type: 'number' },
+          storeLinked: { type: 'boolean' },
+          errors: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+  })
+  async batchEnhancedProductLinking(
+    @Body()
+    linkingContexts: Array<{
+      receiptSk: string;
+      normalizedProductSk: string;
+      linkedProductSk: string;
+      linkingConfidence: number;
+      linkingMethod: string;
+      merchant: string;
+      storeSk?: string;
+      receiptDate?: Date;
+    }>,
+  ) {
+    return this.enhancedReceiptLinkingService.batchLinkProductsWithPriceAndStore(
+      linkingContexts,
+    );
+  }
+
+  @Post('enhanced-linking/process-all-pending')
+  @ApiOperation({
+    summary: 'Process all pending product links with price and store sync',
+    description:
+      "Automatically process all normalized products that are linked but haven't had their prices and store information synced yet.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Processing results for all pending links',
+    schema: {
+      properties: {
+        processed: { type: 'number', example: 150 },
+        successful: { type: 'number', example: 140 },
+        totalPricesSynced: { type: 'number', example: 420 },
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  async processAllPendingLinks() {
+    return this.enhancedReceiptLinkingService.processAllPendingLinks();
+  }
+
+  @Get('enhanced-linking/stats')
+  @ApiOperation({
+    summary: 'Get enhanced linking statistics',
+    description:
+      'Get comprehensive statistics about enhanced product linking including price and store sync coverage.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Enhanced linking statistics',
+    schema: {
+      properties: {
+        totalLinkedProducts: { type: 'number', example: 600 },
+        productsWithPrices: { type: 'number', example: 580 },
+        productsWithStores: { type: 'number', example: 600 },
+        totalPricesSynced: { type: 'number', example: 1200 },
+        averageLinkingConfidence: { type: 'number', example: 0.92 },
+      },
+    },
+  })
+  async getEnhancedLinkingStats() {
+    return this.enhancedReceiptLinkingService.getLinkingStatistics();
+  }
+
+  // Receipt Workflow Integration Endpoints
+
+  @Post('receipt-workflow/process/:receiptId')
+  @ApiOperation({
+    summary: 'Process complete receipt workflow with enhanced linking',
+    description:
+      'Process a receipt through the complete workflow: OCR → Normalization → User Confirmation → Product Linking → Price/Store Sync',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt workflow processing results',
+    schema: {
+      properties: {
+        receiptProcessed: { type: 'boolean', example: true },
+        productsLinked: { type: 'number', example: 8 },
+        pricesSynced: { type: 'number', example: 12 },
+        storesLinked: { type: 'number', example: 1 },
+        errors: { type: 'array', items: { type: 'string' } },
+        statistics: {
+          type: 'object',
+          properties: {
+            totalItems: { type: 'number', example: 10 },
+            normalizedItems: { type: 'number', example: 9 },
+            linkedItems: { type: 'number', example: 8 },
+            pendingConfirmation: { type: 'number', example: 1 },
+            requiresSelection: { type: 'number', example: 0 },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found',
+  })
+  async processReceiptWorkflow(@Param('receiptId') receiptId: string) {
+    return this.receiptWorkflowIntegrationService.processReceiptWorkflow(
+      receiptId,
+    );
+  }
+
+  @Post('receipt-workflow/auto-process/:receiptId')
+  @ApiOperation({
+    summary: 'Auto-process receipt after user confirmations',
+    description:
+      'Automatically process receipt with enhanced linking after user has completed confirmations and selections.',
+  })
+  @ApiBody({
+    description: 'Confirmed normalization IDs',
+    schema: {
+      properties: {
+        confirmedNormalizations: {
+          type: 'array',
+          items: { type: 'string', format: 'uuid' },
+          description: 'Array of confirmed normalization IDs',
+        },
+      },
+      required: ['confirmedNormalizations'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Auto-processing results',
+    schema: {
+      properties: {
+        receiptProcessed: { type: 'boolean' },
+        productsLinked: { type: 'number' },
+        pricesSynced: { type: 'number' },
+        storesLinked: { type: 'number' },
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  async autoProcessAfterConfirmation(
+    @Param('receiptId') receiptId: string,
+    @Body() body: { confirmedNormalizations: string[] },
+  ) {
+    return this.receiptWorkflowIntegrationService.autoProcessAfterConfirmation(
+      receiptId,
+      body.confirmedNormalizations,
+    );
+  }
+
+  @Get('receipt-workflow/status/:receiptId')
+  @ApiOperation({
+    summary: 'Get receipt processing status and next actions',
+    description:
+      'Get detailed status of receipt processing including progress statistics and recommended next actions.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt processing status',
+    schema: {
+      properties: {
+        status: {
+          type: 'string',
+          enum: [
+            'pending',
+            'processing',
+            'confirmation_needed',
+            'selection_needed',
+            'completed',
+            'failed',
+          ],
+          example: 'confirmation_needed',
+        },
+        progress: {
+          type: 'object',
+          properties: {
+            totalItems: { type: 'number', example: 10 },
+            normalizedItems: { type: 'number', example: 9 },
+            confirmedItems: { type: 'number', example: 7 },
+            linkedItems: { type: 'number', example: 6 },
+            pricesSynced: { type: 'number', example: 8 },
+          },
+        },
+        nextActions: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['Review and confirm 2 normalized products'],
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found',
+  })
+  async getReceiptProcessingStatus(@Param('receiptId') receiptId: string) {
+    return this.receiptWorkflowIntegrationService.getReceiptProcessingStatus(
+      receiptId,
     );
   }
 
