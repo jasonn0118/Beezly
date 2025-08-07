@@ -244,29 +244,53 @@ describe('OcrService', () => {
   });
 
   describe('processReceiptWithNormalization', () => {
-    it('should accept includeStoreSearch parameter', () => {
-      // This test simply verifies that the method accepts the new parameter
-      // without throwing compilation errors
+    it('should accept includeStoreSearch parameter', async () => {
+      // Mock the method to avoid actual image processing in tests
+      const mockResult = {
+        merchant: 'Test Store',
+        date: '2024-01-01',
+        total: 0,
+        items: [],
+        item_count: 0,
+        raw_text: 'Test receipt text',
+        engine_used: 'Azure Prebuilt Receipt AI',
+        normalization_summary: {
+          total_items: 0,
+          product_items: 0,
+          discount_items: 0,
+          adjustment_items: 0,
+          average_confidence: 0,
+          linked_discounts: 0,
+          total_discount_amount: 0,
+          products_with_discounts: 0,
+        },
+      };
+
+      const mockSpy = jest
+        .spyOn(service, 'processReceiptWithNormalization')
+        .mockResolvedValue(mockResult);
+
       const testBuffer = Buffer.from('test image data');
 
       // Test that the method signature accepts the new parameter
-      expect(() => {
-        void service.processReceiptWithNormalization(
-          testBuffer,
-          'https://test-endpoint.com',
-          'test-api-key',
-          false, // includeStoreSearch parameter
-        );
-      }).not.toThrow();
+      const result1 = await service.processReceiptWithNormalization(
+        testBuffer,
+        'https://test-endpoint.com',
+        'test-api-key',
+        false, // includeStoreSearch parameter
+      );
 
-      expect(() => {
-        void service.processReceiptWithNormalization(
-          testBuffer,
-          'https://test-endpoint.com',
-          'test-api-key',
-          true, // includeStoreSearch parameter
-        );
-      }).not.toThrow();
+      const result2 = await service.processReceiptWithNormalization(
+        testBuffer,
+        'https://test-endpoint.com',
+        'test-api-key',
+        true, // includeStoreSearch parameter
+      );
+
+      // Verify the method was called and returned expected results
+      expect(mockSpy).toHaveBeenCalledTimes(2);
+      expect(result1).toEqual(mockResult);
+      expect(result2).toEqual(mockResult);
     });
   });
 });
