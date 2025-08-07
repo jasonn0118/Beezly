@@ -73,7 +73,6 @@ export default function StoreSearch({
       setStores(allStores);
       setHasSearched(true);
     } catch (error) {
-      console.error('Store search failed:', error);
       Alert.alert('Search Error', 'Failed to search for stores. Please try again.');
       setStores([]);
       setHasSearched(true);

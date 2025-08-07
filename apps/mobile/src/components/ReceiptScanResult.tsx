@@ -131,7 +131,6 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     }, [pictureData]);
 
     const handleSaveReceipt = () => {
-        console.log('Save button pressed');
         // TODO: Implement receipt saving logic
     };
     
@@ -147,9 +146,8 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     storeId: store.id,
                     continueProcessing: true
                 });
-                console.log('Store confirmed for receipt:', receiptId);
             } catch (error) {
-                console.error('Failed to confirm store:', error);
+                // Handle error silently or show user feedback
             }
         }
     };
@@ -177,7 +175,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                 });
             }
         } catch (error) {
-            console.error('Failed to create store:', error);
+            // Handle error silently or show user feedback
         }
     };
 
