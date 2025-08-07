@@ -218,10 +218,29 @@ export class AddOcrReceiptNormalizationFields1753425094392
     columnName: string,
     columnDefinition: string,
   ): Promise<void> {
-    const table = await queryRunner.getTable(tableName);
-    const column = table?.findColumnByName(columnName);
+    // First check if the table exists
+    const tableExists = await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = '${tableName}'
+      );
+    `);
 
-    if (!column) {
+    if (!tableExists[0].exists) {
+      console.log(
+        `⚠️  Table ${tableName} does not exist. Skipping column ${columnName} addition.`,
+      );
+      return;
+    }
+
+    // Check if column already exists
+    const columnExists = await queryRunner.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = '${tableName}' AND column_name = '${columnName}'
+    `);
+
+    if (columnExists.length === 0) {
       await queryRunner.query(
         `ALTER TABLE "${tableName}" ADD "${columnName}" ${columnDefinition}`,
       );
@@ -241,10 +260,29 @@ export class AddOcrReceiptNormalizationFields1753425094392
     tableName: string,
     columnName: string,
   ): Promise<void> {
-    const table = await queryRunner.getTable(tableName);
-    const column = table?.findColumnByName(columnName);
+    // First check if the table exists
+    const tableExists = await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = '${tableName}'
+      );
+    `);
 
-    if (column) {
+    if (!tableExists[0].exists) {
+      console.log(
+        `⚠️  Table ${tableName} does not exist. Skipping column ${columnName} removal.`,
+      );
+      return;
+    }
+
+    // Check if column exists
+    const columnExists = await queryRunner.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = '${tableName}' AND column_name = '${columnName}'
+    `);
+
+    if (columnExists.length > 0) {
       await queryRunner.query(
         `ALTER TABLE "${tableName}" DROP COLUMN "${columnName}"`,
       );

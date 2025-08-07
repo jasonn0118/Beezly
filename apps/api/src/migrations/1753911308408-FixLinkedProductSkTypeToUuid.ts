@@ -6,6 +6,22 @@ export class FixLinkedProductSkTypeToUuid1753911308408
   name = 'FixLinkedProductSkTypeToUuid1753911308408';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // First check if the table exists
+    const tableExists = await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'normalized_products'
+      );
+    `);
+
+    if (!tableExists[0].exists) {
+      console.log(
+        'normalized_products table does not exist. Skipping linked_product_sk type change.',
+      );
+      return;
+    }
+
     // Check if the column exists and get its type
     const columnExists = (await queryRunner.query(`
       SELECT data_type 
@@ -50,6 +66,22 @@ export class FixLinkedProductSkTypeToUuid1753911308408
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // First check if the table exists
+    const tableExists = await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'normalized_products'
+      );
+    `);
+
+    if (!tableExists[0].exists) {
+      console.log(
+        'normalized_products table does not exist. Skipping linked_product_sk type rollback.',
+      );
+      return;
+    }
+
     // Drop foreign key constraint first
     await queryRunner.query(
       `ALTER TABLE "normalized_products" DROP CONSTRAINT "FK_8988cdcae12e54d0c88e196ad38"`,
