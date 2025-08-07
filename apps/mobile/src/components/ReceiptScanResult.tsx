@@ -380,7 +380,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                                     </View>
                                 ) : (
                                     <Text style={styles.productPrice}>
-                                        {typeof item.final_price === 'number' ? `${item.final_price.toFixed(2)}` : '$--.--'}!!!
+                                        {typeof item.final_price === 'number' ? `${item.final_price.toFixed(2)}` : '$--.--'}
                                     </Text>
                                 )}
                                 <Text style={styles.confidenceScore}>{(item.confidence_score * 100).toFixed(0)}%</Text>
