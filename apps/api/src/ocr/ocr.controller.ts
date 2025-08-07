@@ -46,6 +46,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserProfileDTO } from '../../../packages/types/dto/user';
+import { ConfirmReceiptDateDto } from './dto/confirm-receipt-date.dto';
 
 @ApiTags('OCR')
 @Controller('ocr')
@@ -647,6 +648,62 @@ export class OcrController {
     } else {
       console.log(
         'No normalizations to create - no normalized products found in OCR result',
+      );
+    }
+  }
+
+  @Post('confirm-receipt-date')
+  @Public() // Allow non-authenticated users to confirm dates
+  @ApiOperation({
+    summary: 'Confirm/update receipt purchase date',
+    description:
+      'Updates the purchase date for a receipt based on user confirmation. Used when OCR extracts incorrect dates (e.g., 2028 instead of 2023).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Date confirmed and receipt updated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+        receipt: {
+          type: 'object',
+          description: 'Updated receipt with correct date',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid date provided',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found',
+  })
+  async confirmReceiptDate(
+    @Body() body: ConfirmReceiptDateDto,
+  ): Promise<{ success: boolean; message: string; receipt: unknown }> {
+    try {
+      const updatedReceipt = await this.receiptService.updateReceiptDate(
+        body.receiptId,
+        body.confirmedDate,
+        body.confirmedTime,
+      );
+
+      return {
+        success: true,
+        message: 'Date confirmed and receipt updated successfully',
+        receipt: updatedReceipt,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
