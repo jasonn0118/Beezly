@@ -15,17 +15,19 @@ export default function ScanPage() {
     const [scanStatus, setScanStatus] = useState('Searching for barcode...');
     const [scannedData, setScannedData] = useState<{ barcode: string; type: string } | null>(null);
     const [photoUri, setPhotoUri] = useState<string | null>(null);
+    const [isCameraActive, setIsCameraActive] = useState(false);
     const cameraRef = useRef<CameraView>(null);
     const scanAnimation = useRef(new Animated.Value(0)).current;
 
     // This effect resets the scanner state and restarts the animation whenever the tab is focused
     useFocusEffect(
         useCallback(() => {
-            // Reset state
+            // Reset state and activate camera
             setCurrentView('barcodeScan');
             setScannedData(null);
             setPhotoUri(null);
             setScanStatus('Searching for barcode...');
+            setIsCameraActive(true);
 
             // Reset and start animation
             scanAnimation.setValue(0);
@@ -38,9 +40,10 @@ export default function ScanPage() {
             );
             animation.start();
 
-            // Cleanup function to stop animation when the screen is unfocused
+            // Cleanup function when the screen is unfocused
             return () => {
                 animation.stop();
+                setIsCameraActive(false);
             };
         }, [scanAnimation])
     );
@@ -60,12 +63,13 @@ export default function ScanPage() {
 
     // Called on receipt capture success
     const handleReceiptCapture = async () => {
-        if (cameraRef.current) {
+        if (cameraRef.current && isCameraActive) {
             try {
                 const photo = await cameraRef.current.takePictureAsync();
                 console.log("Receipt captured!", photo.uri);
                 setPhotoUri(photo.uri);
                 setCurrentView('receiptResult');
+                setIsCameraActive(false); // Deactivate camera when showing result
             } catch (error) {
                 console.error("Failed to capture receipt:", error);
             }
@@ -102,6 +106,7 @@ export default function ScanPage() {
         setCurrentView('barcodeScan');
         setScannedData(null);
         setPhotoUri(null);
+        setIsCameraActive(true); // Reactivate camera when returning to scan
     };
 
     if (currentView === 'receiptResult') {
@@ -112,14 +117,18 @@ export default function ScanPage() {
         <View style={styles.container}>
             <StatusBar barStyle="light-content" />
 
-            <CameraView
-                ref={cameraRef}
-                style={styles.camera}
-                onBarcodeScanned={currentView === 'barcodeScan' ? handleBarcodeScanned : undefined}
-                barcodeScannerSettings={{
-                    barcodeTypes: ["code39", "ean8", "ean13", "codabar", "itf14", "code128", "upc_a", "upc_e"],
-                }}
-            />
+            {isCameraActive ? (
+                <CameraView
+                    ref={cameraRef}
+                    style={styles.camera}
+                    onBarcodeScanned={currentView === 'barcodeScan' ? handleBarcodeScanned : undefined}
+                    barcodeScannerSettings={{
+                        barcodeTypes: ["code39", "ean8", "ean13", "codabar", "itf14", "code128", "upc_a", "upc_e"],
+                    }}
+                />
+            ) : (
+                <View style={[styles.camera, styles.cameraPlaceholder]} />
+            )}
 
             <SafeAreaView style={styles.overlay}>
                 {/* Top switcher UI - Fixed position */}
@@ -184,6 +193,9 @@ const styles = StyleSheet.create({
     },
     camera: {
         ...StyleSheet.absoluteFillObject, // Camera takes full screen
+    },
+    cameraPlaceholder: {
+        backgroundColor: 'black',
     },
     overlay: {
         ...StyleSheet.absoluteFillObject,

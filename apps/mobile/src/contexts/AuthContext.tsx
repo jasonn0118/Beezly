@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AuthService, UserProfile, AuthResponse } from '../services/authService';
 import { GoogleOAuthService, GoogleOAuthResponse } from '../services/googleOAuthService';
+import { apiClient } from '../services/api';
 
 interface AuthContextType {
   // State
@@ -34,9 +35,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<UserProfile | null>(null);
 
+  // Handle session expiration
+  const handleSessionExpiration = async () => {
+    // Clear auth data from storage
+    await AuthService.clearAuthData();
+    // Update context state
+    setIsAuthenticated(false);
+    setUser(null);
+  };
+
   // Initialize authentication state on app start
   useEffect(() => {
     initializeAuth();
+    
+    // Set up session expiration callback
+    apiClient.setAuthStateCallback(handleSessionExpiration);
+    
+    // Cleanup callback on unmount
+    return () => {
+      apiClient.setAuthStateCallback(null);
+    };
   }, []);
 
   const initializeAuth = async () => {
