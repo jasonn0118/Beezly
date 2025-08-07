@@ -6,6 +6,46 @@ export class Migration1753316790537 implements MigrationInterface {
   name = 'Migration1753316790537';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Check if Category table exists first
+    const tableExists = await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Category'
+      );
+    `);
+
+    if (!tableExists[0].exists) {
+      console.log('Category table does not exist. Skipping Category table modifications.');
+      
+      // Still check and add brandName to Product table if it exists
+      const productTableExists = await queryRunner.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'Product'
+        );
+      `);
+
+      if (productTableExists[0].exists) {
+        // Check if brandName column exists before adding it
+        const brandNameExists = await queryRunner.query(`
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'Product' AND column_name = 'brandName'
+        `);
+
+        if (brandNameExists.length === 0) {
+          await queryRunner.query(
+            `ALTER TABLE "Product" ADD "brandName" character varying`,
+          );
+        }
+      } else {
+        console.log('Product table does not exist. Skipping brandName column addition.');
+      }
+      
+      return;
+    }
+
     // Check if constraint exists before dropping it
     const constraintExists = await queryRunner.query(`
       SELECT 1 FROM information_schema.table_constraints 
@@ -61,14 +101,41 @@ export class Migration1753316790537 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Check if brandName column exists before dropping it
-    const brandNameExists = await queryRunner.query(`
-      SELECT 1 FROM information_schema.columns 
-      WHERE table_name = 'Product' AND column_name = 'brandName'
+    // Check if Product table exists first
+    const productTableExists = await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Product'
+      );
     `);
 
-    if (brandNameExists.length > 0) {
-      await queryRunner.query(`ALTER TABLE "Product" DROP COLUMN "brandName"`);
+    if (productTableExists[0].exists) {
+      // Check if brandName column exists before dropping it
+      const brandNameExists = await queryRunner.query(`
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'Product' AND column_name = 'brandName'
+      `);
+
+      if (brandNameExists.length > 0) {
+        await queryRunner.query(`ALTER TABLE "Product" DROP COLUMN "brandName"`);
+      }
+    } else {
+      console.log('Product table does not exist. Skipping brandName column removal.');
+    }
+
+    // Check if Category table exists first
+    const categoryTableExists = await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Category'
+      );
+    `);
+
+    if (!categoryTableExists[0].exists) {
+      console.log('Category table does not exist. Skipping Category table modifications.');
+      return;
     }
 
     // Check if new category columns exist before dropping them
