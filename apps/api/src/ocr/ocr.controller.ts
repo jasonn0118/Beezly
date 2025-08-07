@@ -36,6 +36,12 @@ import {
   ProcessReceiptDto,
   ProcessReceiptEnhancedDto,
 } from './dto/process-receipt.dto';
+
+// DTO for store confirmation
+class ConfirmStoreDto {
+  receiptId: string;
+  storeId: string;
+}
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -534,6 +540,44 @@ export class OcrController {
           // Add uploaded file path to response if available
           ...(uploadedFilePath && { uploaded_file_path: uploadedFilePath }),
         },
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('confirm-store-for-receipt')
+  @Public() // Allow non-authenticated users to confirm stores
+  @ApiOperation({
+    summary: 'Confirm/update store for a receipt',
+    description:
+      'Updates the store relationship for a receipt based on user selection during receipt processing workflow',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Store confirmed and receipt updated successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt or store not found',
+  })
+  async confirmStoreForReceipt(
+    @Body() body: ConfirmStoreDto,
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.receiptService.updateReceiptStore(
+        body.receiptId,
+        body.storeId,
+      );
+      return {
+        success: true,
+        message: 'Store confirmed and receipt updated successfully',
       };
     } catch (error) {
       throw new HttpException(

@@ -799,7 +799,7 @@ export class OcrService {
             store_address: extractedAddress,
           });
 
-          if (searchResult && searchResult.confidence >= 0.7) {
+          if (searchResult && searchResult.confidence >= 0.85) {
             // Store found with good confidence
             storeSearchResult = {
               storeFound: true,
@@ -1511,7 +1511,7 @@ export class OcrService {
         store_address: extractedAddress,
       });
 
-      if (storeSearchResult && storeSearchResult.confidence >= 0.7) {
+      if (storeSearchResult && storeSearchResult.confidence >= 0.85) {
         // Store found with good confidence
         return {
           storeFound: true,

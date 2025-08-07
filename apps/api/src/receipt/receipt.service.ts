@@ -167,7 +167,7 @@ export class ReceiptService {
       let storeSk: string | undefined;
       if (receiptData.storeId) {
         const store = await this.storeService.getStoreById(receiptData.storeId);
-        if (store) storeSk = store.id;
+        if (store) storeSk = store.id; // store.id contains the storeSk (UUID)
       } else if (receiptData.storeName) {
         const existingStore = await this.storeRepository.findOne({
           where: { name: receiptData.storeName },
@@ -291,21 +291,51 @@ export class ReceiptService {
         sanitizedUserId = undefined;
       }
 
-      // Step 1: Find or create the store from merchant data
-      const store = await this.storeService.findOrCreateStoreFromOcr({
-        merchant: ocrResult.merchant,
-        store_address: ocrResult.store_address,
-      });
+      // Step 1: Handle store search from OCR result
+      let storeSk: string | undefined;
 
-      // Validate store UUID
-      if (
-        !store.storeSk ||
-        typeof store.storeSk !== 'string' ||
-        store.storeSk === 'string'
-      ) {
-        throw new Error(
-          `Invalid store UUID received: ${JSON.stringify(store.storeSk)}`,
-        );
+      // Check if OCR result includes store search information
+      const enhancedResult = ocrResult as EnhancedOcrResult;
+      if (enhancedResult.store_search) {
+        if (
+          enhancedResult.store_search.storeFound &&
+          enhancedResult.store_search.store
+        ) {
+          // Use the found store ID
+          storeSk = enhancedResult.store_search.store.id;
+          console.log(
+            `✅ Using found store: ${storeSk} (${enhancedResult.store_search.store.name})`,
+          );
+        } else {
+          // Store not found with good confidence - skip store assignment
+          console.log(
+            `⚠️ Store not found with confidence. User confirmation required.`,
+          );
+          console.log(
+            `   Extracted merchant: ${enhancedResult.store_search.extractedMerchant}`,
+          );
+          console.log(
+            `   Extracted address: ${enhancedResult.store_search.extractedAddress}`,
+          );
+          // Store will remain undefined, receipt created without store
+        }
+      } else {
+        // Fallback: Try to find store without creating (legacy support)
+        const searchResult = await this.storeService.findStoreFromOcr({
+          merchant: ocrResult.merchant,
+          store_address: ocrResult.store_address,
+        });
+
+        if (searchResult && searchResult.confidence >= 0.85) {
+          storeSk = searchResult.store.storeSk;
+          console.log(
+            `✅ Found store via fallback: ${storeSk} (confidence: ${searchResult.confidence})`,
+          );
+        } else {
+          console.log(
+            `⚠️ Store not found via fallback (confidence < 0.85). Receipt will be created without store.`,
+          );
+        }
       }
 
       // Step 2: Parse receipt date
@@ -321,10 +351,10 @@ export class ReceiptService {
         }
       }
 
-      // Step 3: Create the receipt record
+      // Step 3: Create the receipt record (with or without store)
       const receipt = manager.create(Receipt, {
         userSk: sanitizedUserId,
-        storeSk: store.storeSk,
+        storeSk: storeSk, // May be undefined if store not found
         imageUrl: uploadedFilePath,
         status: 'processing',
 
@@ -534,6 +564,111 @@ export class ReceiptService {
     }
 
     await this.receiptRepository.remove(receipt);
+  }
+
+  /**
+   * Update the store associated with a receipt
+   * This is used when users edit/select the correct store during receipt processing
+   */
+  async updateReceiptStore(
+    receiptId: string,
+    storeId: string,
+  ): Promise<ReceiptDTO> {
+    // Verify the receipt exists - fetch WITHOUT relations to avoid cached store data
+    let receipt = await this.receiptRepository.findOne({
+      where: { receiptSk: receiptId },
+    });
+
+    // If not found by receiptSk, try by integer id
+    if (!receipt && !isNaN(Number(receiptId))) {
+      receipt = await this.receiptRepository.findOne({
+        where: { id: Number(receiptId) },
+      });
+    }
+
+    if (!receipt) {
+      throw new NotFoundException(`Receipt with ID ${receiptId} not found`);
+    }
+
+    // Verify the store exists
+    const store = await this.storeService.getStoreById(storeId);
+    if (!store) {
+      throw new NotFoundException(`Store with ID ${storeId} not found`);
+    }
+
+    // Update the store relationship
+    console.log(`🔄 Before update - Receipt storeSk: ${receipt.storeSk}`);
+    console.log(`🔄 Updating to store ID: ${store.id} (${store.name})`);
+
+    receipt.storeSk = store.id; // store.id contains the storeSk (UUID)
+
+    // Let's also try using the repository manager to force a fresh transaction
+    const updatedReceipt = await this.receiptRepository.manager.transaction(
+      async (manager) => {
+        const result = await manager.save(Receipt, receipt);
+        console.log(`💾 Transaction save result - storeSk: ${result.storeSk}`);
+
+        // Verify in database immediately
+        const dbCheck = await manager.findOne(Receipt, {
+          where: { receiptSk: result.receiptSk },
+        });
+        console.log(`🔍 Database verification - storeSk: ${dbCheck?.storeSk}`);
+
+        return result;
+      },
+    );
+
+    console.log(
+      `💾 After transaction - Receipt storeSk: ${updatedReceipt.storeSk}`,
+    );
+
+    // Additional verification with raw SQL query
+    try {
+      const rawResult: unknown = await this.receiptRepository.query(
+        'SELECT receipt_sk, store_sk FROM "Receipt" WHERE receipt_sk = $1',
+        [updatedReceipt.receiptSk],
+      );
+
+      if (Array.isArray(rawResult) && rawResult.length > 0) {
+        console.log(
+          `🗄️  Raw SQL result:`,
+          rawResult[0] as { receipt_sk: string; store_sk: string },
+        );
+      } else {
+        console.log(`🗄️  No raw SQL results found`);
+      }
+    } catch (sqlError) {
+      console.log(`❌ SQL query error:`, sqlError);
+    }
+
+    // Clear any potential cache and reload with fresh relations
+    await this.receiptRepository.manager.connection.queryResultCache?.clear();
+
+    // Force a fresh query by using the storeSk field we just updated
+    const completeReceipt = await this.receiptRepository.findOne({
+      where: { receiptSk: updatedReceipt.receiptSk },
+      relations: ['user', 'store', 'items', 'items.product'],
+      cache: false, // Disable cache for this query
+    });
+
+    console.log(
+      `📋 Reloaded receipt store: ${completeReceipt?.store?.name || 'No store'} (${completeReceipt?.storeSk})`,
+    );
+
+    // Additional verification - check if storeSk matches
+    if (completeReceipt?.storeSk === store.id) {
+      console.log(`✅ Store update verified - storeSk matches: ${store.id}`);
+    } else {
+      console.log(
+        `❌ Store update failed - storeSk mismatch: ${completeReceipt?.storeSk} vs ${store.id}`,
+      );
+    }
+
+    console.log(
+      `✅ Updated receipt ${receiptId} store to: ${store.id} (${store.name})`,
+    );
+
+    return this.mapReceiptToDTO(completeReceipt!);
   }
 
   // 📊 ANALYTICS AND SEARCH METHODS
@@ -837,6 +972,24 @@ export class ReceiptService {
   }
 
   private async mapReceiptToDTO(receipt: Receipt): Promise<ReceiptDTO> {
+    // If storeSk exists but store relation is missing/stale, fetch the store directly
+    let storeName = 'Unknown Store';
+    if (receipt.storeSk) {
+      if (receipt.store && receipt.store.storeSk === receipt.storeSk) {
+        // Store relationship is correct
+        storeName = receipt.store.name;
+      } else {
+        // Store relationship might be stale, fetch fresh store data
+        console.log(
+          `🔄 Fetching fresh store data for storeSk: ${receipt.storeSk}`,
+        );
+        const freshStore = await this.storeService.getStoreById(
+          receipt.storeSk,
+        );
+        storeName = freshStore?.name || 'Unknown Store';
+        console.log(`🏪 Fresh store name: ${storeName}`);
+      }
+    }
     // Convert receipt items to product DTOs
     const items: NormalizedProductDTO[] = await Promise.all(
       receipt.items.map(async (item) => {
@@ -866,7 +1019,7 @@ export class ReceiptService {
     return {
       id: receipt.receiptSk, // Use UUID as the public ID
       userId: receipt.userSk,
-      storeName: receipt.store?.name || 'Unknown Store',
+      storeName: storeName, // Use the fresh store name we fetched
       purchaseDate:
         receipt.purchaseDate?.toISOString() || new Date().toISOString(),
       status: receipt.status,
