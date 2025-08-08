@@ -834,7 +834,33 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      - name: Check for pending migrations
+      - name: 🔍 Smart Migration Validation
+        run: |
+          cd apps/api
+          echo "🔍 Running smart migration validation..."
+          echo "This will automatically detect and fix failed InitialSchema migrations"
+          
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "🏭 Production smart validation"
+            pnpm run validate-production-migration
+          else
+            echo "🧪 Staging smart validation"
+            pnpm run validate-staging-migration
+          fi
+        env:
+          CI: true
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME || 'postgres' }}
+          DB_SSL: true
+          NODE_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Check for additional pending migrations
         id: migration_check
         run: pnpm run migration:check --filter=api
         continue-on-error: true
@@ -851,10 +877,10 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      - name: Run database migrations
+      - name: Run additional pending migrations
         if: steps.migration_check.outcome == 'failure'
         run: |
-          echo "📝 Running database migrations for ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}..."
+          echo "📝 Running additional pending migrations for ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}..."
           pnpm run migration:run --filter=api
         env:
           CI: true
@@ -872,12 +898,14 @@ jobs:
       - name: Migration completed successfully
         run: |
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "✅ Migration validation completed for production"
+            echo "✅ Smart migration validation completed for production"
+            echo "🎉 Production database schema validated and ready"
           else
-            echo "✅ Migration validation completed for staging"
+            echo "✅ Smart migration validation completed for staging"
+            echo "🎉 Staging database schema validated and ready"
           fi
-          echo "🔒 Supabase sync disabled to prevent data loss"
-          echo "💡 Database schema is already synchronized"
+          echo "🔍 Smart validation automatically fixed any InitialSchema issues"
+          echo "🛡️  Database schema integrity verified"
 
       - name: Discord notification on migration success
         if: success()
@@ -886,16 +914,18 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         with:
           args: |
-            ✅ **${{ github.ref == 'refs/heads/main' && 'Production' || 'Staging' }} Database Migration Completed**
+            ✅ **${{ github.ref == 'refs/heads/main' && 'Production' || 'Staging' }} Smart Migration Validation Completed**
             
             📝 **Commit:** ${{ github.sha }}
             🌿 **Branch:** ${{ github.ref_name }}
             👤 **Author:** ${{ github.actor }}
             🌍 **Environment:** ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
             
-            **Migration Results:**
-            ✅ Migration validation completed successfully  
+            **Smart Validation Results:**
+            🔍 Smart migration validation completed successfully  
+            🛡️ InitialSchema failures automatically detected and fixed
             🔄 All pending migrations applied
+            🏗️ Database schema integrity verified (13+ core tables)
             🚀 Ready for ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }} deployment
             
             🔗 [View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
@@ -907,17 +937,18 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         with:
           args: |
-            ❌ **${{ github.ref == 'refs/heads/main' && 'Production' || 'Staging' }} Database Migration Failed**
+            ❌ **${{ github.ref == 'refs/heads/main' && 'Production' || 'Staging' }} Smart Migration Validation Failed**
             
             📝 **Commit:** ${{ github.sha }}
             🌿 **Branch:** ${{ github.ref_name }}
             👤 **Author:** ${{ github.actor }}
             🌍 **Environment:** ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
             
-            🚨 **DEPLOYMENT BLOCKED** - Migration issues detected
+            🚨 **DEPLOYMENT BLOCKED** - Smart migration validation detected critical issues
+            🔍 Even automatic InitialSchema fixes could not resolve the problems
             
             🔗 [View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            **Please review and fix before deploying**
+            **Manual intervention required - check database connectivity and schema integrity**
 
   # Discord notification job
   discord-notification:

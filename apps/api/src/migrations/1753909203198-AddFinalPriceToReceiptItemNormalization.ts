@@ -364,11 +364,32 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
       'receipt_item_normalizations',
       'FK_23de44dbb43853f1b14d2418f53',
     );
-    await addConstraintIfNotExists(
-      `ALTER TABLE "normalized_products" ADD CONSTRAINT "FK_8988cdcae12e54d0c88e196ad38" FOREIGN KEY ("linked_product_sk") REFERENCES "Product"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`,
-      'normalized_products',
-      'FK_8988cdcae12e54d0c88e196ad38',
-    );
+
+    // Check if Product table exists before creating foreign key constraint
+    const productTableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Product'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (productTableExists[0]?.exists) {
+      console.log('✅ Product table found, creating foreign key constraint...');
+      await addConstraintIfNotExists(
+        `ALTER TABLE "normalized_products" ADD CONSTRAINT "FK_8988cdcae12e54d0c88e196ad38" FOREIGN KEY ("linked_product_sk") REFERENCES "Product"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        'normalized_products',
+        'FK_8988cdcae12e54d0c88e196ad38',
+      );
+    } else {
+      console.log(
+        '⚠️  Product table not found, skipping foreign key constraint creation',
+      );
+      console.log(
+        'ℹ️   Foreign key constraint can be added later when Product table exists',
+      );
+    }
+
     await addConstraintIfNotExists(
       `ALTER TABLE "unprocessed_products" ADD CONSTRAINT "FK_f60e47db84d583439510fc7dfcf" FOREIGN KEY ("normalized_product_sk") REFERENCES "normalized_products"("normalized_product_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
       'unprocessed_products',
@@ -380,9 +401,21 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
     await queryRunner.query(
       `ALTER TABLE "unprocessed_products" DROP CONSTRAINT "FK_f60e47db84d583439510fc7dfcf"`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" DROP CONSTRAINT "FK_8988cdcae12e54d0c88e196ad38"`,
-    );
+
+    // Check if Product table exists before dropping foreign key constraint
+    const productTableExistsForDown = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Product'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (productTableExistsForDown[0]?.exists) {
+      await queryRunner.query(
+        `ALTER TABLE "normalized_products" DROP CONSTRAINT "FK_8988cdcae12e54d0c88e196ad38"`,
+      );
+    }
     await queryRunner.query(
       `ALTER TABLE "receipt_item_normalizations" DROP CONSTRAINT "FK_23de44dbb43853f1b14d2418f53"`,
     );
@@ -542,9 +575,20 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
     await queryRunner.query(
       `ALTER TABLE "unprocessed_products" ADD CONSTRAINT "FK_unprocessed_product_normalized_product" FOREIGN KEY ("normalized_product_sk") REFERENCES "normalized_products"("normalized_product_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" ADD CONSTRAINT "FK_normalized_products_linked_product" FOREIGN KEY ("linked_product_sk") REFERENCES "Product"("product_sk") ON DELETE SET NULL ON UPDATE NO ACTION`,
-    );
+    // Check if Product table exists before creating foreign key constraint in rollback
+    const productTableExistsForRollback = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Product'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (productTableExistsForRollback[0]?.exists) {
+      await queryRunner.query(
+        `ALTER TABLE "normalized_products" ADD CONSTRAINT "FK_normalized_products_linked_product" FOREIGN KEY ("linked_product_sk") REFERENCES "Product"("product_sk") ON DELETE SET NULL ON UPDATE NO ACTION`,
+      );
+    }
     await queryRunner.query(
       `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_receipt_item_normalization_product" FOREIGN KEY ("normalized_product_sk") REFERENCES "normalized_products"("normalized_product_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
     );

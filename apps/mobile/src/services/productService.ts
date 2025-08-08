@@ -69,6 +69,7 @@ export interface StoreData {
 export interface UnifiedStoreSearchResult extends StoreData {
     source: 'DB' | 'Google' | 'User Location';
     key?: string;
+    distance?: number; // Add distance
 }
 
 export interface PriceData {
@@ -234,6 +235,7 @@ export class ProductService {
         countryRegion: item.countryRegion,
         types: item.types,
         source: item.source, // Add back the source field to match the type
+        distance: item.distance, // Map distance
     }));
   }
 
