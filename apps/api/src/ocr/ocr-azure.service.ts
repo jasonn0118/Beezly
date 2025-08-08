@@ -632,16 +632,34 @@ export class OcrAzureService {
       'PurchaseDate',
     ];
 
+    // Debug logging for date field inspection
+    console.log('🔍 OCR Date Extraction Debug:');
+    console.log('Available fields:', Object.keys(fields));
+
     for (const fieldName of dateFieldNames) {
       if (fields[fieldName]) {
+        const dateField = fields[fieldName];
         const value =
-          (fields[fieldName].value_date as string) ||
-          (fields[fieldName].valueDate as string) ||
-          this.extractFieldValue(fields[fieldName] as Record<string, any>);
-        if (value) return value;
+          (dateField.value_date as string) ||
+          (dateField.valueDate as string) ||
+          this.extractFieldValue(dateField as Record<string, any>);
+
+        // Debug log each date field found
+        console.log(`📅 Found date field "${fieldName}":`, {
+          value_date: dateField.value_date,
+          valueDate: dateField.valueDate,
+          extractedValue: value,
+          fullField: dateField,
+        });
+
+        if (value) {
+          console.log(`✅ Using date from field "${fieldName}": "${value}"`);
+          return value;
+        }
       }
     }
 
+    console.log('❌ No date found in any field');
     return '';
   }
 

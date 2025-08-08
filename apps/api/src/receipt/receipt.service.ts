@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
@@ -17,6 +21,10 @@ import {
   TestNormalizationRequestDto,
   TestNormalizationResponseDto,
 } from './dto/test-normalization-response.dto';
+import {
+  DateValidationUtil,
+  DateValidationResult,
+} from '../utils/date-validation.util';
 
 // Base OCR item interface
 interface BaseOcrItem {
@@ -338,17 +346,53 @@ export class ReceiptService {
         }
       }
 
-      // Step 2: Parse receipt date
+      // Step 2: Parse and validate receipt date
       let receiptDate: Date | undefined;
       let receiptTime: string | undefined;
+      let dateValidationResult: DateValidationResult | undefined;
+
+      console.log('📅 Receipt Date Processing:');
+      console.log('  Raw OCR date:', ocrResult.date);
+      console.log('  Raw OCR time:', ocrResult.time);
 
       if (ocrResult.date) {
-        try {
-          receiptDate = new Date(ocrResult.date);
+        // Validate the date using our utility
+        dateValidationResult = DateValidationUtil.validateReceiptDate(
+          ocrResult.date,
+        );
+
+        // Log validation results for debugging
+        DateValidationUtil.logValidationResult(dateValidationResult);
+
+        if (dateValidationResult.isValid) {
+          receiptDate = dateValidationResult.parsedDate;
           receiptTime = ocrResult.time;
-        } catch {
-          console.warn('Failed to parse receipt date:', ocrResult.date);
+          console.log(
+            '✅ Using validated receipt date:',
+            receiptDate?.toISOString(),
+          );
+        } else if (dateValidationResult.suggestedDate) {
+          // Use suggested date but mark for user confirmation
+          receiptDate = dateValidationResult.suggestedDate;
+          receiptTime = ocrResult.time;
+          console.log(
+            '⚠️ Using suggested date (requires user confirmation):',
+            receiptDate?.toISOString(),
+          );
+        } else {
+          // Fall back to current date if no valid date can be determined
+          receiptDate = new Date();
+          receiptTime = undefined;
+          console.log(
+            '❌ Using current date as fallback:',
+            receiptDate.toISOString(),
+          );
         }
+      } else {
+        console.log('❌ No date extracted from OCR, using current date');
+        receiptDate = new Date();
+        dateValidationResult = DateValidationUtil.validateReceiptDate('');
+        DateValidationUtil.logValidationResult(dateValidationResult);
       }
 
       // Step 3: Create the receipt record (with or without store)
@@ -362,7 +406,11 @@ export class ReceiptService {
         rawText: ocrResult.raw_text,
         ocrConfidence: ocrResult.azure_confidence,
         engineUsed: ocrResult.engine_used,
-        ocrData: ocrResult,
+        ocrData: {
+          ...ocrResult,
+          // Add date validation results to OCR data for debugging and user confirmation
+          dateValidation: dateValidationResult,
+        },
 
         // Enhanced normalization data (if available)
         normalizationSummary: this.isEnhancedResult(ocrResult)
@@ -378,7 +426,32 @@ export class ReceiptService {
         purchaseDate: receiptDate || new Date(),
       });
 
+      console.log('💾 Receipt Save Debug:');
+      console.log(
+        '  receiptDate (DB field):',
+        receipt.receiptDate?.toISOString(),
+      );
+      console.log(
+        '  purchaseDate (DB field):',
+        receipt.purchaseDate?.toISOString(),
+      );
+      console.log(
+        '  Date requires user confirmation:',
+        dateValidationResult?.requiresUserConfirmation,
+      );
+
       const savedReceipt = await manager.save(receipt);
+
+      console.log('✅ Receipt saved successfully:');
+      console.log('  Receipt ID:', savedReceipt.receiptSk);
+      console.log(
+        '  Saved receiptDate:',
+        savedReceipt.receiptDate?.toISOString(),
+      );
+      console.log(
+        '  Saved purchaseDate:',
+        savedReceipt.purchaseDate?.toISOString(),
+      );
 
       // Step 4: Create receipt items
       await Promise.all(
@@ -564,6 +637,125 @@ export class ReceiptService {
     }
 
     await this.receiptRepository.remove(receipt);
+  }
+
+  /**
+   * Update the purchase date for a receipt
+   * This is used when users confirm/correct the date after OCR processing
+   */
+  async updateReceiptDate(
+    receiptId: string,
+    confirmedDate: string,
+    confirmedTime?: string,
+  ): Promise<ReceiptDTO> {
+    // Verify the receipt exists
+    let receipt = await this.receiptRepository.findOne({
+      where: { receiptSk: receiptId },
+    });
+
+    // If not found by receiptSk, try by integer id
+    if (!receipt && !isNaN(Number(receiptId))) {
+      receipt = await this.receiptRepository.findOne({
+        where: { id: Number(receiptId) },
+      });
+    }
+
+    if (!receipt) {
+      throw new NotFoundException(`Receipt with ID ${receiptId} not found`);
+    }
+
+    // Validate the new date - but be permissive for user confirmations
+    const dateValidation =
+      DateValidationUtil.validateReceiptDate(confirmedDate);
+    DateValidationUtil.logValidationResult(dateValidation);
+
+    // For user confirmations, we're more permissive - just ensure the date parses correctly
+    let newDate: Date;
+    try {
+      newDate = new Date(confirmedDate);
+      if (isNaN(newDate.getTime())) {
+        throw new BadRequestException(
+          `Invalid date format provided: ${confirmedDate}. Please use YYYY-MM-DD format.`,
+        );
+      }
+    } catch {
+      throw new BadRequestException(
+        `Failed to parse date: ${confirmedDate}. Please use YYYY-MM-DD format.`,
+      );
+    }
+
+    // If validation failed but user is explicitly confirming, accept it with a warning
+    if (!dateValidation.isValid) {
+      console.warn('⚠️ User confirmed date despite validation warnings:', {
+        originalDate: confirmedDate,
+        warnings: dateValidation.warnings,
+        validationRules: dateValidation.validationRules,
+      });
+    }
+
+    console.log('📅 Receipt Date Update:');
+    console.log(`  Receipt ID: ${receiptId}`);
+
+    // Safely handle existing dates - ensure they are Date objects before calling toISOString
+    const oldReceiptDate = receipt.receiptDate
+      ? receipt.receiptDate instanceof Date
+        ? receipt.receiptDate
+        : new Date(receipt.receiptDate)
+      : null;
+    const oldPurchaseDate = receipt.purchaseDate
+      ? receipt.purchaseDate instanceof Date
+        ? receipt.purchaseDate
+        : new Date(receipt.purchaseDate)
+      : null;
+
+    console.log(
+      `  Old receiptDate: ${oldReceiptDate?.toISOString() || 'null'}`,
+    );
+    console.log(
+      `  Old purchaseDate: ${oldPurchaseDate?.toISOString() || 'null'}`,
+    );
+    console.log(`  New date: ${newDate.toISOString()}`);
+    console.log(`  Confirmed time: ${confirmedTime || 'none'}`);
+
+    // Update both receiptDate and purchaseDate
+    receipt.receiptDate = newDate;
+    receipt.purchaseDate = newDate;
+    receipt.receiptTime = confirmedTime;
+
+    // Update the OCR data to include the user's confirmation
+    if (receipt.ocrData) {
+      const updatedOcrData = {
+        ...(receipt.ocrData as Record<string, unknown>),
+        date: confirmedDate,
+        time: confirmedTime,
+        dateValidation: {
+          ...dateValidation,
+          userConfirmed: true,
+          confirmedBy: 'user',
+          confirmedAt: new Date().toISOString(),
+        },
+      };
+      receipt.ocrData = updatedOcrData;
+    }
+
+    const updatedReceipt = await this.receiptRepository.save(receipt);
+
+    console.log('✅ Receipt date updated successfully:');
+    console.log(
+      `  New receiptDate: ${updatedReceipt.receiptDate?.toISOString()}`,
+    );
+    console.log(
+      `  New purchaseDate: ${updatedReceipt.purchaseDate?.toISOString()}`,
+    );
+
+    // Reload with relations
+    const completeReceipt = await this.receiptRepository.findOne({
+      where: { receiptSk: updatedReceipt.receiptSk },
+      relations: ['user', 'store', 'items', 'items.product'],
+      cache: false,
+    });
+
+    return this.mapReceiptToDTO(completeReceipt!);
   }
 
   /**
@@ -990,6 +1182,22 @@ export class ReceiptService {
         console.log(`🏪 Fresh store name: ${storeName}`);
       }
     }
+
+    // Safely convert purchase date to ISO string
+    const safeToISOString = (
+      date: Date | string | null | undefined,
+    ): string => {
+      if (!date) return new Date().toISOString();
+      if (date instanceof Date) return date.toISOString();
+      try {
+        const parsedDate = new Date(date);
+        return isNaN(parsedDate.getTime())
+          ? new Date().toISOString()
+          : parsedDate.toISOString();
+      } catch {
+        return new Date().toISOString();
+      }
+    };
     // Convert receipt items to product DTOs
     const items: NormalizedProductDTO[] = await Promise.all(
       receipt.items.map(async (item) => {
@@ -1007,8 +1215,8 @@ export class ReceiptService {
           price: Number(item.price),
           image_url: product?.image_url,
           quantity: item.quantity,
-          created_at: item.createdAt.toISOString(),
-          updated_at: item.updatedAt.toISOString(),
+          created_at: safeToISOString(item.createdAt),
+          updated_at: safeToISOString(item.updatedAt),
           credit_score: product?.credit_score ?? 0,
           verified_count: product?.verified_count ?? 0,
           flagged_count: product?.flagged_count ?? 0,
@@ -1020,16 +1228,15 @@ export class ReceiptService {
       id: receipt.receiptSk, // Use UUID as the public ID
       userId: receipt.userSk,
       storeName: storeName, // Use the fresh store name we fetched
-      purchaseDate:
-        receipt.purchaseDate?.toISOString() || new Date().toISOString(),
+      purchaseDate: safeToISOString(receipt.purchaseDate),
       status: receipt.status,
       totalAmount: receipt.items.reduce(
         (sum, item) => sum + Number(item.lineTotal),
         0,
       ),
       items,
-      createdAt: receipt.createdAt.toISOString(),
-      updatedAt: receipt.updatedAt.toISOString(),
+      createdAt: safeToISOString(receipt.createdAt),
+      updatedAt: safeToISOString(receipt.updatedAt),
     };
   }
 

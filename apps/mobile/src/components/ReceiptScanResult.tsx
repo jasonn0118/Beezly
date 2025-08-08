@@ -3,10 +3,13 @@ import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Animated, Modal, 
 import { useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import StoreService, { Store, StoreSearchResult } from "../services/storeService";
-import ReceiptService, { ReceiptItem, ProcessReceiptResponse } from "../services/receiptService";
+import ReceiptService, { ReceiptItem, ProcessReceiptResponse, DateValidationResult } from "../services/receiptService";
 import { Swipeable } from 'react-native-gesture-handler';
 import ReceiptScanFailed from './ReceiptScanFailed';
 import StoreSearch from './StoreSearch';
+import CalendarDatePicker from './CalendarDatePicker';
+import TimePicker from './TimePicker';
+import ModernDateTimePicker from './ModernDateTimePicker';
 import { isAxiosError } from 'axios';
 
 // Enhanced Design System Colors
@@ -23,6 +26,11 @@ const COLORS = {
   danger: '#FF3B30',
   white: '#FFFFFF',
   black: '#000000',
+};
+
+// Helper function to check if a value is a Date object
+const isDateObject = (value: unknown): value is Date => {
+    return value instanceof Date;
 };
 
 export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictureData: string | null, onScanAgain: () => void }) {
@@ -69,6 +77,20 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
     const [selectedStore, setSelectedStore] = useState<Store | null>(null);
     const [showStoreSearch, setShowStoreSearch] = useState(false);
     const [receiptId, setReceiptId] = useState<string | null>(null);
+    
+    // Date-related state
+    const [receiptDate, setReceiptDate] = useState<string | null>(null);
+    const [receiptTime, setReceiptTime] = useState<string | null>(null);
+    const [dateValidation, setDateValidation] = useState<DateValidationResult | null>(null);
+    const [showDateModal, setShowDateModal] = useState(false);
+    const [showCalendar, setShowCalendar] = useState(false);
+    const [showTimePicker, setShowTimePicker] = useState(false);
+    const [editedDate, setEditedDate] = useState('');
+    const [editedTime, setEditedTime] = useState('');
+    const [selectedDateTime, setSelectedDateTime] = useState<Date>(new Date());
+    const [isDateFocused, setIsDateFocused] = useState(false);
+    const [isTimeFocused, setIsTimeFocused] = useState(false);
+    const [dateSaving, setDateSaving] = useState(false);
     const handleDeleteItem = (itemId: string) => {
         setProductInfo((prev) => prev.filter((item) => item.id !== itemId));
     };
@@ -90,6 +112,204 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         ));
         setIsModalVisible(false);
         setEditingItem(null);
+    };
+
+    const handleDateEdit = () => {
+        // Format date consistently to avoid timezone issues
+        let formattedDate = '';
+        if (receiptDate) {
+            try {
+                // Handle both string and Date objects
+                const date = isDateObject(receiptDate) ? receiptDate : new Date(receiptDate);
+                if (!isNaN(date.getTime())) {
+                    // Use toISOString and extract the date part to avoid timezone issues
+                    formattedDate = date.toISOString().split('T')[0];
+                } else {
+                    // Try different date format parsing for OCR dates like "2028/07/28"
+                    if (typeof receiptDate === 'string') {
+                        // Handle formats like "2028/07/28" or "2028-07-28"
+                        const dateStr = receiptDate.toString();
+                        const parts = dateStr.split(/[\/\-]/);
+                        if (parts.length === 3) {
+                            // Assume YYYY/MM/DD or YYYY-MM-DD format
+                            const year = parseInt(parts[0], 10);
+                            const month = parseInt(parts[1], 10);
+                            const day = parseInt(parts[2], 10);
+                            
+                            // Fix likely OCR errors - if year is >2 years in future, likely misread (e.g., 2028 -> current year)
+                            const currentYear = new Date().getFullYear();
+                            const correctedYear = year > currentYear + 2 ? currentYear : year;
+                            
+                            const parsedDate = new Date(correctedYear, month - 1, day);
+                            if (!isNaN(parsedDate.getTime())) {
+                                // Use local date formatting to avoid timezone conversion
+                                const year = parsedDate.getFullYear();
+                                const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+                                const day = String(parsedDate.getDate()).padStart(2, '0');
+                                formattedDate = `${year}-${month}-${day}`;
+                            } else {
+                                // Default to today's date if parsing fails
+                                formattedDate = new Date().toISOString().split('T')[0];
+                            }
+                        } else {
+                            // Default to today's date if format is unrecognized
+                            formattedDate = new Date().toISOString().split('T')[0];
+                        }
+                    }
+                }
+            } catch {
+                // Default to today's date if all parsing fails
+                formattedDate = new Date().toISOString().split('T')[0];
+            }
+        } else {
+            // Default to today's date if no receipt date
+            formattedDate = new Date().toISOString().split('T')[0];
+        }
+        
+        setEditedDate(formattedDate);
+        setEditedTime(receiptTime || '');
+        
+        // Initialize the modern date/time picker with current values
+        try {
+            let initDate = new Date();
+            if (formattedDate) {
+                const [year, month, day] = formattedDate.split('-').map(Number);
+                initDate = new Date(year, month - 1, day);
+            }
+            if (receiptTime) {
+                const [hours, minutes] = receiptTime.split(':').map(Number);
+                initDate.setHours(hours, minutes);
+            }
+            setSelectedDateTime(initDate);
+        } catch (error) {
+            console.warn('Error parsing initial date/time:', error);
+            setSelectedDateTime(new Date());
+        }
+        
+        setShowDateModal(true);
+    };
+
+    const handleCalendarDateSelect = (selectedDate: string) => {
+        setEditedDate(selectedDate);
+        setShowCalendar(false);
+        // Reopen the date modal after date selection
+        setTimeout(() => {
+            setShowDateModal(true);
+        }, 100);
+    };
+
+    const handleTimePickerSelect = (selectedTime: string) => {
+        setEditedTime(selectedTime);
+        setShowTimePicker(false);
+        // Reopen the date modal after time selection
+        setTimeout(() => {
+            setShowDateModal(true);
+        }, 100);
+    };
+
+    // Modern date/time picker handlers
+    const handleModernDateChange = (date: Date) => {
+        // Preserve the existing time, only update date components
+        const newDateTime = new Date(selectedDateTime);
+        newDateTime.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+        
+        setSelectedDateTime(newDateTime);
+        // Update the string format for backward compatibility
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const newDateStr = `${year}-${month}-${day}`;
+        setEditedDate(newDateStr);
+        
+        // Update receipt display states immediately for real-time feedback
+        setReceiptDate(newDateStr);
+    };
+
+    const handleModernTimeChange = (time: Date) => {
+        // Preserve the existing date, only update time components
+        const newDateTime = new Date(selectedDateTime);
+        newDateTime.setHours(time.getHours(), time.getMinutes(), 0, 0);
+        
+        setSelectedDateTime(newDateTime);
+        // Update the string format for backward compatibility
+        const hours = String(time.getHours()).padStart(2, '0');
+        const minutes = String(time.getMinutes()).padStart(2, '0');
+        const newTimeStr = `${hours}:${minutes}`;
+        setEditedTime(newTimeStr);
+        
+        // Update receipt display states immediately for real-time feedback
+        setReceiptTime(newTimeStr);
+    };
+
+    const handleDateSave = async () => {
+        if (!receiptId) {
+            alert('Receipt ID is missing. Please try scanning the receipt again.');
+            return;
+        }
+        
+        if (!editedDate) {
+            alert('Please provide a valid date');
+            return;
+        }
+
+        // Basic date validation
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(editedDate)) {
+            alert('Please enter date in YYYY-MM-DD format');
+            return;
+        }
+
+        const parsedDate = new Date(editedDate);
+        if (isNaN(parsedDate.getTime())) {
+            alert('Please enter a valid date');
+            return;
+        }
+
+        setDateSaving(true);
+        try {
+            const response = await ReceiptService.confirmReceiptDate(
+                receiptId,
+                editedDate,
+                editedTime || undefined
+            );
+
+            if (response.success) {
+                setReceiptDate(editedDate);
+                setReceiptTime(editedTime);
+                setDateValidation(null); // Clear validation warnings
+                setShowDateModal(false);
+                alert('✅ Date updated successfully! The receipt date has been corrected.');
+            } else {
+                alert('❌ Failed to update date. Please check the date format and try again.');
+            }
+        } catch (error) {
+            let errorMessage = 'Failed to update date. Please try again.';
+            if (isAxiosError(error)) {
+                console.error('Axios error details:', {
+                    status: error.response?.status,
+                    statusText: error.response?.statusText,
+                    data: error.response?.data,
+                    message: error.message,
+                    url: error.config?.url,
+                    method: error.config?.method,
+                    requestData: error.config?.data
+                });
+                
+                // Get the most specific error message
+                const serverError = error.response?.data;
+                if (serverError && typeof serverError === 'object') {
+                    errorMessage = serverError.error || serverError.message || serverError.detail || 'Server error occurred';
+                } else {
+                    errorMessage = error.message;
+                }
+            } else if (error instanceof Error) {
+                errorMessage = error.message;
+            }
+            alert(`❌ ${errorMessage}`);
+            console.error('Date update error:', error);
+        } finally {
+            setDateSaving(false);
+        }
     };
 
     const renderRightActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, itemId: string) => {
@@ -132,6 +352,11 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     setStoreAddress(response.data.store_address || null);
                     setReceiptId(response.data.receipt_id || null);
                     
+                    // Handle date information
+                    setReceiptDate(response.data.date || null);
+                    setReceiptTime(response.data.time || null);
+                    setDateValidation(response.data.dateValidation || null);
+                    
                     // Handle store search result
                     if (response.data.store_search) {
                         setStoreSearchResult(response.data.store_search);
@@ -170,7 +395,6 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
 
         // TODO: 현재 로그인된 사용자의 ID를 가져와야 합니다.
         const userId = "123e4567-e89b-12d3-a456-426614174000";
-        console.log('Save button pressed');
 
         const itemsToConfirm = productInfo.map(item => ({
             normalizedProductSk: item.normalized_product_sk,
@@ -180,7 +404,6 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
 
         try {
             const response = await ReceiptService.processConfirmations(userId, receiptId, itemsToConfirm);
-            console.log('Confirmation reponse:', response);
             if (response.pendingSelectionProducts && response.pendingSelectionProducts.length > 0) {
                 router.push({
                     pathname: '/product-selection',
@@ -352,6 +575,76 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     )}
                 </View>
 
+                {/* Date Section */}
+                {(receiptDate || dateValidation) && (
+                    <View style={styles.dateSection}>
+                        <View style={[
+                            styles.dateCard,
+                            dateValidation && !dateValidation.isValid && styles.dateCardWarning
+                        ]}>
+                            <View style={styles.dateCardHeader}>
+                                <FontAwesome 
+                                    name={dateValidation && !dateValidation.isValid ? "exclamation-triangle" : "calendar"} 
+                                    size={20} 
+                                    color={dateValidation && !dateValidation.isValid ? COLORS.warning : COLORS.primary} 
+                                />
+                                <Text style={styles.dateCardTitle}>Receipt Date</Text>
+                                <TouchableOpacity onPress={handleDateEdit} style={styles.editButton}>
+                                    <FontAwesome name="edit" size={16} color={COLORS.primary} />
+                                </TouchableOpacity>
+                            </View>
+                            
+                            <View style={styles.dateInfo}>
+                                <Text style={styles.dateText}>
+                                    {receiptDate ? (() => {
+                                        try {
+                                            // Handle both string and Date objects
+                                            const date = isDateObject(receiptDate) ? receiptDate : new Date(receiptDate);
+                                            if (isNaN(date.getTime())) {
+                                                return receiptDate.toString();
+                                            }
+                                            return date.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+                                        } catch {
+                                            return receiptDate.toString();
+                                        }
+                                    })() : 'Date not detected'}
+                                </Text>
+                                {receiptTime && (
+                                    <Text style={styles.timeText}>{receiptTime}</Text>
+                                )}
+                            </View>
+
+                            {dateValidation && !dateValidation.isValid && (
+                                <View style={styles.dateWarnings}>
+                                    {dateValidation.warnings.map((warning, index) => (
+                                        <Text key={index} style={styles.warningText}>
+                                            ⚠️ {warning}
+                                        </Text>
+                                    ))}
+                                    {dateValidation.suggestedDate && (
+                                        <TouchableOpacity 
+                                            style={styles.suggestedDateButton}
+                                            onPress={() => {
+                                                if (dateValidation.suggestedDate) {
+                                                    const suggestedDate = isDateObject(dateValidation.suggestedDate)
+                                                        ? dateValidation.suggestedDate.toISOString().split('T')[0]
+                                                        : String(dateValidation.suggestedDate);
+                                                    setEditedDate(suggestedDate);
+                                                }
+                                                setShowDateModal(true);
+                                            }}
+                                        >
+                                            <Text style={styles.suggestedDateText}>
+                                                Use suggested: {new Date(dateValidation.suggestedDate).toLocaleDateString()}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                )}
+
                 <Text style={styles.sectionTitle}>Products</Text>
                 {productInfo.map((item, index) => (
                     <Swipeable
@@ -443,6 +736,59 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
+
+            {/* Date Confirmation Modal */}
+            <Modal 
+                animationType="slide" 
+                transparent={true} 
+                visible={showDateModal} 
+                onRequestClose={() => setShowDateModal(false)}
+                presentationStyle="overFullScreen"
+            >
+                <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flexOne}>
+                    <View style={styles.modalContainer}>
+                        <View style={styles.modalContent}>
+                            <Text style={styles.modalTitle}>Confirm Receipt Date</Text>
+                            
+                            {/* Modern Date/Time Picker */}
+                            <ModernDateTimePicker
+                                date={selectedDateTime}
+                                onDateChange={handleModernDateChange}
+                                onTimeChange={handleModernTimeChange}
+                                mode="datetime"
+                                title="Receipt Date & Time"
+                            />
+
+                            {dateValidation && !dateValidation.isValid && (
+                                <View style={styles.modalWarnings}>
+                                    <Text style={styles.modalWarningTitle}>⚠️ Date Issues:</Text>
+                                    {dateValidation.warnings.map((warning, index) => (
+                                        <Text key={index} style={styles.modalWarningText}>
+                                            • {warning}
+                                        </Text>
+                                    ))}
+                                </View>
+                            )}
+
+                            <View style={styles.modalButtons}>
+                                <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setShowDateModal(false)}>
+                                    <Text style={[styles.modalButtonText, styles.cancelButtonText]}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.saveButton, dateSaving && styles.saveButtonDisabled]} 
+                                    onPress={handleDateSave}
+                                    disabled={dateSaving}
+                                >
+                                    <Text style={styles.modalButtonText}>
+                                        {dateSaving ? 'Updating...' : 'Confirm'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
+
             <TouchableOpacity style={styles.fab} onPress={handleSaveReceipt}>
                 <FontAwesome name="check" size={24} color={COLORS.white} />
             </TouchableOpacity>
@@ -470,6 +816,42 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                     />
                 </View>
             </Modal>
+
+            {/* Calendar Date Picker - Render with higher z-index */}
+            {showCalendar && (
+                <CalendarDatePicker
+                    visible={showCalendar}
+                    onClose={() => {
+                        setShowCalendar(false);
+                        // Reopen the date modal after closing calendar
+                        setTimeout(() => {
+                            setShowDateModal(true);
+                        }, 100);
+                    }}
+                    onDateSelect={handleCalendarDateSelect}
+                    initialDate={editedDate}
+                    title="Select Receipt Date"
+                    maxDate={new Date()} // Can't select future dates
+                />
+            )}
+
+            {/* Time Picker - Render with higher z-index */}
+            {showTimePicker && (
+                <TimePicker
+                    visible={showTimePicker}
+                    onClose={() => {
+                        setShowTimePicker(false);
+                        // Reopen the date modal after closing time picker
+                        setTimeout(() => {
+                            setShowDateModal(true);
+                        }, 100);
+                    }}
+                    onTimeSelect={handleTimePickerSelect}
+                    initialTime={editedTime}
+                    title="Select Receipt Time"
+                    is24Hour={false} // Use 12-hour format for better UX
+                />
+            )}
         </View>
     );
 }
@@ -657,6 +1039,10 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.primary,
         marginLeft: 8,
     },
+    saveButtonDisabled: {
+        backgroundColor: COLORS.textTertiary,
+        opacity: 0.6,
+    },
     cancelButton: {
         backgroundColor: COLORS.separator,
         marginRight: 8,
@@ -831,5 +1217,139 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.25,
         shadowRadius: 3.84,
         elevation: 5,
+    },
+
+    // Date section styles
+    dateSection: {
+        marginBottom: 24,
+    },
+    dateCard: {
+        backgroundColor: COLORS.card,
+        borderRadius: 12,
+        padding: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: COLORS.primary,
+    },
+    dateCardWarning: {
+        borderLeftColor: COLORS.warning,
+        backgroundColor: '#FFF9F0',
+    },
+    dateCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    dateCardTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.textSecondary,
+        marginLeft: 8,
+        flex: 1,
+    },
+    dateInfo: {
+        marginBottom: 8,
+    },
+    dateText: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginBottom: 4,
+    },
+    timeText: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+    },
+    dateWarnings: {
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.separator,
+    },
+    warningText: {
+        fontSize: 13,
+        color: COLORS.warning,
+        marginBottom: 4,
+        lineHeight: 18,
+    },
+    suggestedDateButton: {
+        marginTop: 8,
+        padding: 8,
+        backgroundColor: COLORS.background,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: COLORS.primary,
+    },
+    suggestedDateText: {
+        fontSize: 13,
+        color: COLORS.primary,
+        fontWeight: '600',
+        textAlign: 'center',
+    },
+
+    // Date modal styles
+    modalWarnings: {
+        backgroundColor: '#FFF9F0',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: COLORS.warning,
+    },
+    modalWarningTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.warning,
+        marginBottom: 8,
+    },
+    modalWarningText: {
+        fontSize: 13,
+        color: COLORS.textSecondary,
+        marginBottom: 4,
+        lineHeight: 18,
+    },
+    // Date picker button styles
+    datePickerButton: {
+        backgroundColor: COLORS.card,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 14, // Reduced padding for better height
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: COLORS.separator,
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+        minHeight: 56, // Fixed height for consistency
+    },
+    datePickerTouchArea: {
+        flex: 1,
+        // Make sure the touch area covers the entire content
+        minHeight: 44, // Ensure minimum touch target size
+        justifyContent: 'center', // Center content vertically
+    },
+    datePickerButtonInvalid: {
+        borderColor: COLORS.warning,
+        backgroundColor: '#FFF9F0',
+    },
+    datePickerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        minHeight: 24, // Ensure consistent content height
+    },
+    datePickerText: {
+        flex: 1,
+        fontSize: 16,
+        color: COLORS.textPrimary,
+        fontWeight: '500',
+        marginLeft: 12,
+        textAlignVertical: 'center', // Android alignment
+        includeFontPadding: false, // Remove extra padding on Android
+    },
+    datePickerTextInvalid: {
+        color: COLORS.warning,
+        fontWeight: '600',
     },
 });
