@@ -36,6 +36,7 @@ import { ReceiptItemModule } from './receiptItem/receiptItem.module';
 import { StoreModule } from './store/store.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { UserModule } from './user/user.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -114,6 +115,7 @@ import { UserModule } from './user/user.module';
     StoreModule,
     SupabaseModule,
     UserModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [AppService, DatabaseHealthCheckService],
