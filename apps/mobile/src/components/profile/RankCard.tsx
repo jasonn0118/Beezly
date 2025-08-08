@@ -14,7 +14,12 @@ export default function ProfileHeader() {
 
     return (
         <View style={styles.profileHeader}>
-            <Image source={{ uri: user.avatarUrl }} style={styles.profileImage} />
+            <Image 
+                source={{ 
+                    uri: user.avatarUrl || 'https://via.placeholder.com/60x60/f8f9fa/6c757d?text=User'
+                }} 
+                style={styles.profileImage} 
+            />
             <Text style={styles.profileName}>{user.name}</Text>
             <View style={styles.rankCard}>
                 <View style={styles.rankInfo}>

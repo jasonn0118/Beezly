@@ -211,16 +211,77 @@ export class ProductService {
     query: string,
     limit: number = 50,
   ): Promise<ProductSearchResponseDto[]> {
-    const products = await this.productRepository
-      .createQueryBuilder('product')
-      .leftJoinAndSelect('product.categoryEntity', 'categoryEntity') // Join category entity
-      .where('product.name ILIKE :query', { query: `%${query}%` })
-      .orWhere('product.brandName ILIKE :query', { query: `%${query}%` })
-      .orderBy('product.name', 'ASC')
-      .limit(limit)
-      .getMany();
+    const searchTerms = query.toLowerCase().trim().split(/\s+/);
 
-    return products.map((product) => this.mapProductToSearchResponse(product));
+    // Create base query builder
+    const queryBuilder = this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.categoryEntity', 'categoryEntity');
+
+    // Build dynamic WHERE clause with relevance scoring
+    let whereClause = '';
+    const orClauses: string[] = [];
+    const parameters: Record<string, string> = {};
+
+    searchTerms.forEach((term, index) => {
+      const paramName = `term${index}`;
+      parameters[paramName] = `%${term}%`;
+
+      // Add conditions for each search term
+      orClauses.push(`(
+        product.name ILIKE :${paramName} OR 
+        product.brandName ILIKE :${paramName}
+      )`);
+    });
+
+    // Combine all OR clauses
+    whereClause = orClauses.join(' OR ');
+
+    // Add relevance scoring with CASE WHEN for better sorting
+    const relevanceSelect = `
+      CASE 
+        -- Exact name match gets highest score
+        WHEN LOWER(product.name) = :exactQuery THEN 100
+        -- Exact brand match gets very high score
+        WHEN LOWER(product.brandName) = :exactQuery THEN 95
+        -- Name starts with query gets high score
+        WHEN LOWER(product.name) LIKE :startsWithQuery THEN 90
+        -- Brand starts with query gets high score
+        WHEN LOWER(product.brandName) LIKE :startsWithQuery THEN 85
+        -- All terms found in name gets good score
+        WHEN ${searchTerms.map((_, i) => `LOWER(product.name) LIKE :term${i}`).join(' AND ')} THEN 80
+        -- All terms found in brand gets good score
+        WHEN ${searchTerms.map((_, i) => `LOWER(product.brandName) LIKE :term${i}`).join(' AND ')} THEN 75
+        -- Some terms in name
+        WHEN ${searchTerms.map((_, i) => `LOWER(product.name) LIKE :term${i}`).join(' OR ')} THEN 60
+        -- Some terms in brand
+        WHEN ${searchTerms.map((_, i) => `LOWER(product.brandName) LIKE :term${i}`).join(' OR ')} THEN 55
+        -- Fallback
+        ELSE 1
+      END AS relevance_score
+    `;
+
+    parameters.exactQuery = query.toLowerCase();
+    parameters.startsWithQuery = `${query.toLowerCase()}%`;
+
+    const products = await queryBuilder
+      .select(['product', 'categoryEntity'])
+      .addSelect(relevanceSelect)
+      .where(whereClause, parameters as Record<string, unknown>)
+      .orderBy('relevance_score', 'DESC')
+      .addOrderBy('product.name', 'ASC')
+      .limit(limit)
+      .getRawAndEntities();
+
+    // Map results with relevance scores
+    return products.entities.map((product) => {
+      const searchResponse = this.mapProductToSearchResponse(product);
+      // Add relevance score from raw results if needed for debugging
+      return {
+        ...searchResponse,
+        // relevanceScore: products.raw[index]?.relevance_score || 0, // Uncomment for debugging
+      };
+    });
   }
 
   /**
@@ -1266,8 +1327,31 @@ export class ProductService {
         };
       });
 
-    // Find the lowest price
-    const lowestPrice = priceInfos.reduce(
+    // Deduplicate prices by store, keeping only the latest valid price per store
+    // Exclude future-dated prices which are likely data entry errors
+    const now = new Date();
+    const validPriceInfos = priceInfos.filter(
+      (priceInfo) => new Date(priceInfo.recordedAt) <= now,
+    );
+
+    const latestPricesByStore = new Map<string, PriceInfoDto>();
+
+    validPriceInfos.forEach((priceInfo) => {
+      const storeId = priceInfo.store.storeSk;
+      const existingPrice = latestPricesByStore.get(storeId);
+
+      if (
+        !existingPrice ||
+        new Date(priceInfo.recordedAt) > new Date(existingPrice.recordedAt)
+      ) {
+        latestPricesByStore.set(storeId, priceInfo);
+      }
+    });
+
+    const deduplicatedPriceInfos = Array.from(latestPricesByStore.values());
+
+    // Find the lowest price from deduplicated prices
+    const lowestPrice = deduplicatedPriceInfos.reduce(
       (lowest, current) => {
         if (!lowest || current.price < lowest.price) {
           return current;
@@ -1277,8 +1361,10 @@ export class ProductService {
       undefined as PriceInfoDto | undefined,
     );
 
-    // Count unique stores
-    const uniqueStores = new Set(priceInfos.map((p) => p.store.storeSk));
+    // Count unique stores from deduplicated prices
+    const uniqueStores = new Set(
+      deduplicatedPriceInfos.map((p) => p.store.storeSk),
+    );
 
     return {
       id: product.productSk,
@@ -1290,7 +1376,7 @@ export class ProductService {
       category: product.categoryEntity?.id || undefined,
       image_url: product.imageUrl ?? undefined,
       isVerified: true,
-      prices: priceInfos,
+      prices: deduplicatedPriceInfos,
       lowestPrice,
       availableStoresCount: uniqueStores.size,
     };

@@ -386,7 +386,9 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
         >
           <View style={styles.productCard}>
             <Image
-              source={{ uri: productInfo.image_url }}
+              source={{ 
+                uri: productInfo.image_url || 'https://via.placeholder.com/96x96/f8f9fa/6c757d?text=No+Image'
+              }}
               style={styles.productImage}
             />
             <View style={styles.productDetails}>

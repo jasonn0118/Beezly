@@ -2,7 +2,7 @@ import { EXPO_PUBLIC_API_TIMEOUT, EXPO_PUBLIC_API_URL } from "@env";
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
 
 // API configuration
-const API_BASE_URL = EXPO_PUBLIC_API_URL || "http://172.16.81.198:3006";
+const API_BASE_URL = EXPO_PUBLIC_API_URL || "http://10.0.0.183:3006";
 const API_TIMEOUT = parseInt(EXPO_PUBLIC_API_TIMEOUT || "60000", 10);
 
 class ApiClient {
