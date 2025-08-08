@@ -26,6 +26,7 @@ import {
   ScannedDataParam,
   UnifiedStoreSearchResult,
 } from "../../services/productService";
+import { format, isToday, formatDistanceToNowStrict } from 'date-fns';
 
 interface NearbyPrice {
   storeName: string;
@@ -33,6 +34,7 @@ interface NearbyPrice {
   distance: number;
   fullAddress?: string;
   isBestDeal?: boolean;
+  recordedAt?: string;
 }
 
 interface ProductDetailViewProps {
@@ -62,6 +64,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     datasets: { data: number[] }[];
   }>({ labels: [], datasets: [{ data: [] }] });
   const [fetchingPrices, setFetchingPrices] = useState(false);
+  const [latestRecordedAt, setLatestRecordedAt] = useState<string | null>(null);
 
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
@@ -127,6 +130,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           distance: response.lowestPrice.store.distance || 0,
           fullAddress: response.lowestPrice.store.fullAddress,
           isBestDeal: true,
+          recordedAt: response.lowestPrice.recordedAt,
         });
       }
 
@@ -140,6 +144,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             distance: item.store.distance || 0,
             fullAddress: item.store.fullAddress,
             isBestDeal: false,
+            recordedAt: item.recordedAt, // Include recordedAt
           }));
         pricesToDisplay = [...pricesToDisplay, ...otherPrices];
 
@@ -181,6 +186,19 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
         });
       }
       setNearbyPrices(pricesToDisplay);
+
+      // Find the latest recordedAt among the displayed prices
+      if (pricesToDisplay.length > 0) {
+        const latestPrice = pricesToDisplay.reduce((prev, current) => {
+          if (!prev.recordedAt) return current;
+          if (!current.recordedAt) return prev;
+          return new Date(current.recordedAt) > new Date(prev.recordedAt) ? current : prev;
+        });
+        setLatestRecordedAt(latestPrice.recordedAt || null);
+      } else {
+        setLatestRecordedAt(null);
+      }
+
     } catch (error) {
       console.error("Failed to fetch nearby prices:", error);
       Alert.alert("Error", "Could not fetch nearby prices.");
@@ -527,7 +545,11 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           nearbyPrices.map((item, index) => (
             <View
               key={index}
-              style={[styles.priceItem, item.isBestDeal && styles.bestDealItem]}
+              style={[
+                styles.priceItem,
+                item.isBestDeal && styles.bestDealItem,
+                item.recordedAt === latestRecordedAt && styles.latestPriceItem,
+              ]}
             >
               {item.isBestDeal && (
                 <View style={styles.bestDealBadgeAbsolute}>
@@ -555,15 +577,28 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                   </Text>
                 </View>
               </View>
-              {/* Right side: Price */}
+              {/* Right side: Price and Date */}
               <View style={styles.priceItemRight}>
                 <Text
-                  style={
-                    item.isBestDeal ? styles.priceTextBest : styles.priceText
-                  }
+                  style={item.isBestDeal ? styles.priceTextBest : styles.priceText}
                 >
                   ${item.price.toFixed(2)}
                 </Text>
+                {item.recordedAt && (
+                  <Text style={item.recordedAt === latestRecordedAt ? styles.latestRecordedAtText : styles.recordedAtText}>
+                    {item.recordedAt && (
+                      item.recordedAt === latestRecordedAt ? (
+                        isToday(new Date(item.recordedAt)) ? (
+                          "Today"
+                        ) : (
+                          `${formatDistanceToNowStrict(new Date(item.recordedAt))} ago`
+                        )
+                      ) : (
+                        format(new Date(item.recordedAt), 'yyyy-MM-dd')
+                      )
+                    )}
+                  </Text>
+                )}
               </View>
             </View>
           ))
@@ -845,6 +880,25 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         color: '#20c997',
         flexShrink: 1,
+    },
+    recordedAtText: {
+        fontSize: 12,
+        color: '#6c757d',
+        marginTop: 4,
+    },
+    latestRecordedAtText: {
+        fontSize: 13,
+        color: '#212529',
+        marginTop: 4,
+        fontWeight: 'bold',
+    },
+    latestPriceItem: {
+        borderLeftWidth: 4,
+        borderLeftColor: '#FFC107', // Accent color from the app
+        shadowOpacity: 0.1, 
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 4,
     },
     centeredContainer: {
         flex: 1,
