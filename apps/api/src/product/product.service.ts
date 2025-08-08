@@ -1318,6 +1318,7 @@ export class ProductService {
           creditScore: price.creditScore
             ? Number(price.creditScore)
             : undefined,
+          recoredAt: price.recordedAt,
           verifiedCount: price.verifiedCount || undefined,
           isDiscount: price.isDiscount,
           originalPrice: price.originalPrice
@@ -1351,7 +1352,7 @@ export class ProductService {
     const deduplicatedPriceInfos = Array.from(latestPricesByStore.values());
 
     // Find the lowest price from deduplicated prices
-    const lowestPrice = deduplicatedPriceInfos.reduce(
+    const lowestPriceInfo = deduplicatedPriceInfos.reduce(
       (lowest, current) => {
         if (!lowest || current.price < lowest.price) {
           return current;
@@ -1360,6 +1361,8 @@ export class ProductService {
       },
       undefined as PriceInfoDto | undefined,
     );
+
+    const lowestPrice = lowestPriceInfo ? { ...lowestPriceInfo } : undefined;
 
     // Count unique stores from deduplicated prices
     const uniqueStores = new Set(
