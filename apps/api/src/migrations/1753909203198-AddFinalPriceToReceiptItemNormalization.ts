@@ -6,10 +6,8 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
   name = 'AddFinalPriceToReceiptItemNormalization1753909203198';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Get the actual ReceiptItem table name (case-sensitive check)
-    const receiptItemTableName =
-      await this.getReceiptItemTableName(queryRunner);
-    console.log(`✅ Found ReceiptItem table as: ${receiptItemTableName}`);
+    // Ensure ReceiptItem table exists
+    await this.ensureReceiptItemTableExists(queryRunner);
 
     // Helper function to safely create index if it doesn't exist
     const createIndexIfNotExists = async (
@@ -357,7 +355,7 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
       'CHK_11389528bf377235119bb858db',
     );
     await addConstraintIfNotExists(
-      `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_10b4ad9461a10c3efdae3e7798e" FOREIGN KEY ("receipt_item_sk") REFERENCES ${receiptItemTableName}("receiptitem_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
+      `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_10b4ad9461a10c3efdae3e7798e" FOREIGN KEY ("receipt_item_sk") REFERENCES "ReceiptItem"("receiptitem_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
       'receipt_item_normalizations',
       'FK_10b4ad9461a10c3efdae3e7798e',
     );
@@ -379,9 +377,6 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Get the actual ReceiptItem table name for down migration
-    const receiptItemTableName =
-      await this.getReceiptItemTableName(queryRunner);
     await queryRunner.query(
       `ALTER TABLE "unprocessed_products" DROP CONSTRAINT "FK_f60e47db84d583439510fc7dfcf"`,
     );
@@ -554,38 +549,58 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
       `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_receipt_item_normalization_product" FOREIGN KEY ("normalized_product_sk") REFERENCES "normalized_products"("normalized_product_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
     );
     await queryRunner.query(
-      `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_receipt_item_normalization_item" FOREIGN KEY ("receipt_item_sk") REFERENCES ${receiptItemTableName}("receiptitem_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
+      `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_receipt_item_normalization_item" FOREIGN KEY ("receipt_item_sk") REFERENCES "ReceiptItem"("receiptitem_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
     );
   }
 
   /**
-   * Helper method to find the actual ReceiptItem table name
-   * Handles different casing that might exist in different environments
+   * Helper method to ensure ReceiptItem table exists
+   * Creates it if it doesn't exist (for new environments)
    */
-  private async getReceiptItemTableName(
+  private async ensureReceiptItemTableExists(
     queryRunner: QueryRunner,
-  ): Promise<string> {
-    // Check possible table name variants (most common first)
-    const variants = ['ReceiptItem', 'receiptitem', 'receipt_item'];
+  ): Promise<void> {
+    const tableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'ReceiptItem'
+      )
+    `)) as [{ exists: boolean }];
 
-    for (const variant of variants) {
-      const result = (await queryRunner.query(`
-        SELECT EXISTS (
-          SELECT 1 FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          AND table_name = '${variant}'
+    if (!tableExists[0]?.exists) {
+      console.log('⚠️  ReceiptItem table not found, creating it...');
+
+      // Create UUID extension if it doesn't exist
+      await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
+
+      // Create ReceiptItem table (from InitialSchema)
+      await queryRunner.query(`
+        INSERT INTO "typeorm_metadata"("database", "schema", "table", "type", "name", "value") 
+        VALUES (current_database(), 'public', 'ReceiptItem', 'GENERATED_COLUMN', 'line_total', '"price" * "quantity"')
+      `);
+
+      await queryRunner.query(`
+        CREATE TABLE "ReceiptItem" (
+          "id" SERIAL NOT NULL, 
+          "created_at" TIMESTAMP NOT NULL DEFAULT now(), 
+          "updated_at" TIMESTAMP NOT NULL DEFAULT now(), 
+          "receiptitem_sk" uuid NOT NULL DEFAULT uuid_generate_v4(), 
+          "receipt_sk" uuid, 
+          "product_sk" uuid, 
+          "price" numeric NOT NULL, 
+          "quantity" integer NOT NULL DEFAULT '1', 
+          "line_total" numeric GENERATED ALWAYS AS ("price" * "quantity") STORED NOT NULL, 
+          "raw_name" character varying(255),
+          "item_code" character varying(50),
+          CONSTRAINT "UQ_ccaa04aaef141c8c0706bba5f33" UNIQUE ("receiptitem_sk"), 
+          CONSTRAINT "PK_63dbeaf2451849f0f8b492ea3e5" PRIMARY KEY ("id")
         )
-      `)) as [{ exists: boolean }];
+      `);
 
-      if (result[0]?.exists) {
-        return `"${variant}"`;
-      }
+      console.log('✅ Created ReceiptItem table');
+    } else {
+      console.log('✅ ReceiptItem table already exists');
     }
-
-    throw new Error(
-      `ReceiptItem table not found with any expected name variant. ` +
-        `Checked: ${variants.join(', ')}. ` +
-        `Please verify the table exists in the database.`,
-    );
   }
 }
