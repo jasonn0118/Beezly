@@ -703,8 +703,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#1f2937',
     },
-<<<<<<< Updated upstream
-=======
     distanceText: {
         fontSize: 14,
         color: '#6c757d',
@@ -722,5 +720,4 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         elevation: 5,
     },
->>>>>>> Stashed changes
 });
