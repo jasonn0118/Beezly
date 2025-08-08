@@ -35,7 +35,7 @@ async function resetInitialSchemaMigration() {
   console.log(`✅ Environment check passed: ${nodeEnv || 'unspecified'} (not development)`);
   console.log('   This script is intended for staging and production database setup');
   
-  let dataSource: DataSource;
+  let dataSource: DataSource | undefined;
 
   try {
     // Initialize the data source
