@@ -168,8 +168,8 @@ export default function RegisterProductScreen() {
                     storeName : formattedStoreName,
                     storeCity : formattedCity,
                     storeProvince : formattedRegion,
-                    storeLatitude : String(latitude),
-                    storeLongitude : String(longitude),
+                    storeLatitude : Number(latitude),
+                    storeLongitude : Number(longitude),
                     storeStreetNumber : formattedStreetNumber,
                     storeStreetAddress : formattedAddress
                 }));

@@ -200,7 +200,7 @@ const handleAddPrice = async () => {
             setStoreSearchResults([]);
             setSelectedStore({
                 key: uuidv4(),
-                storeId: '',
+                storeId: '', // No storeId from reverse geocoding
                 storeName: place.name || '',
                 storeStreetAddress: place.street || '',
                 storeCity: place.city || '',
