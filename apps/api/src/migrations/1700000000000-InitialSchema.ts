@@ -36,11 +36,20 @@ export class InitialSchema1700000000000 implements MigrationInterface {
     }
 
     // PRODUCTION SAFETY: Check if this is being run on an existing database
+    // Exclude system tables that are safe to ignore
     const existingTables = (await queryRunner.query(`
       SELECT table_name FROM information_schema.tables 
       WHERE table_schema = 'public' 
       AND table_type = 'BASE TABLE'
-      AND table_name NOT IN ('typeorm_metadata', 'migrations')
+      AND table_name NOT IN (
+        'typeorm_metadata', 
+        'migrations',
+        'spatial_ref_sys',        -- PostGIS system table
+        'geography_columns',      -- PostGIS system table  
+        'geometry_columns',       -- PostGIS system table
+        'raster_columns',         -- PostGIS system table
+        'raster_overviews'        -- PostGIS system table
+      )
     `)) as { table_name: string }[];
 
     if (existingTables.length > 0) {

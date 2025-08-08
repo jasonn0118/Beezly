@@ -75,11 +75,20 @@ export class DiagnosticTableCheck1700000000001 implements MigrationInterface {
       );
     }
 
-    // Also check for unexpected tables
+    // Also check for unexpected tables (excluding system tables)
+    const systemTables = [
+      'migrations',
+      'spatial_ref_sys',
+      'geography_columns',
+      'geometry_columns',
+      'raster_columns',
+      'raster_overviews',
+    ];
+
     const unexpectedTables = foundTableNames.filter(
       (name) =>
         !expectedTables.includes(name) &&
-        name !== 'migrations' &&
+        !systemTables.includes(name) &&
         !name.startsWith('typeorm_'),
     );
 
