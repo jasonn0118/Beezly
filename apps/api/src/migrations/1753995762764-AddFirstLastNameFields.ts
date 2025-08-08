@@ -4,6 +4,29 @@ export class AddFirstLastNameFields1753995762764 implements MigrationInterface {
   name = 'AddFirstLastNameFields1753995762764';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Check if User table exists first
+    const userTableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'User'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (!userTableExists[0]?.exists) {
+      console.log(
+        '⚠️  User table not found, skipping first/last name field updates',
+      );
+      console.log(
+        'ℹ️   This is normal for new environments. User table will be created when needed.',
+      );
+      return;
+    }
+
+    console.log(
+      '✅ User table found, proceeding with first/last name field updates...',
+    );
+
     // Add first_name and last_name columns if they don't exist
     await queryRunner.query(
       `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "first_name" character varying`,
@@ -45,6 +68,22 @@ export class AddFirstLastNameFields1753995762764 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // Check if User table exists first
+    const userTableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'User'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (!userTableExists[0]?.exists) {
+      console.log(
+        '⚠️  User table not found, skipping rollback of first/last name fields',
+      );
+      return;
+    }
+
     // Add back display_name column if it doesn't exist
     await queryRunner.query(
       `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "display_name" character varying`,

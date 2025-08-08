@@ -43,22 +43,22 @@ export interface ProductDetails {
   storePostalCode?: string;
   storeCity?: string;
   storeProvince?: string;
-  storeLatitude?: string;
-  storeLongitude?: string;
+  storeLatitude?: number;
+  storeLongitude?: number;
   storeStreetNumber?: string;
   storeStreetAddress?: string;
   selectedStore?: UnifiedStoreSearchResult; // Add this line to fix the type error
 }
 
 export interface StoreData {
-    storeId?: string;
+    storeId?: string | null;
     storeName?: string;
     storeAddress: string;
     storePostalCode: string;
     storeCity : string;
     storeProvince : string;
-    storeLatitude : string;
-    storeLongitude :string;
+    storeLatitude : number;
+    storeLongitude :number;
     storeStreetNumber : string;
     storeStreetAddress : string;
     road?: string;
@@ -67,8 +67,9 @@ export interface StoreData {
 }
 
 export interface UnifiedStoreSearchResult extends StoreData {
-    source: 'DB' | 'Google';
-    key?: string; // Add placeId for Google results
+    source: 'DB' | 'Google' | 'User Location';
+    key?: string;
+    distance?: number; // Add distance
 }
 
 export interface PriceData {
@@ -142,6 +143,7 @@ export interface ProductResponse {
   message?: string;
 }
 
+
 export class ProductService {
   static async lookupByBarcode(barcode: string): Promise<ProductResponse> {
     return apiClient.post<ProductResponse>('/barcode/lookup', { barcode });
@@ -159,8 +161,36 @@ export class ProductService {
     return apiClient.post<Product>('/products', formData);
   }
 
-  static async addPrice(productId: string, priceData: { price: number; store: StoreData }): Promise<any> {
-    return apiClient.post(`/products/${productId}/prices`, priceData);
+  static async addPrice(productId: string, priceValue: number, currency: string, selectedStore: UnifiedStoreSearchResult): Promise<any> {
+    let requestBody: any;
+    if (selectedStore.storeId) {
+      requestBody = {
+        storeSk: selectedStore.storeId,
+        price: {
+          price: priceValue,
+          currency: currency,
+        },
+      };
+    } else {
+      requestBody = {
+        store: {
+          name: selectedStore.storeName || '',
+          fullAddress: selectedStore.storeAddress || '',
+          city: selectedStore.storeCity || '',
+          province: selectedStore.storeProvince || '',
+          postalCode: selectedStore.storePostalCode || '',
+          latitude: selectedStore.storeLatitude || 0,
+          longitude: selectedStore.storeLongitude || 0,
+          placeId: selectedStore.key || '',
+        },
+        price: {
+          price: priceValue,
+          currency: currency,
+        },
+      };
+    }
+
+    return apiClient.post(`/products/${productId}/price`, requestBody);
   }
 
   static async updateProduct(id: string, product: Partial<Product>): Promise<Product> {
@@ -197,14 +227,15 @@ export class ProductService {
         storePostalCode: item.postalCode,
         storeCity: item.city,
         storeProvince: item.province,
-        storeLatitude: String(item.latitude),
-        storeLongitude: String(item.longitude),
+        storeLatitude: item.latitude,
+        storeLongitude: item.longitude,
         storeStreetNumber: item.streetNumber,
         storeStreetAddress: item.streetAddress,
         road: item.road,
         countryRegion: item.countryRegion,
         types: item.types,
         source: item.source, // Add back the source field to match the type
+        distance: item.distance, // Map distance
     }));
   }
 

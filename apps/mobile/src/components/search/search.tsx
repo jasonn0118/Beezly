@@ -8,10 +8,10 @@ import ProductService, { ProductSearchResult } from '../../services/productServi
 const ResultCard = ({ item, onPress }: { item: ProductSearchResult, onPress: () => void }) => (
     <TouchableOpacity style={styles.cardContainer} onPress={onPress}>
         <Image 
-            source={{ uri: item.image_url }} 
+            source={{ 
+                uri: item.image_url || 'https://via.placeholder.com/80x80/f8f9fa/6c757d?text=No+Image'
+            }} 
             style={styles.cardImage} 
-            // Add a fallback for broken image URLs
-            //defaultSource={require('./path/to/your/default/placeholder.png')} // Make sure to have a local placeholder image
         />
         <View style={styles.cardInfo}>
             <Text style={styles.cardBrand}>{item.brandName || 'Unknown Brand'}</Text>

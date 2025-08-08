@@ -160,7 +160,12 @@ const ProductSelectionScreen = () => {
                         <Animated.View style={[styles.card, isSelected && styles.cardSelected]}>
                             <TouchableOpacity onPress={() => handleSelectProduct(section.index, item)} style={styles.touchableCard}>
                                 <TouchableOpacity onPress={(e) => { e.stopPropagation(); item.imageUrl && openImageModal(item.imageUrl); }}>
-                                    <Image source={{ uri: item.imageUrl || undefined }} style={styles.image} />
+                                    <Image 
+                                        source={{ 
+                                            uri: item.imageUrl || 'https://via.placeholder.com/80x80/f8f9fa/6c757d?text=No+Image'
+                                        }} 
+                                        style={styles.image} 
+                                    />
                                 </TouchableOpacity>
                                 <View style={styles.infoContainer}>
                                     <Text style={styles.name}>{item.name}</Text>

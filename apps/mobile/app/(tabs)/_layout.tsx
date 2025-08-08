@@ -13,9 +13,9 @@ const colors = {
 const styles = StyleSheet.create({
   bottomNav: {
     backgroundColor: colors.dark,
-    height: 80,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+    height: 70,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     // position: 'absolute',
     bottom: 0,
     left: 0,
@@ -30,11 +30,11 @@ const styles = StyleSheet.create({
   tabButton: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    // justifyContent: 'center',
   },
   tabLabel: {
     fontSize: 10,
-    marginTop: 4,
+    marginTop: 10,
   },
   scanButtonContainer: {
     transform: [{ translateY: -20 }], // Equivalent to -translate-y-8 (approx 32px)

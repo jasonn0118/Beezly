@@ -406,7 +406,7 @@ export class ProductController {
   @ApiQuery({
     name: 'maxDistance',
     description:
-      'Maximum distance in kilometers for nearby stores (default: 10km)',
+      'Maximum distance in kilometers for nearby stores (default: 50km)',
     required: false,
     type: Number,
     example: 10,
@@ -456,7 +456,7 @@ export class ProductController {
       storeSk,
       latitude,
       longitude,
-      maxDistance || 10, // Default to 10km radius
+      maxDistance || 50, // Default to 10km radius
     );
   }
 

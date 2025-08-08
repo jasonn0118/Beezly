@@ -1,14 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Alert } from 'react-native';
-import { FontAwesome } from '@expo/vector-icons';
-import { Product, Barcode, ScannedDataParam, ProductService } from '../../services/productService';
-import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
+import { FontAwesome } from "@expo/vector-icons";
+import * as Location from "expo-location";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { LineChart } from "react-native-chart-kit";
+import { v4 as uuidv4 } from "uuid";
+import {
+  Barcode,
+  Product,
+  ProductService,
+  ScannedDataParam,
+  UnifiedStoreSearchResult,
+} from "../../services/productService";
 
 interface NearbyPrice {
   storeName: string;
   price: number;
   distance: number;
+  fullAddress?: string;
   isBestDeal?: boolean;
 }
 
@@ -18,23 +41,51 @@ interface ProductDetailViewProps {
   scannedData: ScannedDataParam | undefined;
 }
 
-export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInfo, loading, scannedData }) => {
+interface StoreSearchResultWithDisplay extends UnifiedStoreSearchResult {
+  key: string;
+  displayAddress: string;
+}
+
+export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
+  productInfo,
+  loading,
+  scannedData,
+}) => {
   const router = useRouter();
-  const [storeName, setStoreName] = useState('');
-  const [price, setPrice] = useState('');
+  const [price, setPrice] = useState("");
+  const [selectedStore, setSelectedStore] =
+    useState<StoreSearchResultWithDisplay | null>(null);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [nearbyPrices, setNearbyPrices] = useState<NearbyPrice[]>([]);
+  const [priceChartData, setPriceChartData] = useState<{
+    labels: string[];
+    datasets: { data: number[] }[];
+  }>({ labels: [], datasets: [{ data: [] }] });
   const [fetchingPrices, setFetchingPrices] = useState(false);
 
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [locationPermissionDenied, setLocationPermissionDenied] =
+    useState(false);
+
+  const [storeSearchQuery, setStoreSearchQuery] = useState("");
+  const [storeSearchResults, setStoreSearchResults] = useState<
+    StoreSearchResultWithDisplay[]
+  >([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [canSearch, setCanSearch] = useState(true);
 
   useEffect(() => {
     const checkLocationPermission = async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
+      if (status !== "granted") {
         setLocationPermissionDenied(true);
-        Alert.alert('Location Permission Required', 'Please enable location services to see nearby prices.');
+        Alert.alert(
+          "Location Permission Required",
+          "Please enable location services to see nearby prices."
+        );
         return;
       }
       setLocationPermissionDenied(false);
@@ -46,23 +97,35 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
 
   useEffect(() => {
     if (productInfo?.product_sk && userLocation) {
-      fetchNearbyPrices(productInfo.product_sk, userLocation.latitude, userLocation.longitude);
+      fetchNearbyPrices(
+        productInfo.product_sk,
+        userLocation.latitude,
+        userLocation.longitude
+      );
     } else if (productInfo?.product_sk && locationPermissionDenied) {
-      // Do not fetch prices if permission is denied
       setNearbyPrices([]); // Clear any previous prices
     }
   }, [productInfo?.product_sk, userLocation, locationPermissionDenied]);
 
-  const fetchNearbyPrices = async (productSk: string, latitude?: number, longitude?: number) => {
+  const fetchNearbyPrices = async (
+    productSk: string,
+    latitude?: number,
+    longitude?: number
+  ) => {
     setFetchingPrices(true);
     try {
-      const response = await ProductService.getEnhancedProductDetails(productSk, latitude, longitude);
+      const response = await ProductService.getEnhancedProductDetails(
+        productSk,
+        latitude,
+        longitude
+      );
       let pricesToDisplay: NearbyPrice[] = [];
       if (response.lowestPrice) {
         pricesToDisplay.push({
           storeName: response.lowestPrice.store.name,
           price: response.lowestPrice.price,
-          distance: response.lowestPrice.store.distance || 0, // Use distance from API or default to 0
+          distance: response.lowestPrice.store.distance || 0,
+          fullAddress: response.lowestPrice.store.fullAddress,
           isBestDeal: true,
         });
       }
@@ -70,17 +133,54 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
       if (response.prices) {
         const lowestPriceSk = response.lowestPrice?.priceSk;
         const otherPrices = response.prices
-          .filter(item => item.priceSk !== lowestPriceSk) // Exclude the lowestPrice if it's already added
-          .map(item => ({
+          .filter((item) => item.priceSk !== lowestPriceSk)
+          .map((item) => ({
             storeName: item.store.name,
             price: item.price,
-            distance: item.store.distance || 0, // Use distance from API or default to 0
+            distance: item.store.distance || 0,
+            fullAddress: item.store.fullAddress,
             isBestDeal: false,
           }));
         pricesToDisplay = [...pricesToDisplay, ...otherPrices];
+
+        // Prepare data for the chart - only include points where price changes
+        const sortedPrices = response.prices.sort(
+          (a, b) =>
+            new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
+        );
+        const uniquePrices: { price: number; recordedAt: string }[] = [];
+        let lastPrice: number | null = null;
+
+        sortedPrices.forEach((item) => {
+          if (item.price !== lastPrice) {
+            uniquePrices.push(item);
+            lastPrice = item.price;
+          }
+        });
+
+        const labels = uniquePrices.map((item) =>
+          new Date(item.recordedAt).toLocaleDateString("en-US", {
+            month: "2-digit",
+            day: "2-digit",
+            year: "2-digit",
+          })
+        );
+        // Filter labels to show only a subset to prevent overlapping
+        const filteredLabels = labels.filter(
+          (_, index) => index % Math.ceil(labels.length / 5) === 0
+        ); // Show max 5 labels
+        const data = uniquePrices.map((item) => item.price);
+
+        setPriceChartData({
+          labels: filteredLabels,
+          datasets: [
+            {
+              data: data,
+            },
+          ],
+        });
       }
       setNearbyPrices(pricesToDisplay);
-
     } catch (error) {
       console.error("Failed to fetch nearby prices:", error);
       Alert.alert("Error", "Could not fetch nearby prices.");
@@ -89,30 +189,159 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
     }
   };
 
+  useEffect(() => {
+    const handleSearch = async (query: string) => {
+      if (query.length < 2) {
+        setStoreSearchResults([]);
+        return;
+      }
+      setIsSearching(true);
+      try {
+        const location = await Location.getCurrentPositionAsync({});
+        const latitude = location.coords.latitude;
+        const longitude = location.coords.longitude;
+
+        const results = await ProductService.searchStores(
+          query,
+          latitude,
+          longitude
+        );
+
+        const combinedResults: StoreSearchResultWithDisplay[] = results.map(
+          (item) => ({
+            ...item,
+            key: item.storeId || uuidv4(),
+            displayAddress: `${item.storeStreetAddress || ""}, ${
+              item.source || ""
+            }`,
+          })
+        );
+
+        setStoreSearchResults(combinedResults);
+      } catch (error) {
+        console.error("Failed to search stores:", error);
+        Alert.alert("Error", "Failed to search for stores.");
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (storeSearchQuery && canSearch) {
+        handleSearch(storeSearchQuery);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [storeSearchQuery, canSearch]);
+
+  const handleSelectStore = (store: StoreSearchResultWithDisplay) => {
+    setCanSearch(false);
+    setSelectedStore(store);
+    const fullAddress = [
+      store.storeName,
+      store.storeStreetAddress,
+      store.storeCity,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    setStoreSearchQuery(fullAddress);
+    setStoreSearchResults([]);
+  };
+
+  const handleAddPrice = async () => {
+    if (!productInfo?.product_sk) {
+      Alert.alert("Error", "Product information is missing.");
+      return;
+    }
+    if (!price || isNaN(parseFloat(price)) || parseFloat(price) <= 0) {
+      Alert.alert("Error", "Please enter a valid price.");
+      return;
+    }
+    if (!selectedStore) {
+      Alert.alert("Error", "Please select a store or use current location.");
+      return;
+    }
+
+    try {
+      const priceValue = parseFloat(price);
+      await ProductService.addPrice(
+        productInfo.product_sk,
+        priceValue,
+        "CAD",
+        selectedStore
+      );
+      Alert.alert("Success", "Price added successfully!");
+      setPrice("");
+      setSelectedStore(null);
+      setStoreSearchQuery("");
+      // Optionally, refresh nearby prices after adding a new one
+      if (userLocation) {
+        fetchNearbyPrices(
+          productInfo.product_sk,
+          userLocation.latitude,
+          userLocation.longitude
+        );
+      }
+    } catch (error) {
+      console.error("Failed to add price:", error);
+      Alert.alert("Error", "Failed to add price. Please try again.");
+    }
+  };
+
   const handleGetLocation = async () => {
     setIsFetchingLocation(true);
     const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Permission to access location was denied.');
-        setIsFetchingLocation(false);
-        return;
-    };
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission Denied",
+        "Permission to access location was denied."
+      );
+      setIsFetchingLocation(false);
+      return;
+    }
 
     try {
-        const location = await Location.getCurrentPositionAsync({});
-        const { latitude, longitude } = location.coords;
-        const placemarks = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const location = await Location.getCurrentPositionAsync({});
+      const { latitude, longitude } = location.coords;
+      const placemarks = await Location.reverseGeocodeAsync({
+        latitude,
+        longitude,
+      });
 
-        if (placemarks && placemarks.length > 0) {
-            const place = placemarks[0];
-            const formattedStoreName = `${place.name}, ${place.street}, ${place.city}` || `${place.street}, ${place.city}`;
-            setStoreName(formattedStoreName);
-        }
+      if (placemarks && placemarks.length > 0) {
+        const place = placemarks[0];
+        const formattedStoreName =
+          `${place.name}, ${place.street}, ${place.city}` ||
+          `${place.street}, ${place.city}`;
+        setStoreSearchQuery(formattedStoreName);
+        setStoreSearchResults([]);
+        setSelectedStore({
+          key: uuidv4(),
+          storeId: null, // No storeId from reverse geocoding
+          storeName: place.name || "",
+          storeStreetAddress: place.street || "",
+          storeCity: place.city || "",
+          storeProvince: place.region || "",
+          storePostalCode: place.postalCode || "",
+          storeLatitude: latitude,
+          storeLongitude: longitude,
+          storeStreetNumber: place.streetNumber || "",
+          storeAddress: `${place.street || ""}, ${place.city || ""}, ${
+            place.region || ""
+          }, ${place.postalCode || ""}`,
+          source: "User Location",
+          displayAddress: formattedStoreName,
+        });
+      }
     } catch (error) {
-        Alert.alert('Error', 'Could not fetch location. Please enter it manually.');
-        console.error(error);
+      Alert.alert(
+        "Error",
+        "Could not fetch location. Please enter it manually."
+      );
+      console.error(error);
     } finally {
-        setIsFetchingLocation(false);
+      setIsFetchingLocation(false);
     }
   };
 
@@ -130,7 +359,11 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+    >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <FontAwesome name="arrow-left" size={20} color="#212529" />
@@ -141,14 +374,29 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <TouchableOpacity onPress={() => handleProductDetail(productInfo.product_sk || productInfo.id)}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { flexGrow: 1 }]}
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => Keyboard.dismiss()}
+      >
+        <TouchableOpacity
+          onPress={() =>
+            handleProductDetail(productInfo.product_sk || productInfo.id)
+          }
+        >
           <View style={styles.productCard}>
-            <Image source={{ uri: productInfo.image_url }} style={styles.productImage} />
+            <Image
+              source={{ 
+                uri: productInfo.image_url || 'https://via.placeholder.com/96x96/f8f9fa/6c757d?text=No+Image'
+              }}
+              style={styles.productImage}
+            />
             <View style={styles.productDetails}>
               <Text style={styles.productBrand}>{productInfo.brandName}</Text>
               <Text style={styles.productName}>{productInfo.name}</Text>
-              <Text style={styles.productCategory}>{productInfo.categoryPath}</Text>
+              <Text style={styles.productCategory}>
+                {productInfo.categoryPath}
+              </Text>
               <Text style={styles.productBarcode}>{productInfo.barcode}</Text>
               {/* <Text style={styles.pointsText}>Points Earned: <Text style={styles.pointsValue}>+ 10 P</Text></Text> */}
             </View>
@@ -162,24 +410,98 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
         <View style={styles.addPriceContainer}>
           <View style={styles.titleWithButton}>
             <Text style={styles.addPriceTitle}>Add a Price</Text>
-            <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isFetchingLocation}>
-                {isFetchingLocation ? (
-                    <ActivityIndicator size="small" color="#4b5563" />
-                ) : (
-                    <>
-                        <FontAwesome name="map-marker" size={16} color="#4b5563" />
-                        <Text style={styles.locationButtonText}>Use Current Location</Text>
-                    </>
-                )}
+            <TouchableOpacity
+              style={styles.locationButton}
+              onPress={handleGetLocation}
+              disabled={isFetchingLocation}
+            >
+              {isFetchingLocation ? (
+                <ActivityIndicator size="small" color="#4b5563" />
+              ) : (
+                <>
+                  <FontAwesome name="map-marker" size={16} color="#4b5563" />
+                  <Text style={styles.locationButtonText}>
+                    Use Current Location
+                  </Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
           <Text style={styles.inputLabel}>Store Name</Text>
-          <View style={styles.addPriceInputRow}>
-            <TextInput style={styles.input} placeholder="Store Name" value={storeName} onChangeText={setStoreName} />
-            <TextInput style={[styles.input, styles.priceInput]} placeholder="$ Price" keyboardType="numeric" value={price} onChangeText={setPrice} />
-            <TouchableOpacity style={styles.addPriceButton}>
-              <FontAwesome name="plus" size={16} color="#212529" />
-            </TouchableOpacity>
+          <View style={styles.inputGroup}>
+            <View style={styles.addPriceInputRow}>
+              <TextInput
+                style={styles.input}
+                placeholder="Store Name"
+                value={storeSearchQuery}
+                onChangeText={(text) => {
+                  setCanSearch(true);
+                  setStoreSearchQuery(text);
+                }}
+              />
+              <TextInput
+                style={[styles.input, styles.priceInput]}
+                placeholder="$ Price"
+                keyboardType="numeric"
+                value={price}
+                onChangeText={setPrice}
+              />
+              <TouchableOpacity
+                style={styles.addPriceButton}
+                onPress={handleAddPrice}
+              >
+                <FontAwesome name="plus" size={16} color="#212529" />
+              </TouchableOpacity>
+            </View>
+            {isSearching ? (
+              <ActivityIndicator
+                size="small"
+                color="#4b5563"
+                style={styles.searchLoader}
+              />
+            ) : (
+              storeSearchResults.length > 0 && (
+                <View style={styles.searchResultsWrapper}>
+                  <ScrollView
+                    style={[styles.searchResultsContainer, { maxHeight: 250 }]}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={true}
+                    nestedScrollEnabled={true}
+                  >
+                    {storeSearchResults.map((item) => (
+                      <TouchableOpacity
+                        key={item.key}
+                        style={styles.resultItem}
+                        onPress={() => handleSelectStore(item)}
+                      >
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            flex: 1,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <Text style={styles.resultText}>
+                            {item.storeName +
+                              ", " +
+                              (item.storeStreetAddress || "") +
+                              ", " +
+                              (item.storeCity || "")}
+                            {item.distance !== undefined && (
+                              <Text style={styles.distanceText}>
+                                {" "}
+                                ({item.distance.toFixed(1)} km)
+                              </Text>
+                            )}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )
+            )}
           </View>
         </View>
 
@@ -189,14 +511,24 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
           <ActivityIndicator size="large" color="#FFC107" />
         ) : locationPermissionDenied ? (
           <View style={styles.permissionDeniedContainer}>
-            <Text style={styles.permissionDeniedText}>Location permission is required to show nearby prices.</Text>
-            <TouchableOpacity style={styles.enableLocationButton} onPress={handleGetLocation}>
-              <Text style={styles.enableLocationButtonText}>Enable Location</Text>
+            <Text style={styles.permissionDeniedText}>
+              Location permission is required to show nearby prices.
+            </Text>
+            <TouchableOpacity
+              style={styles.enableLocationButton}
+              onPress={handleGetLocation}
+            >
+              <Text style={styles.enableLocationButtonText}>
+                Enable Location
+              </Text>
             </TouchableOpacity>
           </View>
         ) : nearbyPrices.length > 0 ? (
           nearbyPrices.map((item, index) => (
-            <View key={index} style={[styles.priceItem, item.isBestDeal && styles.bestDealItem]}>
+            <View
+              key={index}
+              style={[styles.priceItem, item.isBestDeal && styles.bestDealItem]}
+            >
               {item.isBestDeal && (
                 <View style={styles.bestDealBadgeAbsolute}>
                   <Text style={styles.bestDealBadgeText}>BEST DEAL</Text>
@@ -205,25 +537,90 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
               {/* Left side: Store Name and Distance */}
               <View style={styles.priceItemLeft}>
                 <View style={styles.storeNameContainer}>
-                  <Text style={item.isBestDeal ? styles.storeNameBest : styles.storeName}>{item.storeName}</Text>
+                  <Text
+                    style={
+                      item.isBestDeal ? styles.storeNameBest : styles.storeName
+                    }
+                  >
+                    {item.storeName}
+                  </Text>
+                  {item.fullAddress && (
+                    <Text style={styles.storeAddress}>{item.fullAddress}</Text>
+                  )}
                 </View>
                 <View style={styles.distanceContainer}>
                   <FontAwesome name="map-marker" size={14} color="#6c757d" />
-                  <Text style={styles.storeDistance}>{item.distance.toFixed(1)} km away</Text>
+                  <Text style={styles.storeDistance}>
+                    {item.distance.toFixed(1)} km away
+                  </Text>
                 </View>
               </View>
               {/* Right side: Price */}
               <View style={styles.priceItemRight}>
-                <Text style={item.isBestDeal ? styles.priceTextBest : styles.priceText}>${item.price.toFixed(2)}</Text>
+                <Text
+                  style={
+                    item.isBestDeal ? styles.priceTextBest : styles.priceText
+                  }
+                >
+                  ${item.price.toFixed(2)}
+                </Text>
               </View>
             </View>
           ))
         ) : (
           <Text style={styles.noPricesText}>No nearby prices found.</Text>
         )}
-        
+
+        {/* Price History Chart */}
+        {priceChartData.labels.length > 0 && (
+          <View style={styles.chartContainer}>
+            <Text style={styles.sectionTitle}>Price History</Text>
+            <LineChart
+              data={priceChartData}
+              width={
+                Dimensions.get("window").width -
+                styles.chartContainer.padding * 2 -
+                30
+              } // Adjusted width calculation
+              height={250}
+              yAxisLabel=""
+              yAxisSuffix="$"
+              chartConfig={{
+                backgroundColor: "#f8f9fa",
+                backgroundGradientFrom: "#f8f9fa",
+                backgroundGradientTo: "#f8f9fa",
+                decimalPlaces: 2,
+                color: (opacity = 1) => `rgba(255, 193, 7, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(33, 37, 41, ${opacity})`,
+                propsForLabels: {
+                  fontSize: 10, // Smaller font size for labels
+                },
+                propsForBackgroundLines: {
+                  strokeDasharray: "0", // Solid lines
+                  stroke: "#e0e0e0", // Lighter grid lines
+                },
+                style: {
+                  borderRadius: 16,
+                },
+                propsForDots: {
+                  r: "3", // Smaller dots
+                  strokeWidth: "1",
+                  stroke: "#FFC107",
+                },
+                paddingRight: 30, // More padding for Y-axis labels
+              }}
+              bezier
+              withVerticalLines={false} // Remove vertical grid lines
+              withHorizontalLines={true} // Keep horizontal grid lines
+              style={{
+                marginVertical: 8,
+                borderRadius: 16,
+              }}
+            />
+          </View>
+        )}
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -372,7 +769,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 5,
         elevation: 2,
-        position: 'relative', // Add this line
+        position: 'relative',
     },
     bestDealBadgeAbsolute: {
         backgroundColor: '#20c997',
@@ -382,7 +779,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 8,
         right: 8,
-        zIndex: 1, // Ensure it's above other content
+        zIndex: 1, 
     },
     bestDealBadgeText: {
         color: 'white',
@@ -422,6 +819,11 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#20c997',
         flexShrink: 1,
+    },
+    storeAddress: {
+        fontSize: 12,
+        color: '#6c757d',
+        marginTop: 2,
     },
     distanceContainer: {
         flexDirection: 'row',
@@ -483,6 +885,9 @@ const styles = StyleSheet.create({
         color: '#4b5563', // Gray-600
         marginBottom: 8,
     },
+    inputGroup: {
+        position: 'relative',
+    },
     noPricesText: {
         textAlign: 'center',
         marginTop: 20,
@@ -514,5 +919,57 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+        searchResultsWrapper: {
+        marginBottom: 16,
+    },
+    searchResultsContainer: {
+        backgroundColor: 'white',
+        borderColor: '#e5e7eb',
+        borderWidth: 1,
+        borderRadius: 12,
+        marginTop: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        elevation: 5,
+        zIndex: 10,
+    },
+    searchLoader: {
+        position: 'absolute',
+        right: 15,
+        top: 50,
+    },
+    resultItem: {
+        paddingVertical: 15,
+        paddingHorizontal: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+    },
+    resultContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    resultText: {
+        fontSize: 16,
+        color: '#1f2937',
+    },
+    distanceText: {
+        fontSize: 14,
+        color: '#6c757d',
+        marginLeft: 5,
+    },
+    chartContainer: {
+        marginTop: 20,
+        marginBottom: 20,
+        backgroundColor: 'white',
+        borderRadius: 16,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 5,
     },
 });

@@ -6,6 +6,22 @@ export class AddProductLinkingToNormalizedProduct1753512220079
   name = 'AddProductLinkingToNormalizedProduct1753512220079';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // First check if the table exists
+    const tableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'normalized_products'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (!tableExists[0].exists) {
+      console.log(
+        'normalized_products table does not exist. Skipping product linking columns addition.',
+      );
+      return;
+    }
+
     // Check if columns already exist before adding them
     const columns = (await queryRunner.query(`
       SELECT column_name 
@@ -49,21 +65,41 @@ export class AddProductLinkingToNormalizedProduct1753512220079
       }
     }
 
-    // Check if foreign key constraint exists
-    const constraintExists = (await queryRunner.query(`
-      SELECT constraint_name 
-      FROM information_schema.table_constraints 
-      WHERE table_name = 'normalized_products' 
-      AND constraint_name = 'FK_normalized_products_linked_product'
-    `)) as { constraint_name: string }[];
+    // Check if Product table exists before creating foreign key constraint
+    const productTableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Product'
+      );
+    `)) as [{ exists: boolean }];
 
-    // Add foreign key constraint only if it doesn't exist
-    if (constraintExists.length === 0) {
-      await queryRunner.query(`
-        ALTER TABLE "normalized_products" 
-        ADD CONSTRAINT "FK_normalized_products_linked_product" 
-        FOREIGN KEY ("linked_product_sk") REFERENCES "Product"("product_sk") ON DELETE SET NULL
-      `);
+    if (productTableExists[0]?.exists) {
+      console.log('✅ Product table found, creating foreign key constraint...');
+
+      // Check if foreign key constraint exists
+      const constraintExists = (await queryRunner.query(`
+        SELECT constraint_name 
+        FROM information_schema.table_constraints 
+        WHERE table_name = 'normalized_products' 
+        AND constraint_name = 'FK_normalized_products_linked_product'
+      `)) as { constraint_name: string }[];
+
+      // Add foreign key constraint only if it doesn't exist
+      if (constraintExists.length === 0) {
+        await queryRunner.query(`
+          ALTER TABLE "normalized_products" 
+          ADD CONSTRAINT "FK_normalized_products_linked_product" 
+          FOREIGN KEY ("linked_product_sk") REFERENCES "Product"("product_sk") ON DELETE SET NULL
+        `);
+      }
+    } else {
+      console.log(
+        '⚠️  Product table not found, skipping foreign key constraint creation',
+      );
+      console.log(
+        'ℹ️   Foreign key constraint can be added later when Product table exists',
+      );
     }
 
     // Add comments to columns (safe to re-run)
@@ -89,6 +125,22 @@ export class AddProductLinkingToNormalizedProduct1753512220079
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // First check if the table exists
+    const tableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'normalized_products'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (!tableExists[0].exists) {
+      console.log(
+        'normalized_products table does not exist. Skipping product linking columns removal.',
+      );
+      return;
+    }
+
     // Drop indexes
     await queryRunner.query(
       `DROP INDEX IF EXISTS "IDX_normalized_products_confidence_unlinked"`,
@@ -97,10 +149,20 @@ export class AddProductLinkingToNormalizedProduct1753512220079
       `DROP INDEX IF EXISTS "IDX_normalized_products_linked_product_sk"`,
     );
 
-    // Drop foreign key constraint
-    await queryRunner.query(
-      `ALTER TABLE "normalized_products" DROP CONSTRAINT IF EXISTS "FK_normalized_products_linked_product"`,
-    );
+    // Drop foreign key constraint (only if Product table exists to avoid errors)
+    const productTableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Product'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (productTableExists[0]?.exists) {
+      await queryRunner.query(
+        `ALTER TABLE "normalized_products" DROP CONSTRAINT IF EXISTS "FK_normalized_products_linked_product"`,
+      );
+    }
 
     // Drop columns
     await queryRunner.query(`
