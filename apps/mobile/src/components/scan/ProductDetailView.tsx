@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { Product, Barcode, ScannedDataParam, ProductService } from '../../services/productService';
+import { Product, Barcode, ScannedDataParam, ProductService, UnifiedStoreSearchResult } from '../../services/productService';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
+import { v4 as uuidv4 } from 'uuid';
 
 interface NearbyPrice {
   storeName: string;
   price: number;
   distance: number;
+  fullAddress?: string;
   isBestDeal?: boolean;
 }
 
@@ -18,16 +20,26 @@ interface ProductDetailViewProps {
   scannedData: ScannedDataParam | undefined;
 }
 
+interface StoreSearchResultWithDisplay extends UnifiedStoreSearchResult {
+    key: string;
+    displayAddress: string;
+}
+
 export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInfo, loading, scannedData }) => {
   const router = useRouter();
-  const [storeName, setStoreName] = useState('');
   const [price, setPrice] = useState('');
+  const [selectedStore, setSelectedStore] = useState<StoreSearchResultWithDisplay | null>(null);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [nearbyPrices, setNearbyPrices] = useState<NearbyPrice[]>([]);
   const [fetchingPrices, setFetchingPrices] = useState(false);
 
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
+
+  const [storeSearchQuery, setStoreSearchQuery] = useState('');
+  const [storeSearchResults, setStoreSearchResults] = useState<StoreSearchResultWithDisplay[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [canSearch, setCanSearch] = useState(true);
 
   useEffect(() => {
     const checkLocationPermission = async () => {
@@ -48,7 +60,6 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
     if (productInfo?.product_sk && userLocation) {
       fetchNearbyPrices(productInfo.product_sk, userLocation.latitude, userLocation.longitude);
     } else if (productInfo?.product_sk && locationPermissionDenied) {
-      // Do not fetch prices if permission is denied
       setNearbyPrices([]); // Clear any previous prices
     }
   }, [productInfo?.product_sk, userLocation, locationPermissionDenied]);
@@ -62,7 +73,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
         pricesToDisplay.push({
           storeName: response.lowestPrice.store.name,
           price: response.lowestPrice.price,
-          distance: response.lowestPrice.store.distance || 0, // Use distance from API or default to 0
+          distance: response.lowestPrice.store.distance || 0,
+          fullAddress: response.lowestPrice.store.fullAddress,
           isBestDeal: true,
         });
       }
@@ -70,11 +82,12 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
       if (response.prices) {
         const lowestPriceSk = response.lowestPrice?.priceSk;
         const otherPrices = response.prices
-          .filter(item => item.priceSk !== lowestPriceSk) // Exclude the lowestPrice if it's already added
+          .filter(item => item.priceSk !== lowestPriceSk) 
           .map(item => ({
             storeName: item.store.name,
             price: item.price,
-            distance: item.store.distance || 0, // Use distance from API or default to 0
+            distance: item.store.distance || 0,
+            fullAddress: item.store.fullAddress,
             isBestDeal: false,
           }));
         pricesToDisplay = [...pricesToDisplay, ...otherPrices];
@@ -88,6 +101,83 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
       setFetchingPrices(false);
     }
   };
+
+  useEffect(() => {
+    const handleSearch = async (query: string) => {
+        if (query.length < 2) {
+            setStoreSearchResults([]);
+            return;
+        }
+        setIsSearching(true);
+        try {
+            const location = await Location.getCurrentPositionAsync({});
+            const latitude = location.coords.latitude;
+            const longitude = location.coords.longitude;
+
+            const results = await ProductService.searchStores(query, latitude, longitude);
+
+            const combinedResults: StoreSearchResultWithDisplay[] = results.map(item => ({
+                ...item,
+                key: item.storeId || uuidv4(),
+                displayAddress: `${item.storeStreetAddress || ''}, ${item.source || ''}`,
+            }));
+
+            setStoreSearchResults(combinedResults);
+        } catch (error) {
+            console.error('Failed to search stores:', error);
+            Alert.alert('Error', 'Failed to search for stores.');
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const timer = setTimeout(() => {
+        if (storeSearchQuery && canSearch) {
+            handleSearch(storeSearchQuery);
+        }
+    }, 500);
+
+    return () => clearTimeout(timer);
+}, [storeSearchQuery, canSearch]);
+
+const handleSelectStore = (store: StoreSearchResultWithDisplay) => {
+    setCanSearch(false);
+    setSelectedStore(store);
+    const fullAddress = [store.storeName, store.storeStreetAddress, store.storeCity].filter(Boolean).join(', ');
+    setStoreSearchQuery(fullAddress);
+    setStoreSearchResults([]);
+};
+
+const handleAddPrice = async () => {
+    if (!productInfo?.product_sk) {
+        Alert.alert("Error", "Product information is missing.");
+        return;
+    }
+    if (!price || isNaN(parseFloat(price)) || parseFloat(price) <= 0) {
+        Alert.alert("Error", "Please enter a valid price.");
+        return;
+    }
+    if (!selectedStore) {
+        Alert.alert("Error", "Please select a store or use current location.");
+        return;
+    }
+
+    try {
+        const priceValue = parseFloat(price);
+        await ProductService.addPrice(productInfo.product_sk, priceValue, "CAD", selectedStore);
+        Alert.alert("Success", "Price added successfully!");
+        setPrice('');
+        setSelectedStore(null);
+        setStoreSearchQuery('');
+        // Optionally, refresh nearby prices after adding a new one
+        if (userLocation) {
+            fetchNearbyPrices(productInfo.product_sk, userLocation.latitude, userLocation.longitude);
+        }
+    } catch (error) {
+        console.error("Failed to add price:", error);
+        Alert.alert("Error", "Failed to add price. Please try again.");
+    }
+};
 
   const handleGetLocation = async () => {
     setIsFetchingLocation(true);
@@ -106,7 +196,23 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
         if (placemarks && placemarks.length > 0) {
             const place = placemarks[0];
             const formattedStoreName = `${place.name}, ${place.street}, ${place.city}` || `${place.street}, ${place.city}`;
-            setStoreName(formattedStoreName);
+            setStoreSearchQuery(formattedStoreName);
+            setStoreSearchResults([]);
+            setSelectedStore({
+                key: uuidv4(),
+                storeId: '',
+                storeName: place.name || '',
+                storeStreetAddress: place.street || '',
+                storeCity: place.city || '',
+                storeProvince: place.region || '',
+                storePostalCode: place.postalCode || '',
+                storeLatitude: latitude,
+                storeLongitude: longitude,
+                storeStreetNumber: place.streetNumber || '',
+                storeAddress: `${place.street || ''}, ${place.city || ''}, ${place.region || ''}, ${place.postalCode || ''}`,
+                source: 'User Location',
+                displayAddress: formattedStoreName,
+            });
         }
     } catch (error) {
         Alert.alert('Error', 'Could not fetch location. Please enter it manually.');
@@ -130,7 +236,11 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0} 
+    >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <FontAwesome name="arrow-left" size={20} color="#212529" />
@@ -141,7 +251,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { flexGrow: 1 }]} keyboardShouldPersistTaps="handled" onScrollBeginDrag={() => Keyboard.dismiss()}>
         <TouchableOpacity onPress={() => handleProductDetail(productInfo.product_sk || productInfo.id)}>
           <View style={styles.productCard}>
             <Image source={{ uri: productInfo.image_url }} style={styles.productImage} />
@@ -174,12 +284,41 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
             </TouchableOpacity>
           </View>
           <Text style={styles.inputLabel}>Store Name</Text>
-          <View style={styles.addPriceInputRow}>
-            <TextInput style={styles.input} placeholder="Store Name" value={storeName} onChangeText={setStoreName} />
-            <TextInput style={[styles.input, styles.priceInput]} placeholder="$ Price" keyboardType="numeric" value={price} onChangeText={setPrice} />
-            <TouchableOpacity style={styles.addPriceButton}>
-              <FontAwesome name="plus" size={16} color="#212529" />
-            </TouchableOpacity>
+          <View style={styles.inputGroup}>
+            <View style={styles.addPriceInputRow}>
+              <TextInput style={styles.input} placeholder="Store Name" value={storeSearchQuery} onChangeText={(text) => {
+                  setCanSearch(true);
+                  setStoreSearchQuery(text);
+              }} />
+              <TextInput style={[styles.input, styles.priceInput]} placeholder="$ Price" keyboardType="numeric" value={price} onChangeText={setPrice} />
+              <TouchableOpacity style={styles.addPriceButton} onPress={handleAddPrice}>
+                <FontAwesome name="plus" size={16} color="#212529" />
+              </TouchableOpacity>
+            </View>
+            {isSearching ? (
+                <ActivityIndicator size="small" color="#4b5563" style={styles.searchLoader} />
+            ) : storeSearchResults.length > 0 && (
+                <View style={styles.searchResultsWrapper}>
+                    <ScrollView
+                        style={[styles.searchResultsContainer, { maxHeight: 250 }]}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={true}
+                        nestedScrollEnabled={true}
+                    >
+                        {storeSearchResults.map((item) => (
+                            <TouchableOpacity
+                                key={item.key}
+                                style={styles.resultItem}
+                                onPress={() => handleSelectStore(item)}
+                            >
+                                <View style={styles.resultContent}>
+                                    <Text style={styles.resultText}>{item.storeName + ', ' + (item.storeStreetAddress || '') + ', ' + (item.storeCity || '')}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+            )}
           </View>
         </View>
 
@@ -206,6 +345,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
               <View style={styles.priceItemLeft}>
                 <View style={styles.storeNameContainer}>
                   <Text style={item.isBestDeal ? styles.storeNameBest : styles.storeName}>{item.storeName}</Text>
+                  {item.fullAddress && <Text style={styles.storeAddress}>{item.fullAddress}</Text>}
                 </View>
                 <View style={styles.distanceContainer}>
                   <FontAwesome name="map-marker" size={14} color="#6c757d" />
@@ -223,7 +363,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
         )}
         
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -372,7 +512,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 5,
         elevation: 2,
-        position: 'relative', // Add this line
+        position: 'relative',
     },
     bestDealBadgeAbsolute: {
         backgroundColor: '#20c997',
@@ -382,7 +522,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 8,
         right: 8,
-        zIndex: 1, // Ensure it's above other content
+        zIndex: 1, 
     },
     bestDealBadgeText: {
         color: 'white',
@@ -422,6 +562,11 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#20c997',
         flexShrink: 1,
+    },
+    storeAddress: {
+        fontSize: 12,
+        color: '#6c757d',
+        marginTop: 2,
     },
     distanceContainer: {
         flexDirection: 'row',
@@ -483,6 +628,9 @@ const styles = StyleSheet.create({
         color: '#4b5563', // Gray-600
         marginBottom: 8,
     },
+    inputGroup: {
+        position: 'relative',
+    },
     noPricesText: {
         textAlign: 'center',
         marginTop: 20,
@@ -514,5 +662,41 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+        searchResultsWrapper: {
+        marginBottom: 16,
+    },
+    searchResultsContainer: {
+        backgroundColor: 'white',
+        borderColor: '#e5e7eb',
+        borderWidth: 1,
+        borderRadius: 12,
+        marginTop: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        elevation: 5,
+        zIndex: 10,
+    },
+    searchLoader: {
+        position: 'absolute',
+        right: 15,
+        top: 50,
+    },
+    resultItem: {
+        paddingVertical: 15,
+        paddingHorizontal: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+    },
+    resultContent: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    resultText: {
+        fontSize: 16,
+        color: '#1f2937',
     },
 });
