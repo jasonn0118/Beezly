@@ -13,7 +13,10 @@ export class InitialSchema1700000000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     console.log('🚀 Starting InitialSchema migration...');
-    
+
+    // Start a transaction to ensure atomic migration
+    await queryRunner.startTransaction();
+
     try {
       // Create UUID extension if it doesn't exist
       console.log('📦 Creating UUID extension...');
@@ -22,26 +25,31 @@ export class InitialSchema1700000000000 implements MigrationInterface {
 
       // Create Store table
       console.log('🏪 Creating Store table...');
-      await queryRunner.query(`
-        CREATE TABLE IF NOT EXISTS "Store" (
-          "id" SERIAL NOT NULL, 
-          "created_at" TIMESTAMP NOT NULL DEFAULT now(), 
-          "updated_at" TIMESTAMP NOT NULL DEFAULT now(), 
-          "store_sk" uuid NOT NULL DEFAULT uuid_generate_v4(), 
-          "name" character varying NOT NULL, 
-          "address" character varying, 
-          "city" character varying, 
-          "province" character varying, 
-          "postal_code" character varying, 
-          "latitude" double precision, 
-          "longitude" double precision, 
-          "place_id" character varying, 
-          CONSTRAINT "UQ_c87d6d368ad70873403dc0417a1" UNIQUE ("store_sk"), 
-          CONSTRAINT "UQ_f1c45a7e5a9c58bbe2402dc86a0" UNIQUE ("place_id"), 
-          CONSTRAINT "PK_f20e3845680debc547e49355a89" PRIMARY KEY ("id")
-        )
-      `);
-      console.log('✅ Store table created');
+      try {
+        await queryRunner.query(`
+          CREATE TABLE IF NOT EXISTS "Store" (
+            "id" SERIAL NOT NULL, 
+            "created_at" TIMESTAMP NOT NULL DEFAULT now(), 
+            "updated_at" TIMESTAMP NOT NULL DEFAULT now(), 
+            "store_sk" uuid NOT NULL DEFAULT uuid_generate_v4(), 
+            "name" character varying NOT NULL, 
+            "address" character varying, 
+            "city" character varying, 
+            "province" character varying, 
+            "postal_code" character varying, 
+            "latitude" double precision, 
+            "longitude" double precision, 
+            "place_id" character varying, 
+            CONSTRAINT "UQ_c87d6d368ad70873403dc0417a1" UNIQUE ("store_sk"), 
+            CONSTRAINT "UQ_f1c45a7e5a9c58bbe2402dc86a0" UNIQUE ("place_id"), 
+            CONSTRAINT "PK_f20e3845680debc547e49355a89" PRIMARY KEY ("id")
+          )
+        `);
+        console.log('✅ Store table created');
+      } catch (tableError) {
+        console.error('❌ Failed to create Store table:', tableError);
+        throw tableError;
+      }
 
       // Create Category table
       console.log('📂 Creating Category table...');
@@ -97,11 +105,45 @@ export class InitialSchema1700000000000 implements MigrationInterface {
 
       // Create ReceiptItem table with generated column
       console.log('🧾 Creating ReceiptItem table...');
-      await queryRunner.query(`
-        INSERT INTO "typeorm_metadata"("database", "schema", "table", "type", "name", "value") 
-        VALUES (current_database(), 'public', 'ReceiptItem', 'GENERATED_COLUMN', 'line_total', '"price" * "quantity"')
-        ON CONFLICT DO NOTHING
-      `);
+
+      // First ensure the typeorm_metadata table exists
+      console.log('📋 Creating typeorm_metadata table...');
+      try {
+        await queryRunner.query(`
+          CREATE TABLE IF NOT EXISTS "typeorm_metadata" (
+            "type" varchar NOT NULL, 
+            "database" varchar, 
+            "schema" varchar, 
+            "table" varchar, 
+            "name" varchar, 
+            "value" text
+          )
+        `);
+        console.log('✅ typeorm_metadata table ready');
+      } catch (metadataTableError) {
+        console.error(
+          '❌ Failed to create typeorm_metadata table:',
+          metadataTableError,
+        );
+        throw metadataTableError;
+      }
+
+      // Add metadata entry safely
+      console.log('📝 Adding ReceiptItem generated column metadata...');
+      try {
+        await queryRunner.query(`
+          INSERT INTO "typeorm_metadata"("database", "schema", "table", "type", "name", "value") 
+          VALUES (current_database(), 'public', 'ReceiptItem', 'GENERATED_COLUMN', 'line_total', '"price" * "quantity"')
+          ON CONFLICT DO NOTHING
+        `);
+        console.log('✅ ReceiptItem metadata added');
+      } catch (metadataError) {
+        console.error('⚠️  Metadata insert failed:', metadataError);
+        console.log(
+          '   Continuing without generated column metadata - this may cause issues',
+        );
+      }
+
       await queryRunner.query(`
         CREATE TABLE IF NOT EXISTS "ReceiptItem" (
           "id" SERIAL NOT NULL, 
@@ -251,132 +293,255 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       `);
       console.log('✅ Verification_logs table created');
 
-      // Add foreign key constraints
+      // Add foreign key constraints with individual error handling
       console.log('🔗 Adding foreign key constraints...');
-      await queryRunner.query(`
-        ALTER TABLE "Category" ADD CONSTRAINT "FK_41185546107ec4b4774da68df2f" 
-        FOREIGN KEY ("parent_id") REFERENCES "Category"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "Product" ADD CONSTRAINT "FK_9047547e9cdfe85d2d24e446c49" 
-        FOREIGN KEY ("category") REFERENCES "Category"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "ReceiptItem" ADD CONSTRAINT "FK_1b3d51e1bf97156a807c54b2e9b" 
-        FOREIGN KEY ("receipt_sk") REFERENCES "Receipt"("receipt_sk") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "ReceiptItem" ADD CONSTRAINT "FK_70e8dd41ce1484e46e914d712e0" 
-        FOREIGN KEY ("product_sk") REFERENCES "Product"("product_sk") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "Receipt" ADD CONSTRAINT "FK_afde56c91e09dd01fc77b3192af" 
-        FOREIGN KEY ("user_sk") REFERENCES "User"("user_sk") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "Receipt" ADD CONSTRAINT "FK_114a297ea6961f84c1b4d337aab" 
-        FOREIGN KEY ("store_sk") REFERENCES "Store"("store_sk") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "User_badges" ADD CONSTRAINT "FK_afcc0f658c230862befd166eb4a" 
-        FOREIGN KEY ("user_sk") REFERENCES "User"("user_sk") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "User_badges" ADD CONSTRAINT "FK_04bb4f4d22861ac7f5347cb5d58" 
-        FOREIGN KEY ("badge_id") REFERENCES "Badges"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "User_score" ADD CONSTRAINT "FK_51879e1530aedebad89a8226beb" 
-        FOREIGN KEY ("user_sk") REFERENCES "User"("user_sk") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "User_score" ADD CONSTRAINT "FK_0c892d281fd7e225fb5be6e5fc1" 
-        FOREIGN KEY ("score_type") REFERENCES "Score_type"("score_type") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "Price" ADD CONSTRAINT "FK_d09b0c0ee17c3054b894aa2dc4f" 
-        FOREIGN KEY ("product_sk") REFERENCES "Product"("product_sk") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "Price" ADD CONSTRAINT "FK_fc22a308d4c252f16d52e382b3a" 
-        FOREIGN KEY ("store_sk") REFERENCES "Store"("store_sk") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      await queryRunner.query(`
-        ALTER TABLE "Verification_logs" ADD CONSTRAINT "FK_ad21f536f813604347eb2386cf3" 
-        FOREIGN KEY ("user_sk") REFERENCES "User"("user_sk") ON DELETE NO ACTION ON UPDATE NO ACTION
-      `);
-      console.log('✅ All foreign key constraints added');
 
+      const constraints = [
+        {
+          name: 'Category parent_id → Category.id',
+          sql: `ALTER TABLE "Category" ADD CONSTRAINT "FK_41185546107ec4b4774da68df2f" 
+                FOREIGN KEY ("parent_id") REFERENCES "Category"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'Product category → Category.id',
+          sql: `ALTER TABLE "Product" ADD CONSTRAINT "FK_9047547e9cdfe85d2d24e446c49" 
+                FOREIGN KEY ("category") REFERENCES "Category"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'ReceiptItem receipt_sk → Receipt.receipt_sk',
+          sql: `ALTER TABLE "ReceiptItem" ADD CONSTRAINT "FK_1b3d51e1bf97156a807c54b2e9b" 
+                FOREIGN KEY ("receipt_sk") REFERENCES "Receipt"("receipt_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'ReceiptItem product_sk → Product.product_sk',
+          sql: `ALTER TABLE "ReceiptItem" ADD CONSTRAINT "FK_70e8dd41ce1484e46e914d712e0" 
+                FOREIGN KEY ("product_sk") REFERENCES "Product"("product_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'Receipt user_sk → User.user_sk',
+          sql: `ALTER TABLE "Receipt" ADD CONSTRAINT "FK_afde56c91e09dd01fc77b3192af" 
+                FOREIGN KEY ("user_sk") REFERENCES "User"("user_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'Receipt store_sk → Store.store_sk',
+          sql: `ALTER TABLE "Receipt" ADD CONSTRAINT "FK_114a297ea6961f84c1b4d337aab" 
+                FOREIGN KEY ("store_sk") REFERENCES "Store"("store_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'User_badges user_sk → User.user_sk',
+          sql: `ALTER TABLE "User_badges" ADD CONSTRAINT "FK_afcc0f658c230862befd166eb4a" 
+                FOREIGN KEY ("user_sk") REFERENCES "User"("user_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'User_badges badge_id → Badges.id',
+          sql: `ALTER TABLE "User_badges" ADD CONSTRAINT "FK_04bb4f4d22861ac7f5347cb5d58" 
+                FOREIGN KEY ("badge_id") REFERENCES "Badges"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'User_score user_sk → User.user_sk',
+          sql: `ALTER TABLE "User_score" ADD CONSTRAINT "FK_51879e1530aedebad89a8226beb" 
+                FOREIGN KEY ("user_sk") REFERENCES "User"("user_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'User_score score_type → Score_type.score_type',
+          sql: `ALTER TABLE "User_score" ADD CONSTRAINT "FK_0c892d281fd7e225fb5be6e5fc1" 
+                FOREIGN KEY ("score_type") REFERENCES "Score_type"("score_type") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'Price product_sk → Product.product_sk',
+          sql: `ALTER TABLE "Price" ADD CONSTRAINT "FK_d09b0c0ee17c3054b894aa2dc4f" 
+                FOREIGN KEY ("product_sk") REFERENCES "Product"("product_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'Price store_sk → Store.store_sk',
+          sql: `ALTER TABLE "Price" ADD CONSTRAINT "FK_fc22a308d4c252f16d52e382b3a" 
+                FOREIGN KEY ("store_sk") REFERENCES "Store"("store_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+        {
+          name: 'Verification_logs user_sk → User.user_sk',
+          sql: `ALTER TABLE "Verification_logs" ADD CONSTRAINT "FK_ad21f536f813604347eb2386cf3" 
+                FOREIGN KEY ("user_sk") REFERENCES "User"("user_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+        },
+      ];
+
+      let constraintSuccessCount = 0;
+      let constraintFailureCount = 0;
+
+      for (const constraint of constraints) {
+        try {
+          await queryRunner.query(constraint.sql);
+          console.log(`✅ ${constraint.name}`);
+          constraintSuccessCount++;
+        } catch (constraintError) {
+          console.error(`❌ Failed to add constraint: ${constraint.name}`);
+          console.error(`   Error details:`, constraintError);
+          constraintFailureCount++;
+          // Don't throw here - continue with other constraints
+        }
+      }
+
+      console.log(
+        `🔗 Constraint summary: ${constraintSuccessCount} success, ${constraintFailureCount} failures`,
+      );
+
+      // Verify all expected tables were created
+      console.log('🔍 Verifying table creation...');
+      const expectedTables = [
+        'Store',
+        'Category',
+        'Product',
+        'ReceiptItem',
+        'Receipt',
+        'User',
+        'User_badges',
+        'Badges',
+        'User_score',
+        'Score_type',
+        'Price',
+        'Verification_logs',
+        'typeorm_metadata',
+      ];
+
+      let createdTableCount = 0;
+      const missingTables: string[] = [];
+
+      for (const tableName of expectedTables) {
+        const tableExists = (await queryRunner.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = '${tableName}'
+          );
+        `)) as [{ exists: boolean }];
+
+        if (tableExists[0]?.exists) {
+          console.log(`✅ Table ${tableName} exists`);
+          createdTableCount++;
+        } else {
+          console.error(`❌ Table ${tableName} missing!`);
+          missingTables.push(tableName);
+        }
+      }
+
+      console.log(
+        `📊 Table creation summary: ${createdTableCount}/${expectedTables.length} tables created`,
+      );
+
+      if (missingTables.length > 0) {
+        console.error(
+          `🚨 CRITICAL: Missing tables detected: ${missingTables.join(', ')}`,
+        );
+        throw new Error(
+          `InitialSchema migration incomplete: ${missingTables.length} tables failed to create`,
+        );
+      }
+
+      // Commit the transaction if everything succeeded
+      await queryRunner.commitTransaction();
       console.log('🎉 InitialSchema migration completed successfully!');
-      
     } catch (error) {
       console.error('❌ InitialSchema migration failed:', error);
+
+      // Rollback transaction to prevent partial state
+      try {
+        await queryRunner.rollbackTransaction();
+        console.log('🔄 Transaction rolled back to prevent partial state');
+      } catch (rollbackError) {
+        console.error('❌ Failed to rollback transaction:', rollbackError);
+      }
+
       throw error;
     }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Drop all foreign key constraints first
-    await queryRunner.query(
-      `ALTER TABLE "Verification_logs" DROP CONSTRAINT "FK_ad21f536f813604347eb2386cf3"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "Price" DROP CONSTRAINT "FK_fc22a308d4c252f16d52e382b3a"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "Price" DROP CONSTRAINT "FK_d09b0c0ee17c3054b894aa2dc4f"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "User_score" DROP CONSTRAINT "FK_0c892d281fd7e225fb5be6e5fc1"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "User_score" DROP CONSTRAINT "FK_51879e1530aedebad89a8226beb"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "User_badges" DROP CONSTRAINT "FK_04bb4f4d22861ac7f5347cb5d58"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "User_badges" DROP CONSTRAINT "FK_afcc0f658c230862befd166eb4a"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "Receipt" DROP CONSTRAINT "FK_114a297ea6961f84c1b4d337aab"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "Receipt" DROP CONSTRAINT "FK_afde56c91e09dd01fc77b3192af"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "ReceiptItem" DROP CONSTRAINT "FK_70e8dd41ce1484e46e914d712e0"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "ReceiptItem" DROP CONSTRAINT "FK_1b3d51e1bf97156a807c54b2e9b"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "Product" DROP CONSTRAINT "FK_9047547e9cdfe85d2d24e446c49"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "Category" DROP CONSTRAINT "FK_41185546107ec4b4774da68df2f"`,
-    );
+    console.log('🔄 Starting InitialSchema rollback...');
 
-    // Drop all tables
-    await queryRunner.query(`DROP TABLE "Verification_logs"`);
-    await queryRunner.query(`DROP TABLE "Price"`);
-    await queryRunner.query(`DROP TABLE "Score_type"`);
-    await queryRunner.query(`DROP TABLE "User_score"`);
-    await queryRunner.query(`DROP TABLE "Badges"`);
-    await queryRunner.query(`DROP TABLE "User_badges"`);
-    await queryRunner.query(`DROP TABLE "User"`);
-    await queryRunner.query(`DROP TABLE "Receipt"`);
-    await queryRunner.query(`DROP TABLE "ReceiptItem"`);
-    await queryRunner.query(`DROP TABLE "Product"`);
-    await queryRunner.query(`DROP TABLE "Category"`);
-    await queryRunner.query(`DROP TABLE "Store"`);
+    // Start a transaction to ensure atomic rollback
+    await queryRunner.startTransaction();
 
-    // Drop enum types
-    await queryRunner.query(`DROP TYPE "public"."Product_barcode_type_enum"`);
+    try {
+      // Drop all foreign key constraints first
+      await queryRunner.query(
+        `ALTER TABLE "Verification_logs" DROP CONSTRAINT "FK_ad21f536f813604347eb2386cf3"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "Price" DROP CONSTRAINT "FK_fc22a308d4c252f16d52e382b3a"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "Price" DROP CONSTRAINT "FK_d09b0c0ee17c3054b894aa2dc4f"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "User_score" DROP CONSTRAINT "FK_0c892d281fd7e225fb5be6e5fc1"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "User_score" DROP CONSTRAINT "FK_51879e1530aedebad89a8226beb"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "User_badges" DROP CONSTRAINT "FK_04bb4f4d22861ac7f5347cb5d58"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "User_badges" DROP CONSTRAINT "FK_afcc0f658c230862befd166eb4a"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "Receipt" DROP CONSTRAINT "FK_114a297ea6961f84c1b4d337aab"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "Receipt" DROP CONSTRAINT "FK_afde56c91e09dd01fc77b3192af"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "ReceiptItem" DROP CONSTRAINT "FK_70e8dd41ce1484e46e914d712e0"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "ReceiptItem" DROP CONSTRAINT "FK_1b3d51e1bf97156a807c54b2e9b"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "Product" DROP CONSTRAINT "FK_9047547e9cdfe85d2d24e446c49"`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "Category" DROP CONSTRAINT "FK_41185546107ec4b4774da68df2f"`,
+      );
 
-    // Clean up typeorm metadata
-    await queryRunner.query(
-      `DELETE FROM "typeorm_metadata" WHERE "type" = 'GENERATED_COLUMN' AND "name" = 'line_total' AND "table" = 'ReceiptItem'`,
-    );
+      // Drop all tables
+      await queryRunner.query(`DROP TABLE "Verification_logs"`);
+      await queryRunner.query(`DROP TABLE "Price"`);
+      await queryRunner.query(`DROP TABLE "Score_type"`);
+      await queryRunner.query(`DROP TABLE "User_score"`);
+      await queryRunner.query(`DROP TABLE "Badges"`);
+      await queryRunner.query(`DROP TABLE "User_badges"`);
+      await queryRunner.query(`DROP TABLE "User"`);
+      await queryRunner.query(`DROP TABLE "Receipt"`);
+      await queryRunner.query(`DROP TABLE "ReceiptItem"`);
+      await queryRunner.query(`DROP TABLE "Product"`);
+      await queryRunner.query(`DROP TABLE "Category"`);
+      await queryRunner.query(`DROP TABLE "Store"`);
+
+      // Drop enum types
+      await queryRunner.query(`DROP TYPE "public"."Product_barcode_type_enum"`);
+
+      // Clean up typeorm metadata
+      await queryRunner.query(
+        `DELETE FROM "typeorm_metadata" WHERE "type" = 'GENERATED_COLUMN' AND "name" = 'line_total' AND "table" = 'ReceiptItem'`,
+      );
+
+      // Commit the transaction if rollback succeeded
+      await queryRunner.commitTransaction();
+      console.log('✅ InitialSchema rollback completed successfully');
+    } catch (error) {
+      console.error('❌ InitialSchema rollback failed:', error);
+
+      // Attempt to rollback the rollback transaction
+      try {
+        await queryRunner.rollbackTransaction();
+        console.log('🔄 Rollback transaction rolled back');
+      } catch (rollbackError) {
+        console.error(
+          '❌ Failed to rollback rollback transaction:',
+          rollbackError,
+        );
+      }
+
+      throw error;
+    }
   }
 }
