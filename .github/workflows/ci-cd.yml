@@ -2,13 +2,13 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, staging ]
+    branches: [main, staging]
   pull_request:
-    branches: [ main, staging ]
+    branches: [main, staging]
 
 env:
-  NODE_VERSION: '23'
-  PNPM_VERSION: '10'
+  NODE_VERSION: "23"
+  PNPM_VERSION: "10"
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
 
@@ -268,10 +268,10 @@ jobs:
             echo "Waiting for PostgreSQL to start..."
             sleep 2
           done
-          
+
           # Create test database with PostGIS extension (using trust auth with postgres user)
           psql -h localhost -U postgres -d beezly_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          
+
           echo "✅ Test database created with PostGIS support"
 
       - name: Create test environment file
@@ -317,16 +317,16 @@ jobs:
           DB_NAME: beezly_test
         run: |
           echo "🔍 Testing database connection and PostGIS functionality..."
-          
+
           # Test basic PostgreSQL connection
           psql -h localhost -U postgres -d beezly_test -c "SELECT version();"
-          
+
           # Test PostGIS availability
           psql -h localhost -U postgres -d beezly_test -c "SELECT PostGIS_Version();"
-          
+
           # Test PostGIS geometric functions
           psql -h localhost -U postgres -d beezly_test -c "SELECT ST_GeomFromText('POINT(0 0)');"
-          
+
           echo "✅ Database and PostGIS validation successful"
 
       - name: Restore build outputs
@@ -370,7 +370,6 @@ jobs:
           SUPABASE_ANON_KEY: dummy-anon-key-for-testing
           SUPABASE_SERVICE_ROLE_KEY: dummy-service-role-key-for-testing
         run: pnpm test:e2e
-
 
   # Database migration validation
   validate-migrations:
@@ -424,10 +423,10 @@ jobs:
             echo "Waiting for PostgreSQL to start..."
             sleep 2
           done
-          
+
           # Create migration test database with PostGIS (using trust auth with postgres user)
           psql -h localhost -U postgres -d beezly_migration_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          
+
           echo "✅ Migration test database created"
 
       - name: Run database migrations
@@ -442,10 +441,10 @@ jobs:
           CI: true
         run: |
           echo "🔍 Checking for database migrations..."
-          
+
           # Build the API first to ensure compiled migration files exist
           cd ../.. && pnpm run build --filter=api && cd apps/api
-          
+
           # Check if TypeORM migrations exist
           if [ -d "src/migrations" ] && [ "$(ls -A src/migrations/*.ts 2>/dev/null)" ]; then
             echo "📁 Found migrations directory with TypeScript files"
@@ -470,7 +469,7 @@ jobs:
       - name: Validate PostGIS spatial features
         run: |
           echo "🗺️  Testing PostGIS spatial functionality for future geo features..."
-          
+
           # Test spatial indexing capabilities
           psql -h localhost -U postgres -d beezly_migration_test -c "
             -- Test creating a spatial table (similar to future Store locations)
@@ -491,7 +490,7 @@ jobs:
             SELECT name, ST_AsText(location) FROM test_spatial_table 
             WHERE ST_DWithin(location, ST_GeomFromText('POINT(-74.006 40.7128)', 4326), 1000);
           "
-          
+
           echo "✅ PostGIS spatial features validated successfully"
 
   # Test mobile app
@@ -694,7 +693,7 @@ jobs:
         run: |
           echo "🔍 Running dependency vulnerability check..."
           pnpm audit --json > audit-report.json || true
-          
+
       - name: Upload audit report
         uses: actions/upload-artifact@v4
         with:
@@ -887,17 +886,17 @@ jobs:
         with:
           args: |
             ✅ **${{ github.ref == 'refs/heads/main' && 'Production' || 'Staging' }} Database Migration Completed**
-            
+
             📝 **Commit:** ${{ github.sha }}
             🌿 **Branch:** ${{ github.ref_name }}
             👤 **Author:** ${{ github.actor }}
             🌍 **Environment:** ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
-            
+
             **Migration Results:**
             ✅ Migration validation completed successfully  
             🔄 All pending migrations applied
             🚀 Ready for ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }} deployment
-            
+
             🔗 [View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
       - name: Discord notification on migration failure
@@ -908,21 +907,33 @@ jobs:
         with:
           args: |
             ❌ **${{ github.ref == 'refs/heads/main' && 'Production' || 'Staging' }} Database Migration Failed**
-            
+
             📝 **Commit:** ${{ github.sha }}
             🌿 **Branch:** ${{ github.ref_name }}
             👤 **Author:** ${{ github.actor }}
             🌍 **Environment:** ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
-            
+
             🚨 **DEPLOYMENT BLOCKED** - Migration issues detected
-            
+
             🔗 [View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
             **Please review and fix before deploying**
 
   # Discord notification job
   discord-notification:
     runs-on: ubuntu-latest
-    needs: [lint, build-all, test-web, test-api, test-mobile, validate-migrations, security-scan, build-expo, deploy-expo, validate-production-migrations]
+    needs:
+      [
+        lint,
+        build-all,
+        test-web,
+        test-api,
+        test-mobile,
+        validate-migrations,
+        security-scan,
+        build-expo,
+        deploy-expo,
+        validate-production-migrations,
+      ]
     if: always()
     steps:
       - name: Send Discord notification
@@ -935,7 +946,7 @@ jobs:
             📝 **Commit:** ${{ github.sha }}
             🌿 **Branch:** ${{ github.ref_name }}
             👤 **Author:** ${{ github.actor }}
-            
+
             **Job Results:**
             • Lint: ${{ needs.lint.result == 'success' && '✅ Passed' || '❌ Failed' }}
             • Turbo Build: ${{ needs.build-all.result == 'success' && '✅ Passed' || '❌ Failed' }}
@@ -947,7 +958,7 @@ jobs:
             • Expo Build: ${{ needs.build-expo.result == 'success' && '✅ Passed' || (needs.build-expo.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}
             • Expo Deploy: ${{ needs.deploy-expo.result == 'success' && '✅ Passed' || (needs.deploy-expo.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}
             • Security Scan: ${{ needs.security-scan.result == 'success' && '✅ Passed' || '❌ Failed' }}
-            
+
             **Overall Status:** ${{ (needs.lint.result == 'success' && needs.build-all.result == 'success' && needs.test-web.result == 'success' && needs.test-api.result == 'success' && needs.test-mobile.result == 'success' && needs.validate-migrations.result == 'success' && needs.security-scan.result == 'success') && '🎉 SUCCESS' || '💥 FAILED' }}
-            
+
             🔗 [View Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
