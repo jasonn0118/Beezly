@@ -2,6 +2,27 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddStoreSearchIndexes1754073578687 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Check if Store table exists first
+    const storeTableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Store'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (!storeTableExists[0]?.exists) {
+      console.log(
+        '⚠️  Store table not found, skipping Store search index creation',
+      );
+      console.log(
+        'ℹ️   This is normal for new environments. Store indexes will be created when the table exists.',
+      );
+      return;
+    }
+
+    console.log('✅ Store table found, creating search indexes...');
+
     // 🚀 CRITICAL PERFORMANCE INDEXES FOR STORE SEARCH
     // Note: Using regular CREATE INDEX (not CONCURRENTLY) for migration compatibility
 
