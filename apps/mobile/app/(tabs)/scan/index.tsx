@@ -125,7 +125,7 @@ export default function ScanPage() {
             {isCameraActive ? (
                 <CameraView
                     ref={cameraRef}
-                    style={styles.camera}
+                    style={currentView === 'barcodeScan' ? styles.cameraBarcode : styles.camera}
                     onBarcodeScanned={currentView === 'barcodeScan' ? handleBarcodeScanned : undefined}
                     barcodeScannerSettings={{
                         barcodeTypes: ["code39", "ean8", "ean13", "codabar", "itf14", "code128", "upc_a", "upc_e"],
@@ -198,6 +198,13 @@ const styles = StyleSheet.create({
     },
     camera: {
         ...StyleSheet.absoluteFillObject, // Camera takes full screen
+    },
+    cameraBarcode: {
+        width: width * 0.8, // 90% of screen width
+        height: height * 0.7, // 70% of screen height
+        alignSelf: 'center',
+        borderRadius: 24, // Optional: to match the scan frame's border radius
+        overflow: 'hidden', // Ensures the camera view is clipped to the border radius
     },
     cameraPlaceholder: {
         backgroundColor: 'black',
