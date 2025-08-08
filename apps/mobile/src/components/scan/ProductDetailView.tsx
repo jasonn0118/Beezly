@@ -200,7 +200,7 @@ const handleAddPrice = async () => {
             setStoreSearchResults([]);
             setSelectedStore({
                 key: uuidv4(),
-                storeId: '', // No storeId from reverse geocoding
+                storeId: null, // No storeId from reverse geocoding
                 storeName: place.name || '',
                 storeStreetAddress: place.street || '',
                 storeCity: place.city || '',
@@ -311,8 +311,13 @@ const handleAddPrice = async () => {
                                 style={styles.resultItem}
                                 onPress={() => handleSelectStore(item)}
                             >
-                                <View style={styles.resultContent}>
-                                    <Text style={styles.resultText}>{item.storeName + ', ' + (item.storeStreetAddress || '') + ', ' + (item.storeCity || '')}</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
+                                    <Text style={styles.resultText}>
+                                        {item.storeName + ', ' + (item.storeStreetAddress || '') + ', ' + (item.storeCity || '')}
+                                        {item.distance !== undefined && (
+                                            <Text style={styles.distanceText}> ({item.distance.toFixed(1)} km)</Text>
+                                        )}
+                                    </Text>
                                 </View>
                             </TouchableOpacity>
                         ))}
@@ -692,11 +697,30 @@ const styles = StyleSheet.create({
     },
     resultContent: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
     },
     resultText: {
         fontSize: 16,
         color: '#1f2937',
     },
+<<<<<<< Updated upstream
+=======
+    distanceText: {
+        fontSize: 14,
+        color: '#6c757d',
+        marginLeft: 5,
+    },
+    chartContainer: {
+        marginTop: 20,
+        marginBottom: 20,
+        backgroundColor: 'white',
+        borderRadius: 16,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 5,
+    },
+>>>>>>> Stashed changes
 });
