@@ -168,8 +168,8 @@ export default function RegisterProductScreen() {
                     storeName : formattedStoreName,
                     storeCity : formattedCity,
                     storeProvince : formattedRegion,
-                    storeLatitude : String(latitude),
-                    storeLongitude : String(longitude),
+                    storeLatitude : Number(latitude),
+                    storeLongitude : Number(longitude),
                     storeStreetNumber : formattedStreetNumber,
                     storeStreetAddress : formattedAddress
                 }));
@@ -476,7 +476,12 @@ export default function RegisterProductScreen() {
                                                 disabled={isSubmitting}
                                             >
                                                 <View style={styles.resultContent}>
-                                                    <Text style={styles.resultText}>{item.storeName + ', ' + (item.storeStreetAddress || '') + ', ' + (item.storeCity || '')}</Text>
+                                                    <Text style={styles.resultText}>
+                                                        {item.storeName + ', ' + (item.storeStreetAddress || '') + ', ' + (item.storeCity || '')}
+                                                        {item.distance !== undefined && (
+                                                            <Text style={styles.distanceText}> ({item.distance.toFixed(1)} km)</Text>
+                                                        )}
+                                                    </Text>
                                                 </View>
                                             </TouchableOpacity>
                                         ))}
@@ -675,6 +680,11 @@ const styles = StyleSheet.create({
     resultText: {
         fontSize: 16,
         color: '#1f2937',
+    },
+    distanceText: {
+        fontSize: 14,
+        color: '#6b7280',
+        marginLeft: 5,
     },
     resultSourceText: {
         fontSize: 12,
