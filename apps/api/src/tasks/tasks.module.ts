@@ -24,7 +24,7 @@ import OpenAI from 'openai';
       provide: OpenAI,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        return new OpenAI({ apiKey: config.get<string>('OPENAI_API')! });
+        return new OpenAI({ apiKey: config.get<string>('OPENAI_API_KEY')! });
       },
     },
   ],
