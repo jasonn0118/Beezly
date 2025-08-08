@@ -116,26 +116,67 @@ export default function RegisterProductScreen() {
     // Function to handle image picking
     const pickImage = async () => {
         if (isSubmitting) return; // Prevent interaction during submission
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
-            return;
-        }
 
-        let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 1,
-        });
+        Alert.alert(
+            "Select Image Source",
+            "Choose whether to pick an image from your library or take a new photo.",
+            [
+                {
+                    text: "Photo Library",
+                    onPress: async () => {
+                        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                        if (status !== 'granted') {
+                            Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
+                            return;
+                        }
 
-        if (!result.canceled) {
-            const uri = result.assets[0].uri;
-            setProductDetails(prev => ({
-                ...prev,
-                image_url: uri,
-            }));
-        }
+                        let result = await ImagePicker.launchImageLibraryAsync({
+                            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                            allowsEditing: true,
+                            aspect: [1, 1],
+                            quality: 1,
+                        });
+
+                        if (!result.canceled) {
+                            const uri = result.assets[0].uri;
+                            setProductDetails(prev => ({
+                                ...prev,
+                                image_url: uri,
+                            }));
+                        }
+                    }
+                },
+                {
+                    text: "Take Photo",
+                    onPress: async () => {
+                        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                        if (status !== 'granted') {
+                            Alert.alert('Permission Denied', 'Sorry, we need camera permissions to make this work!');
+                            return;
+                        }
+
+                        let result = await ImagePicker.launchCameraAsync({
+                            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                            allowsEditing: true,
+                            aspect: [1, 1],
+                            quality: 1,
+                        });
+
+                        if (!result.canceled) {
+                            const uri = result.assets[0].uri;
+                            setProductDetails(prev => ({
+                                ...prev,
+                                image_url: uri,
+                            }));
+                        }
+                    }
+                },
+                {
+                    text: "Cancel",
+                    style: "cancel"
+                }
+            ]
+        );
     };
 
     const handleGetLocation = async () => {
