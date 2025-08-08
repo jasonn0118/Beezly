@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, Dimensions } from 'react-native';
+import { LineChart } from "react-native-chart-kit";
 import { FontAwesome } from '@expo/vector-icons';
 import { Product, Barcode, ScannedDataParam, ProductService, UnifiedStoreSearchResult } from '../../services/productService';
 import { useRouter } from 'expo-router';
@@ -31,6 +32,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
   const [selectedStore, setSelectedStore] = useState<StoreSearchResultWithDisplay | null>(null);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [nearbyPrices, setNearbyPrices] = useState<NearbyPrice[]>([]);
+  const [priceChartData, setPriceChartData] = useState<{ labels: string[]; datasets: { data: number[] }[] }>({ labels: [], datasets: [{ data: [] }] });
   const [fetchingPrices, setFetchingPrices] = useState(false);
 
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -91,6 +93,32 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ productInf
             isBestDeal: false,
           }));
         pricesToDisplay = [...pricesToDisplay, ...otherPrices];
+
+        // Prepare data for the chart - only include points where price changes
+        const sortedPrices = response.prices.sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+        const uniquePrices: { price: number; recordedAt: string }[] = [];
+        let lastPrice: number | null = null;
+
+        sortedPrices.forEach(item => {
+          if (item.price !== lastPrice) {
+            uniquePrices.push(item);
+            lastPrice = item.price;
+          }
+        });
+
+        const labels = uniquePrices.map(item => new Date(item.recordedAt).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
+        // Filter labels to show only a subset to prevent overlapping
+        const filteredLabels = labels.filter((_, index) => index % Math.ceil(labels.length / 5) === 0); // Show max 5 labels
+        const data = uniquePrices.map(item => item.price);
+
+        setPriceChartData({
+          labels: filteredLabels,
+          datasets: [
+            {
+              data: data,
+            },
+          ],
+        });
       }
       setNearbyPrices(pricesToDisplay);
 
@@ -360,6 +388,51 @@ const handleAddPrice = async () => {
           ))
         ) : (
           <Text style={styles.noPricesText}>No nearby prices found.</Text>
+        )}
+
+        {/* Price History Chart */}
+        {priceChartData.labels.length > 0 && (
+          <View style={styles.chartContainer}>
+            <Text style={styles.sectionTitle}>Price History</Text>
+            <LineChart
+              data={priceChartData}
+              width={Dimensions.get("window").width - (styles.chartContainer.padding * 2) - 30} // Adjusted width calculation
+              height={250}
+              yAxisLabel=""
+              yAxisSuffix="$"
+              chartConfig={{
+                backgroundColor: "#f8f9fa",
+                backgroundGradientFrom: "#f8f9fa",
+                backgroundGradientTo: "#f8f9fa",
+                decimalPlaces: 2,
+                color: (opacity = 1) => `rgba(255, 193, 7, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(33, 37, 41, ${opacity})`,
+                propsForLabels: {
+                  fontSize: 10, // Smaller font size for labels
+                },
+                propsForBackgroundLines: {
+                  strokeDasharray: "0", // Solid lines
+                  stroke: "#e0e0e0", // Lighter grid lines
+                },
+                style: {
+                  borderRadius: 16,
+                },
+                propsForDots: {
+                  r: "3", // Smaller dots
+                  strokeWidth: "1",
+                  stroke: "#FFC107",
+                },
+                paddingRight: 30, // More padding for Y-axis labels
+              }}
+              bezier
+              withVerticalLines={false} // Remove vertical grid lines
+              withHorizontalLines={true} // Keep horizontal grid lines
+              style={{
+                marginVertical: 8,
+                borderRadius: 16,
+              }}
+            />
+          </View>
         )}
         
       </ScrollView>
@@ -698,5 +771,17 @@ const styles = StyleSheet.create({
     resultText: {
         fontSize: 16,
         color: '#1f2937',
+    },
+    chartContainer: {
+        marginTop: 20,
+        marginBottom: 20,
+        backgroundColor: 'white',
+        borderRadius: 16,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 5,
     },
 });
