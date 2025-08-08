@@ -695,8 +695,25 @@ export class ReceiptService {
 
     console.log('📅 Receipt Date Update:');
     console.log(`  Receipt ID: ${receiptId}`);
-    console.log(`  Old receiptDate: ${receipt.receiptDate?.toISOString()}`);
-    console.log(`  Old purchaseDate: ${receipt.purchaseDate?.toISOString()}`);
+
+    // Safely handle existing dates - ensure they are Date objects before calling toISOString
+    const oldReceiptDate = receipt.receiptDate
+      ? receipt.receiptDate instanceof Date
+        ? receipt.receiptDate
+        : new Date(receipt.receiptDate)
+      : null;
+    const oldPurchaseDate = receipt.purchaseDate
+      ? receipt.purchaseDate instanceof Date
+        ? receipt.purchaseDate
+        : new Date(receipt.purchaseDate)
+      : null;
+
+    console.log(
+      `  Old receiptDate: ${oldReceiptDate?.toISOString() || 'null'}`,
+    );
+    console.log(
+      `  Old purchaseDate: ${oldPurchaseDate?.toISOString() || 'null'}`,
+    );
     console.log(`  New date: ${newDate.toISOString()}`);
     console.log(`  Confirmed time: ${confirmedTime || 'none'}`);
 
@@ -1165,6 +1182,22 @@ export class ReceiptService {
         console.log(`🏪 Fresh store name: ${storeName}`);
       }
     }
+
+    // Safely convert purchase date to ISO string
+    const safeToISOString = (
+      date: Date | string | null | undefined,
+    ): string => {
+      if (!date) return new Date().toISOString();
+      if (date instanceof Date) return date.toISOString();
+      try {
+        const parsedDate = new Date(date);
+        return isNaN(parsedDate.getTime())
+          ? new Date().toISOString()
+          : parsedDate.toISOString();
+      } catch {
+        return new Date().toISOString();
+      }
+    };
     // Convert receipt items to product DTOs
     const items: NormalizedProductDTO[] = await Promise.all(
       receipt.items.map(async (item) => {
@@ -1182,14 +1215,8 @@ export class ReceiptService {
           price: Number(item.price),
           image_url: product?.image_url,
           quantity: item.quantity,
-          created_at:
-            item.createdAt instanceof Date
-              ? item.createdAt.toISOString()
-              : new Date(item.createdAt).toISOString(),
-          updated_at:
-            item.updatedAt instanceof Date
-              ? item.updatedAt.toISOString()
-              : new Date(item.updatedAt).toISOString(),
+          created_at: safeToISOString(item.createdAt),
+          updated_at: safeToISOString(item.updatedAt),
           credit_score: product?.credit_score ?? 0,
           verified_count: product?.verified_count ?? 0,
           flagged_count: product?.flagged_count ?? 0,
@@ -1201,25 +1228,15 @@ export class ReceiptService {
       id: receipt.receiptSk, // Use UUID as the public ID
       userId: receipt.userSk,
       storeName: storeName, // Use the fresh store name we fetched
-      purchaseDate: receipt.purchaseDate
-        ? receipt.purchaseDate instanceof Date
-          ? receipt.purchaseDate.toISOString()
-          : new Date(receipt.purchaseDate).toISOString()
-        : new Date().toISOString(),
+      purchaseDate: safeToISOString(receipt.purchaseDate),
       status: receipt.status,
       totalAmount: receipt.items.reduce(
         (sum, item) => sum + Number(item.lineTotal),
         0,
       ),
       items,
-      createdAt:
-        receipt.createdAt instanceof Date
-          ? receipt.createdAt.toISOString()
-          : new Date(receipt.createdAt).toISOString(),
-      updatedAt:
-        receipt.updatedAt instanceof Date
-          ? receipt.updatedAt.toISOString()
-          : new Date(receipt.updatedAt).toISOString(),
+      createdAt: safeToISOString(receipt.createdAt),
+      updatedAt: safeToISOString(receipt.updatedAt),
     };
   }
 
