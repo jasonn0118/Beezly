@@ -26,13 +26,30 @@ export class InitialSchema1700000000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     console.log('🚀 Starting InitialSchema migration...');
 
-    // PRODUCTION SAFETY: Additional environment check
+    // ENVIRONMENT SAFETY: This migration is designed for staging and production setup
     const nodeEnv = process.env.NODE_ENV;
+    if (nodeEnv === 'development' || nodeEnv === 'dev') {
+      console.log(
+        'ℹ️  Development environment detected - InitialSchema not needed',
+      );
+      console.log(
+        '   Development databases should use incremental migrations or db:reset',
+      );
+      console.log('   Skipping InitialSchema execution');
+      return; // Exit early for development
+    }
+
+    console.log(
+      `✅ Environment: ${nodeEnv || 'unspecified'} - proceeding with InitialSchema`,
+    );
+    console.log(
+      '   This migration creates the complete database schema for staging/production',
+    );
+
     if (nodeEnv === 'production') {
       console.warn(
-        '⚠️  WARNING: Running InitialSchema in production environment',
+        '⚠️  Production environment - ensuring database is empty before proceeding',
       );
-      console.warn('   This is only safe if the database is completely empty');
     }
 
     // PRODUCTION SAFETY: Check if this is being run on an existing database
