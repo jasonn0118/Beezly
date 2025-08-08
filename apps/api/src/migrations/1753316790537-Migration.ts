@@ -15,7 +15,7 @@ export class Migration1753316790537 implements MigrationInterface {
       );
     `)) as [{ exists: boolean }];
 
-        if (!tableExists[0].exists) {
+    if (!tableExists[0].exists) {
       // Still check and add brandName to Product table if it exists
       const productTableExists = (await queryRunner.query(`
         SELECT EXISTS (
@@ -38,7 +38,7 @@ export class Migration1753316790537 implements MigrationInterface {
           );
         }
       }
-      
+
       return;
     }
 
