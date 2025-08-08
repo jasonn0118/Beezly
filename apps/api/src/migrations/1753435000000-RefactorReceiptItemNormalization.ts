@@ -6,6 +6,11 @@ export class RefactorReceiptItemNormalization1753435000000
   name = 'RefactorReceiptItemNormalization1753435000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Get the actual ReceiptItem table name (case-sensitive check)
+    const receiptItemTableName =
+      await this.getReceiptItemTableName(queryRunner);
+    console.log(`✅ Found ReceiptItem table as: ${receiptItemTableName}`);
+
     // Step 1: Create the receipt_item_normalizations table
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "receipt_item_normalizations" (
@@ -43,7 +48,7 @@ export class RefactorReceiptItemNormalization1753435000000
       ALTER TABLE "receipt_item_normalizations" 
       ADD CONSTRAINT "FK_receipt_item_normalization_item" 
       FOREIGN KEY ("receipt_item_sk") 
-      REFERENCES "ReceiptItem"("receiptitem_sk") 
+      REFERENCES ${receiptItemTableName}("receiptitem_sk") 
       ON DELETE CASCADE ON UPDATE NO ACTION
     `);
 
@@ -73,7 +78,7 @@ export class RefactorReceiptItemNormalization1753435000000
         COALESCE(ri."normalization_method", 'migration'),
         true, -- Mark migrated items as selected
         NULL
-      FROM "ReceiptItem" ri
+      FROM ${receiptItemTableName} ri
       INNER JOIN "Receipt" r ON ri."receipt_sk" = r."receipt_sk"
       INNER JOIN "Store" s ON r."store_sk" = s."store_sk"
       INNER JOIN "normalized_products" np ON 
@@ -84,43 +89,44 @@ export class RefactorReceiptItemNormalization1753435000000
     `);
 
     // Step 3: Add new columns to ReceiptItem
+    const receiptItemTableNameOnly = receiptItemTableName.replace(/"/g, '');
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'is_discount_line',
       'boolean NOT NULL DEFAULT false',
     );
 
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'is_adjustment_line',
       'boolean NOT NULL DEFAULT false',
     );
 
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'ocr_confidence',
       'decimal(5,4)',
     );
 
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'line_number',
       'integer',
     );
 
     // Step 4: Update boolean flags based on existing data
     await queryRunner.query(`
-      UPDATE "ReceiptItem" 
+      UPDATE ${receiptItemTableName} 
       SET "is_discount_line" = "is_discount"
       WHERE "is_discount" = true
     `);
 
     await queryRunner.query(`
-      UPDATE "ReceiptItem" 
+      UPDATE ${receiptItemTableName} 
       SET "is_adjustment_line" = "is_adjustment"
       WHERE "is_adjustment" = true
     `);
@@ -143,7 +149,11 @@ export class RefactorReceiptItemNormalization1753435000000
     ];
 
     for (const column of columnsToDrop) {
-      await this.dropColumnIfExists(queryRunner, 'ReceiptItem', column);
+      await this.dropColumnIfExists(
+        queryRunner,
+        receiptItemTableNameOnly,
+        column,
+      );
     }
 
     console.log(
@@ -152,83 +162,88 @@ export class RefactorReceiptItemNormalization1753435000000
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // Get the actual ReceiptItem table name (case-sensitive check)
+    const receiptItemTableName =
+      await this.getReceiptItemTableName(queryRunner);
+    const receiptItemTableNameOnly = receiptItemTableName.replace(/"/g, '');
+
     // Step 1: Re-add normalization columns to ReceiptItem
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'normalized_name',
       'character varying(255)',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'brand',
       'character varying(100)',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'category',
       'character varying(100)',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'confidence_score',
       'decimal(5,4)',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'is_discount',
       'boolean NOT NULL DEFAULT false',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'is_adjustment',
       'boolean NOT NULL DEFAULT false',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'normalization_method',
       'character varying(50)',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'embedding_data',
       'jsonb',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'linked_discounts',
       'jsonb',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'original_price',
       'decimal(10,2)',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'final_price',
       'decimal(10,2)',
     );
     await this.addColumnIfNotExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'price_format_info',
       'jsonb',
     );
 
     // Step 2: Restore data from receipt_item_normalizations
     await queryRunner.query(`
-      UPDATE "ReceiptItem" ri
+      UPDATE ${receiptItemTableName} ri
       SET 
         "normalized_name" = np."normalized_name",
         "brand" = np."brand",
@@ -246,16 +261,24 @@ export class RefactorReceiptItemNormalization1753435000000
     // Step 3: Drop new columns
     await this.dropColumnIfExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'is_discount_line',
     );
     await this.dropColumnIfExists(
       queryRunner,
-      'ReceiptItem',
+      receiptItemTableNameOnly,
       'is_adjustment_line',
     );
-    await this.dropColumnIfExists(queryRunner, 'ReceiptItem', 'ocr_confidence');
-    await this.dropColumnIfExists(queryRunner, 'ReceiptItem', 'line_number');
+    await this.dropColumnIfExists(
+      queryRunner,
+      receiptItemTableNameOnly,
+      'ocr_confidence',
+    );
+    await this.dropColumnIfExists(
+      queryRunner,
+      receiptItemTableNameOnly,
+      'line_number',
+    );
 
     // Step 4: Drop the receipt_item_normalizations table
     await queryRunner.query(
@@ -346,5 +369,36 @@ export class RefactorReceiptItemNormalization1753435000000
         `ℹ️  Column ${columnName} doesn't exist in ${tableName}, skipping`,
       );
     }
+  }
+
+  /**
+   * Helper method to find the actual ReceiptItem table name
+   * Handles different casing that might exist in different environments
+   */
+  private async getReceiptItemTableName(
+    queryRunner: QueryRunner,
+  ): Promise<string> {
+    // Check possible table name variants (most common first)
+    const variants = ['ReceiptItem', 'receiptitem', 'receipt_item'];
+
+    for (const variant of variants) {
+      const result = (await queryRunner.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = '${variant}'
+        )
+      `)) as [{ exists: boolean }];
+
+      if (result[0]?.exists) {
+        return `"${variant}"`;
+      }
+    }
+
+    throw new Error(
+      `ReceiptItem table not found with any expected name variant. ` +
+        `Checked: ${variants.join(', ')}. ` +
+        `Please verify the table exists in the database.`,
+    );
   }
 }

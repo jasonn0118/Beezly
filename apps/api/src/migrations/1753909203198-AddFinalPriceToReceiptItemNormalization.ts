@@ -6,6 +6,11 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
   name = 'AddFinalPriceToReceiptItemNormalization1753909203198';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Get the actual ReceiptItem table name (case-sensitive check)
+    const receiptItemTableName =
+      await this.getReceiptItemTableName(queryRunner);
+    console.log(`✅ Found ReceiptItem table as: ${receiptItemTableName}`);
+
     // Helper function to safely create index if it doesn't exist
     const createIndexIfNotExists = async (
       indexQuery: string,
@@ -352,7 +357,7 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
       'CHK_11389528bf377235119bb858db',
     );
     await addConstraintIfNotExists(
-      `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_10b4ad9461a10c3efdae3e7798e" FOREIGN KEY ("receipt_item_sk") REFERENCES "ReceiptItem"("receiptitem_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
+      `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_10b4ad9461a10c3efdae3e7798e" FOREIGN KEY ("receipt_item_sk") REFERENCES ${receiptItemTableName}("receiptitem_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
       'receipt_item_normalizations',
       'FK_10b4ad9461a10c3efdae3e7798e',
     );
@@ -374,6 +379,9 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // Get the actual ReceiptItem table name for down migration
+    const receiptItemTableName =
+      await this.getReceiptItemTableName(queryRunner);
     await queryRunner.query(
       `ALTER TABLE "unprocessed_products" DROP CONSTRAINT "FK_f60e47db84d583439510fc7dfcf"`,
     );
@@ -546,7 +554,38 @@ export class AddFinalPriceToReceiptItemNormalization1753909203198
       `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_receipt_item_normalization_product" FOREIGN KEY ("normalized_product_sk") REFERENCES "normalized_products"("normalized_product_sk") ON DELETE NO ACTION ON UPDATE NO ACTION`,
     );
     await queryRunner.query(
-      `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_receipt_item_normalization_item" FOREIGN KEY ("receipt_item_sk") REFERENCES "ReceiptItem"("receiptitem_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
+      `ALTER TABLE "receipt_item_normalizations" ADD CONSTRAINT "FK_receipt_item_normalization_item" FOREIGN KEY ("receipt_item_sk") REFERENCES ${receiptItemTableName}("receiptitem_sk") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+  }
+
+  /**
+   * Helper method to find the actual ReceiptItem table name
+   * Handles different casing that might exist in different environments
+   */
+  private async getReceiptItemTableName(
+    queryRunner: QueryRunner,
+  ): Promise<string> {
+    // Check possible table name variants (most common first)
+    const variants = ['ReceiptItem', 'receiptitem', 'receipt_item'];
+
+    for (const variant of variants) {
+      const result = (await queryRunner.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = '${variant}'
+        )
+      `)) as [{ exists: boolean }];
+
+      if (result[0]?.exists) {
+        return `"${variant}"`;
+      }
+    }
+
+    throw new Error(
+      `ReceiptItem table not found with any expected name variant. ` +
+        `Checked: ${variants.join(', ')}. ` +
+        `Please verify the table exists in the database.`,
     );
   }
 }
