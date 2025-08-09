@@ -2,12 +2,33 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BarcodeController } from './barcode.controller';
 import { BarcodeService } from './barcode.service';
 import { BarcodeType } from '@beezly/types';
+import { AuthService } from '../auth/auth.service';
+import { SupabaseService } from '../supabase/supabase.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Reflector } from '@nestjs/core';
+import { GameScoreService } from '../gamification/game-score.service';
 
 describe('BarcodeController', () => {
   let controller: BarcodeController;
 
   const mockBarcodeService = {
     getProductByBarcode: jest.fn(),
+  };
+
+  const mockAuthService = {
+    validateToken: jest.fn(),
+  };
+
+  const mockSupabaseService = {
+    supabase: {
+      auth: {
+        getUser: jest.fn(),
+      },
+    },
+  };
+
+  const mockGameScoreService = {
+    awardPoints: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -18,6 +39,25 @@ describe('BarcodeController', () => {
           provide: BarcodeService,
           useValue: mockBarcodeService,
         },
+        {
+          provide: AuthService,
+          useValue: mockAuthService,
+        },
+        {
+          provide: SupabaseService,
+          useValue: mockSupabaseService,
+        },
+        {
+          provide: JwtAuthGuard,
+          useValue: {
+            canActivate: jest.fn(() => true),
+          },
+        },
+        {
+          provide: GameScoreService,
+          useValue: mockGameScoreService,
+        },
+        Reflector,
       ],
     }).compile();
 
