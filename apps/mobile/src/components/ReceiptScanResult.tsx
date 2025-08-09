@@ -33,6 +33,34 @@ const isDateObject = (value: unknown): value is Date => {
     return value instanceof Date;
 };
 
+// Helper function to format date string without timezone conversion issues
+const formatDateString = (dateValue: string | Date): string => {
+    try {
+        if (isDateObject(dateValue)) {
+            // If it's already a Date object, format it directly
+            return dateValue.toLocaleDateString('en-CA');
+        }
+        
+        if (typeof dateValue === 'string') {
+            // Handle date strings like "2025-07-16" without timezone conversion
+            if (dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                // For YYYY-MM-DD format, return as-is to avoid timezone issues
+                return dateValue;
+            } else {
+                // For other formats, try parsing but be careful with timezone
+                const date = new Date(dateValue);
+                if (!isNaN(date.getTime())) {
+                    return date.toLocaleDateString('en-CA');
+                }
+            }
+        }
+        
+        return dateValue.toString();
+    } catch {
+        return dateValue.toString();
+    }
+};
+
 export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictureData: string | null, onScanAgain: () => void }) {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
@@ -119,41 +147,49 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
         let formattedDate = '';
         if (receiptDate) {
             try {
-                // Handle both string and Date objects
-                const date = isDateObject(receiptDate) ? receiptDate : new Date(receiptDate);
-                if (!isNaN(date.getTime())) {
-                    // Use toISOString and extract the date part to avoid timezone issues
-                    formattedDate = date.toISOString().split('T')[0];
+                // Handle string dates without timezone conversion issues
+                if (typeof receiptDate === 'string' && receiptDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    // If it's already in YYYY-MM-DD format, use as-is
+                    formattedDate = receiptDate;
+                } else if (isDateObject(receiptDate)) {
+                    // If it's a Date object, format it properly
+                    formattedDate = receiptDate.toISOString().split('T')[0];
                 } else {
-                    // Try different date format parsing for OCR dates like "2028/07/28"
-                    if (typeof receiptDate === 'string') {
-                        // Handle formats like "2028/07/28" or "2028-07-28"
-                        const dateStr = receiptDate.toString();
-                        const parts = dateStr.split(/[\/\-]/);
-                        if (parts.length === 3) {
-                            // Assume YYYY/MM/DD or YYYY-MM-DD format
-                            const year = parseInt(parts[0], 10);
-                            const month = parseInt(parts[1], 10);
-                            const day = parseInt(parts[2], 10);
-                            
-                            // Fix likely OCR errors - if year is >2 years in future, likely misread (e.g., 2028 -> current year)
-                            const currentYear = new Date().getFullYear();
-                            const correctedYear = year > currentYear + 2 ? currentYear : year;
-                            
-                            const parsedDate = new Date(correctedYear, month - 1, day);
-                            if (!isNaN(parsedDate.getTime())) {
-                                // Use local date formatting to avoid timezone conversion
-                                const year = parsedDate.getFullYear();
-                                const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
-                                const day = String(parsedDate.getDate()).padStart(2, '0');
-                                formattedDate = `${year}-${month}-${day}`;
+                    // Try parsing other formats
+                    const date = new Date(receiptDate);
+                    if (!isNaN(date.getTime())) {
+                        formattedDate = date.toISOString().split('T')[0];
+                    } else {
+                        // Try different date format parsing for OCR dates like "2028/07/28"
+                        if (typeof receiptDate === 'string') {
+                            // Handle formats like "2028/07/28" or "2028-07-28"
+                            const dateStr = receiptDate.toString();
+                            const parts = dateStr.split(/[\/\-]/);
+                            if (parts.length === 3) {
+                                // Assume YYYY/MM/DD or YYYY-MM-DD format
+                                const year = parseInt(parts[0], 10);
+                                const month = parseInt(parts[1], 10);
+                                const day = parseInt(parts[2], 10);
+                                
+                                // Fix likely OCR errors - if year is >2 years in future, likely misread (e.g., 2028 -> current year)
+                                const currentYear = new Date().getFullYear();
+                                const correctedYear = year > currentYear + 2 ? currentYear : year;
+                                
+                                const parsedDate = new Date(correctedYear, month - 1, day);
+                                if (!isNaN(parsedDate.getTime())) {
+                                    // Use local date formatting to avoid timezone conversion
+                                    const year = parsedDate.getFullYear();
+                                    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+                                    const day = String(parsedDate.getDate()).padStart(2, '0');
+                                    formattedDate = `${year}-${month}-${day}`;
+                                } else {
+                                    // Default to today's date if parsing fails
+                                    formattedDate = new Date().toISOString().split('T')[0];
+                                }
                             } else {
-                                // Default to today's date if parsing fails
+                                // Default to today's date if format is unrecognized
                                 formattedDate = new Date().toISOString().split('T')[0];
                             }
-                        } else {
-                            // Default to today's date if format is unrecognized
-                            formattedDate = new Date().toISOString().split('T')[0];
                         }
                     }
                 }
@@ -596,18 +632,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                             
                             <View style={styles.dateInfo}>
                                 <Text style={styles.dateText}>
-                                    {receiptDate ? (() => {
-                                        try {
-                                            // Handle both string and Date objects
-                                            const date = isDateObject(receiptDate) ? receiptDate : new Date(receiptDate);
-                                            if (isNaN(date.getTime())) {
-                                                return receiptDate.toString();
-                                            }
-                                            return date.toLocaleDateString('en-CA'); // YYYY-MM-DD format
-                                        } catch {
-                                            return receiptDate.toString();
-                                        }
-                                    })() : 'Date not detected'}
+                                    {receiptDate ? formatDateString(receiptDate) : 'Date not detected'}
                                 </Text>
                                 {receiptTime && (
                                     <Text style={styles.timeText}>{receiptTime}</Text>
@@ -635,7 +660,7 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
                                             }}
                                         >
                                             <Text style={styles.suggestedDateText}>
-                                                Use suggested: {new Date(dateValidation.suggestedDate).toLocaleDateString()}
+                                                Use suggested: {formatDateString(dateValidation.suggestedDate)}
                                             </Text>
                                         </TouchableOpacity>
                                     )}
