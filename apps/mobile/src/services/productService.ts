@@ -187,6 +187,18 @@ export class ProductService {
     return apiClient.post<Product>('/products', formData);
   }
 
+  static async createProductAuthenticated(formData: FormData): Promise<Product & {
+    pointsAwarded?: number;
+    newBadges?: number;
+    rankChange?: any;
+  }> {
+    return apiClient.post<Product & {
+      pointsAwarded?: number;
+      newBadges?: number;
+      rankChange?: any;
+    }>('/products/authenticated', formData);
+  }
+
   static async addPrice(productId: string, priceValue: number, currency: string, selectedStore: UnifiedStoreSearchResult): Promise<any> {
     let requestBody: any;
     if (selectedStore.storeId) {

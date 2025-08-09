@@ -3,7 +3,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { gamificationService, RANK_TIER_NAMES } from '../services/gamificationService';
 
 export interface AchievementEvent {
-  type: 'receipt_upload' | 'ocr_verification' | 'points_earned' | 'badge_earned' | 'tier_promoted' | 'streak_milestone' | 'barcode_scanned';
+  type: 'receipt_upload' | 'ocr_verification' | 'points_earned' | 'badge_earned' | 'tier_promoted' | 'streak_milestone' | 'barcode_scanned' | 'product_registered';
   data: any;
 }
 
@@ -77,6 +77,17 @@ export const useAchievementTracking = () => {
             points: event.data.points || 10,
             color: '#8B5CF6',
             duration: 2500,
+          });
+          break;
+
+        case 'product_registered':
+          showAchievement({
+            type: 'points',
+            title: 'Product Registered! 🍯',
+            message: 'New honey discovered & earned points!',
+            points: event.data.points || 20,
+            color: '#F59E0B',
+            duration: 3500,
           });
           break;
 
