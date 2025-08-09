@@ -9,6 +9,12 @@ export class ProductResponseDto {
   id: string;
 
   @ApiProperty({
+    description: 'Product SKU (same as id, for mobile compatibility)',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  product_sk: string;
+
+  @ApiProperty({
     description: 'Product name',
     example: 'Organic Bananas',
   })

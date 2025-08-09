@@ -50,6 +50,7 @@ export class BarcodeService {
   ): ProductResponseDto {
     return {
       id: product.productSk,
+      product_sk: product.productSk,
       name: product.name,
       barcode: product.barcode || '',
       barcodeType: product.barcodeType,

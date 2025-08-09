@@ -59,6 +59,7 @@ describe('BarcodeService', () => {
 
       expect(result).toEqual({
         id: 'test-uuid',
+        product_sk: 'test-uuid',
         name: 'Test Product',
         barcode: '1234567890',
         brand: undefined,
