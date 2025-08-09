@@ -11,6 +11,7 @@ import { ProductConfirmationService } from '../src/product/product-confirmation.
 import { EnhancedReceiptLinkingService } from '../src/product/enhanced-receipt-linking.service';
 import { ReceiptWorkflowIntegrationService } from '../src/product/receipt-workflow-integration.service';
 import { UnprocessedProductService } from '../src/product/unprocessed-product.service';
+import { OpenFoodFactsApiService } from '../src/product/openfoodfacts-api.service';
 
 describe('Product Search (e2e)', () => {
   let app: INestApplication;
@@ -129,6 +130,18 @@ describe('Product Search (e2e)', () => {
             createProductFromUnprocessedProduct: jest.fn(),
             performBulkReviewAction: jest.fn(),
             cleanupProcessedUnprocessedProducts: jest.fn(),
+          },
+        },
+        {
+          provide: OpenFoodFactsApiService,
+          useValue: {
+            fetchAndMapProducts: jest.fn(),
+            getIntegrationStats: jest.fn().mockResolvedValue({
+              totalOpenFoodFactsProducts: 0,
+              productsWithOpenFoodFactsSource: 0,
+              categoriesFromOpenFoodFacts: 0,
+              lastFetchDate: null,
+            }),
           },
         },
       ],
