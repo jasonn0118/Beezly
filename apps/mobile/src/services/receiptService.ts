@@ -42,11 +42,24 @@ export interface ReceiptItem {
   final_price: number;
 }
 
+export interface DateValidationResult {
+  isValid: boolean;
+  originalDate: string;
+  parsedDate?: string;
+  suggestedDate?: string;
+  warnings: string[];
+  requiresUserConfirmation: boolean;
+  validationRules: string[];
+}
+
 export interface UploadReceiptResponse {
   success: boolean;
   data?: {
     merchant: string;
     store_address?: string;
+    date?: string;
+    time?: string;
+    dateValidation?: DateValidationResult;
     items: ReceiptItem[];
     receipt_id?: string;
     store_search?: StoreSearchResult;
@@ -121,6 +134,15 @@ export class ReceiptService {
 
   static async processPendingSelections(payload: { selections: { normalizedProductSk: string, selectedProductSk: string | null, selectionReason: string }[], userId: string, receiptId: string }): Promise<ConfirmationResponse> {
     return apiClient.post<ConfirmationResponse>('/products/receipt/process-selections', payload, { timeout: 300000 });
+  }
+
+  static async confirmReceiptDate(receiptId: string, confirmedDate: string, confirmedTime?: string): Promise<{ success: boolean; message: string; receipt: unknown }> {
+    const payload = {
+      receiptId,
+      confirmedDate,
+      ...(confirmedTime && { confirmedTime }),
+    };
+    return apiClient.post('/ocr/confirm-receipt-date', payload);
   }
 }
 

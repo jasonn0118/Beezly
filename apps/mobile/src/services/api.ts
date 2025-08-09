@@ -1,11 +1,9 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import { EXPO_PUBLIC_API_URL, EXPO_PUBLIC_API_TIMEOUT } from '@env';
+import { EXPO_PUBLIC_API_TIMEOUT, EXPO_PUBLIC_API_URL } from "@env";
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
 
 // API configuration
-const API_BASE_URL = EXPO_PUBLIC_API_URL || 'http://10.0.0.183:3006';
-const API_TIMEOUT = parseInt(EXPO_PUBLIC_API_TIMEOUT || '60000', 10);
-
-
+const API_BASE_URL = EXPO_PUBLIC_API_URL || "http://10.0.0.183:3006";
+const API_TIMEOUT = parseInt(EXPO_PUBLIC_API_TIMEOUT || "60000", 10);
 
 class ApiClient {
   private client: AxiosInstance;
@@ -16,16 +14,15 @@ class ApiClient {
       baseURL: API_BASE_URL,
       timeout: API_TIMEOUT,
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     });
 
     // Request interceptor for authentication
     this.client.interceptors.request.use(
       (config) => {
-        
         if (config.data instanceof FormData) {
-          delete config.headers['Content-Type'];
+          delete config.headers["Content-Type"];
         }
         // Add auth token if available
         const token = this.getAuthToken();
@@ -45,7 +42,6 @@ class ApiClient {
         return response;
       },
       (error) => {
-        
         if (error.response?.status === 401) {
           // Handle unauthorized - redirect to login
           this.handleUnauthorized();
@@ -89,12 +85,24 @@ class ApiClient {
     return response.data;
   }
 
-  async post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
-    const response: AxiosResponse<T> = await this.client.post(url, data, config);
+  async post<T>(
+    url: string,
+    data?: any,
+    config?: AxiosRequestConfig
+  ): Promise<T> {
+    const response: AxiosResponse<T> = await this.client.post(
+      url,
+      data,
+      config
+    );
     return response.data;
   }
 
-  async put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  async put<T>(
+    url: string,
+    data?: any,
+    config?: AxiosRequestConfig
+  ): Promise<T> {
     const response: AxiosResponse<T> = await this.client.put(url, data, config);
     return response.data;
   }
@@ -104,8 +112,16 @@ class ApiClient {
     return response.data;
   }
 
-  async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
-    const response: AxiosResponse<T> = await this.client.patch(url, data, config);
+  async patch<T>(
+    url: string,
+    data?: any,
+    config?: AxiosRequestConfig
+  ): Promise<T> {
+    const response: AxiosResponse<T> = await this.client.patch(
+      url,
+      data,
+      config
+    );
     return response.data;
   }
 }

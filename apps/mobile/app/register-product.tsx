@@ -1,5 +1,5 @@
 import 'react-native-get-random-values';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     StyleSheet,
     Text,
@@ -23,6 +23,8 @@ import CategoryPicker from '../src/components/scan/CategoryPicker';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router'; // Import useRouter
+import { useAuth } from '../src/contexts/AuthContext';
+import { useAchievementTracking } from '../src/hooks/useAchievementTracking';
 
 
 // Define a new type that extends the original interface to include the new fields
@@ -58,6 +60,8 @@ export default function RegisterProductScreen() {
     const { productSk, scannedData: scannedDataString } = useLocalSearchParams<{ productSk?: string, scannedData?: string }>();
     const scannedData = scannedDataString ? JSON.parse(scannedDataString) : null;
     const router = useRouter(); // Initialize useRouter
+    const { isAuthenticated } = useAuth();
+    const { trackAchievement } = useAchievementTracking();
 
     // State for form inputs
     const [productDetails, setProductDetails] = useState<Partial<ProductDetails>>({
@@ -68,6 +72,16 @@ export default function RegisterProductScreen() {
     // New state for success notification and loading
     const [showSuccessNotification, setShowSuccessNotification] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false); // New state for loading
+    
+    // State for scoring results
+    const [scoringResult, setScoringResult] = useState<{
+        pointsAwarded?: number;
+        newBadges?: number;
+        rankChange?: any;
+    } | null>(null);
+    
+    // Ref to track processed scoring results to prevent duplicates
+    const processedScoringRef = useRef<Set<string>>(new Set());
 
 
     useEffect(() => {
@@ -113,29 +127,119 @@ export default function RegisterProductScreen() {
 
     const [canSearch, setCanSearch] = useState(true);
 
+    // Function to handle scoring result notifications
+    const handleScoringNotifications = useCallback((
+        result: { pointsAwarded?: number; newBadges?: number; rankChange?: any },
+        productName: string
+    ) => {
+        if (result.pointsAwarded && result.pointsAwarded > 0 && productName) {
+            // Create a stable identifier for this scoring result
+            const scoringId = `${productName}-${result.pointsAwarded}-${result.newBadges}-${result.rankChange?.newTier || 'none'}`;
+            
+            // Only show notification if we haven't processed this result yet
+            if (!processedScoringRef.current.has(scoringId)) {
+                processedScoringRef.current.add(scoringId);
+                
+                // Show product registration notification
+                trackAchievement({
+                    type: 'product_registered',
+                    data: {
+                        points: result.pointsAwarded,
+                        productName: productName,
+                    }
+                });
+
+                // Show badge notification with delay
+                if (result.newBadges && result.newBadges > 0) {
+                    setTimeout(() => {
+                        trackAchievement({
+                            type: 'badge_earned',
+                            data: {
+                                badgeName: `You earned ${result.newBadges || 0} new badge${(result.newBadges || 0) > 1 ? 's' : ''}!`
+                            }
+                        });
+                    }, 1000);
+                }
+
+                // Show tier promotion notification with delay
+                if (result.rankChange && result.rankChange.newTier) {
+                    setTimeout(() => {
+                        trackAchievement({
+                            type: 'tier_promoted',
+                            data: {
+                                newTier: result.rankChange.newTier
+                            }
+                        });
+                    }, 2000);
+                }
+            }
+        }
+    }, [trackAchievement]);
+
     // Function to handle image picking
     const pickImage = async () => {
         if (isSubmitting) return; // Prevent interaction during submission
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
-            return;
-        }
 
-        let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 1,
-        });
+        Alert.alert(
+            "Select Image Source",
+            "Choose whether to pick an image from your library or take a new photo.",
+            [
+                {
+                    text: "Photo Library",
+                    onPress: async () => {
+                        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                        if (status !== 'granted') {
+                            Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
+                            return;
+                        }
 
-        if (!result.canceled) {
-            const uri = result.assets[0].uri;
-            setProductDetails(prev => ({
-                ...prev,
-                image_url: uri,
-            }));
-        }
+                        let result = await ImagePicker.launchImageLibraryAsync({
+                            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                            allowsEditing: true,
+                            aspect: [1, 1],
+                            quality: 1,
+                        });
+
+                        if (!result.canceled) {
+                            const uri = result.assets[0].uri;
+                            setProductDetails(prev => ({
+                                ...prev,
+                                image_url: uri,
+                            }));
+                        }
+                    }
+                },
+                {
+                    text: "Take Photo",
+                    onPress: async () => {
+                        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                        if (status !== 'granted') {
+                            Alert.alert('Permission Denied', 'Sorry, we need camera permissions to make this work!');
+                            return;
+                        }
+
+                        let result = await ImagePicker.launchCameraAsync({
+                            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                            allowsEditing: true,
+                            aspect: [1, 1],
+                            quality: 1,
+                        });
+
+                        if (!result.canceled) {
+                            const uri = result.assets[0].uri;
+                            setProductDetails(prev => ({
+                                ...prev,
+                                image_url: uri,
+                            }));
+                        }
+                    }
+                },
+                {
+                    text: "Cancel",
+                    style: "cancel"
+                }
+            ]
+        );
     };
 
     const handleGetLocation = async () => {
@@ -168,8 +272,8 @@ export default function RegisterProductScreen() {
                     storeName : formattedStoreName,
                     storeCity : formattedCity,
                     storeProvince : formattedRegion,
-                    storeLatitude : String(latitude),
-                    storeLongitude : String(longitude),
+                    storeLatitude : Number(latitude),
+                    storeLongitude : Number(longitude),
                     storeStreetNumber : formattedStreetNumber,
                     storeStreetAddress : formattedAddress
                 }));
@@ -346,15 +450,36 @@ export default function RegisterProductScreen() {
                                     } as any);
                                 }
 
-                                await ProductService.createProduct(formData);
+                                // Use authenticated endpoint if user is logged in for scoring
+                                if (isAuthenticated) {
+                                    const result = await ProductService.createProductAuthenticated(formData);
+                                    // Handle scoring notifications immediately without state dependency
+                                    const scoringData = {
+                                        pointsAwarded: result.pointsAwarded || 0,
+                                        newBadges: result.newBadges || 0,
+                                        rankChange: result.rankChange,
+                                    };
+                                    
+                                    // Trigger notifications directly
+                                    if (productDetails.name) {
+                                        handleScoringNotifications(scoringData, productDetails.name);
+                                    }
+                                    
+                                    // Still store for potential future use, but notifications are handled above
+                                    setScoringResult(scoringData);
+                                } else {
+                                    await ProductService.createProduct(formData);
+                                }
                             }
                             setShowSuccessNotification(true); // Show success notification
                             setTimeout(() => {
                                 setShowSuccessNotification(false); // Hide notification
+                                // Clear processed scoring to allow fresh notifications for next product
+                                processedScoringRef.current.clear();
                                 if(productSk){
                                     router.push(`/product-detail?productId=${productSk}`);
                                 }else{
-                                    router.replace('/scan'); // Navigate to scan screen
+                                    router.replace('/(tabs)/search'); // Navigate to search screen
                                 }
                             }, 2000);
                         } catch (err) {
@@ -476,7 +601,12 @@ export default function RegisterProductScreen() {
                                                 disabled={isSubmitting}
                                             >
                                                 <View style={styles.resultContent}>
-                                                    <Text style={styles.resultText}>{item.storeName + ', ' + (item.storeStreetAddress || '') + ', ' + (item.storeCity || '')}</Text>
+                                                    <Text style={styles.resultText}>
+                                                        {item.storeName + ', ' + (item.storeStreetAddress || '') + ', ' + (item.storeCity || '')}
+                                                        {item.distance !== undefined && (
+                                                            <Text style={styles.distanceText}> ({item.distance.toFixed(1)} km)</Text>
+                                                        )}
+                                                    </Text>
                                                 </View>
                                             </TouchableOpacity>
                                         ))}
@@ -675,6 +805,11 @@ const styles = StyleSheet.create({
     resultText: {
         fontSize: 16,
         color: '#1f2937',
+    },
+    distanceText: {
+        fontSize: 14,
+        color: '#6b7280',
+        marginLeft: 5,
     },
     resultSourceText: {
         fontSize: 12,

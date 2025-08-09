@@ -223,4 +223,54 @@ export class ReceiptController {
     );
     return { message: 'Normalization selection updated successfully' };
   }
+
+  @Put(':id/store/:storeId')
+  @ApiOperation({
+    summary: 'Update the store associated with a receipt',
+    description: `
+    **Update the store relationship for a receipt - used during receipt processing**
+    
+    🎯 **Use Cases:**
+    - User manually selects a different store after OCR processing
+    - System found wrong store and user wants to correct it
+    - Store was not found initially and user searches/selects the correct one
+    - User wants to change the store for any reason
+    
+    ⚡ **No Authentication Required:**
+    - Designed for receipt processing flow where users may not be fully authenticated
+    - Works with receipt ID from OCR processing workflow
+    - Validates that both receipt and store exist before updating
+    
+    📊 **Process:**
+    1. Validate the receipt exists
+    2. Validate the target store exists  
+    3. Update the receipt-store relationship
+    4. Return updated receipt with new store information
+    
+    💡 **Frontend Integration:**
+    - Call this endpoint when user selects a store from search results
+    - Update the receipt display with new store information
+    - Show success confirmation to user
+    - Perfect for mobile app receipt scanning workflows
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Receipt store updated successfully',
+    type: ReceiptDTO,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found or store not found',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid receipt ID or store ID format',
+  })
+  async updateReceiptStore(
+    @Param('id') receiptId: string,
+    @Param('storeId') storeId: string,
+  ): Promise<ReceiptDTO> {
+    return this.receiptService.updateReceiptStore(receiptId, storeId);
+  }
 }

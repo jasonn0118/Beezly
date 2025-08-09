@@ -33,7 +33,7 @@ const ProductSelectionScreen = () => {
     const [isSaving, setIsSaving] = useState(false);
 
     const sections = useMemo(() => pendingSelectionProducts.map((product: any, index: number) => ({
-        title: product.name,
+        title: product.normalizedProduct?.normalizedName || product.normalizedProduct?.rawName || 'Unknown Product',
         index: index,
         data: [...product.topMatches, { productSk: NO_MATCH_SK, name: 'None of these match' }],
     })), [pendingSelectionProducts]);
@@ -140,6 +140,7 @@ const ProductSelectionScreen = () => {
                 sections={sections}
                 keyExtractor={(item, index) => item.productSk + index}
                 contentContainerStyle={styles.listContentContainer}
+                stickySectionHeadersEnabled={false}
                 renderItem={({ item, section }) => {
                     const isSelected = selections[section.index]?.productSk === item.productSk;
                     if (item.productSk === NO_MATCH_SK) {
@@ -159,7 +160,12 @@ const ProductSelectionScreen = () => {
                         <Animated.View style={[styles.card, isSelected && styles.cardSelected]}>
                             <TouchableOpacity onPress={() => handleSelectProduct(section.index, item)} style={styles.touchableCard}>
                                 <TouchableOpacity onPress={(e) => { e.stopPropagation(); item.imageUrl && openImageModal(item.imageUrl); }}>
-                                    <Image source={{ uri: item.imageUrl || undefined }} style={styles.image} />
+                                    <Image 
+                                        source={{ 
+                                            uri: item.imageUrl || 'https://via.placeholder.com/80x80/f8f9fa/6c757d?text=No+Image'
+                                        }} 
+                                        style={styles.image} 
+                                    />
                                 </TouchableOpacity>
                                 <View style={styles.infoContainer}>
                                     <Text style={styles.name}>{item.name}</Text>

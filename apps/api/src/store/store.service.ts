@@ -103,6 +103,182 @@ export class StoreService {
     return store ? this.mapStoreToDTO(store) : null;
   }
 
+  /**
+   * Get store suggestions from OCR data without creating new stores
+   * Returns multiple suggestions sorted by confidence (includes low-confidence matches)
+   * Uses improved partial address matching logic
+   */
+  async getOcrStoreSuggestions(ocrData: {
+    merchant: string;
+    store_address?: string;
+  }): Promise<
+    Array<{
+      store: StoreDTO;
+      confidence: number;
+      matchMethod: string;
+      matchDetails?: string;
+    }>
+  > {
+    const suggestions: Array<{
+      store: Store;
+      confidence: number;
+      matchMethod: string;
+      matchDetails?: string;
+    }> = [];
+
+    const { merchant, store_address } = ocrData;
+    const normalizedName = this.normalizeStoreName(merchant);
+
+    // Step 1: Try exact name match
+    const exactMatches = await this.storeRepository
+      .createQueryBuilder('store')
+      .where('LOWER(store.name) = LOWER(:name)', { name: normalizedName })
+      .getMany();
+
+    for (const store of exactMatches) {
+      let confidence = 0.85;
+      let matchDetails = 'Exact name match';
+
+      // Adjust confidence based on address matching if provided
+      if (store_address && store.fullAddress) {
+        const addressSimilarity = this.calculateAddressSimilarity(
+          store_address,
+          store.fullAddress,
+        );
+        console.log(
+          `🔍 Address similarity for ${store.city}: ${addressSimilarity} (OCR: "${store_address}" vs DB: "${store.fullAddress}")`,
+        );
+        if (addressSimilarity > 0.8) {
+          confidence = 0.95;
+          matchDetails = `Exact name with ${(addressSimilarity * 100).toFixed(0)}% address match`;
+        } else if (addressSimilarity > 0.5) {
+          confidence = 0.75;
+          matchDetails = `Exact name but only ${(addressSimilarity * 100).toFixed(0)}% address similarity`;
+        }
+      }
+
+      suggestions.push({
+        store,
+        confidence,
+        matchMethod: 'exact_name',
+        matchDetails,
+      });
+    }
+
+    // Step 2: Try fuzzy name matching
+    const fuzzyMatches = await this.storeRepository
+      .createQueryBuilder('store')
+      .where('store.name ILIKE :pattern', { pattern: `%${normalizedName}%` })
+      .andWhere('LOWER(store.name) != LOWER(:exactName)', {
+        exactName: normalizedName,
+      })
+      .getMany();
+
+    for (const store of fuzzyMatches) {
+      const nameSimilarity = this.calculateNameSimilarity(
+        normalizedName,
+        store.name,
+      );
+      if (nameSimilarity > 0.6) {
+        let confidence = nameSimilarity * 0.8; // Base confidence from name similarity
+        let matchDetails = `${(nameSimilarity * 100).toFixed(0)}% name similarity`;
+
+        // Boost confidence if address matches
+        if (store_address && store.fullAddress) {
+          const addressSimilarity = this.calculateAddressSimilarity(
+            store_address,
+            store.fullAddress,
+          );
+          if (addressSimilarity > 0.7) {
+            confidence = Math.min(0.9, confidence + 0.2);
+            matchDetails += ` with ${(addressSimilarity * 100).toFixed(0)}% address match`;
+          }
+        }
+
+        suggestions.push({
+          store,
+          confidence,
+          matchMethod: 'fuzzy_name',
+          matchDetails,
+        });
+      }
+    }
+
+    // Step 3: Try address-based matching if address provided
+    if (store_address) {
+      const addressComponents = this.parseStoreAddress(store_address);
+
+      // Try postal code matching
+      if (addressComponents.postalCode) {
+        const postalMatches = await this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.postalCode = :postalCode', {
+            postalCode: addressComponents.postalCode,
+          })
+          .getMany();
+
+        for (const store of postalMatches) {
+          // Check if not already included
+          if (!suggestions.find((s) => s.store.storeSk === store.storeSk)) {
+            const nameSimilarity = this.calculateNameSimilarity(
+              normalizedName,
+              store.name,
+            );
+            const confidence = 0.6 + nameSimilarity * 0.3; // Base 0.6 for postal match + name bonus
+
+            suggestions.push({
+              store,
+              confidence,
+              matchMethod: 'postal_code',
+              matchDetails: `Same postal code with ${(nameSimilarity * 100).toFixed(0)}% name similarity`,
+            });
+          }
+        }
+      }
+
+      // Try city matching
+      if (addressComponents.city) {
+        const cityMatches = await this.storeRepository
+          .createQueryBuilder('store')
+          .where('store.city ILIKE :city', {
+            city: `%${addressComponents.city}%`,
+          })
+          .andWhere('store.name ILIKE :name', { name: `%${normalizedName}%` })
+          .getMany();
+
+        for (const store of cityMatches) {
+          // Check if not already included
+          if (!suggestions.find((s) => s.store.storeSk === store.storeSk)) {
+            const nameSimilarity = this.calculateNameSimilarity(
+              normalizedName,
+              store.name,
+            );
+            const confidence = 0.5 + nameSimilarity * 0.4; // Base 0.5 for city match + name bonus
+
+            suggestions.push({
+              store,
+              confidence,
+              matchMethod: 'city',
+              matchDetails: `Same city with ${(nameSimilarity * 100).toFixed(0)}% name similarity`,
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by confidence (highest first) and limit to top 10
+    suggestions.sort((a, b) => b.confidence - a.confidence);
+    const topSuggestions = suggestions.slice(0, 10);
+
+    // Convert to DTOs
+    return topSuggestions.map((suggestion) => ({
+      store: this.mapStoreToDTO(suggestion.store),
+      confidence: Math.round(suggestion.confidence * 100) / 100, // Round to 2 decimals
+      matchMethod: suggestion.matchMethod,
+      matchDetails: suggestion.matchDetails,
+    }));
+  }
+
   async createStore(storeData: Partial<StoreDTO>): Promise<StoreDTO> {
     const store = this.storeRepository.create({
       name: storeData.name,
@@ -650,9 +826,11 @@ export class StoreService {
     // Postal code match (highest weight)
     if (addr1.postalCode && addr2.postalCode) {
       factors++;
-      if (addr1.postalCode === addr2.postalCode) {
-        score += 0.4;
-      }
+      const postalSimilarity = this.calculatePostalCodeSimilarity(
+        addr1.postalCode,
+        addr2.postalCode,
+      );
+      score += postalSimilarity * 0.4;
     }
 
     // City match
@@ -673,7 +851,41 @@ export class StoreService {
       }
     }
 
-    // Full address similarity
+    // Street address component matching (new - high weight)
+    const street1 = this.parseStreetAddress(address1);
+    const street2 = this.parseStreetAddress(address2);
+
+    if (
+      (street1.streetNumber || street1.streetName) &&
+      (street2.streetNumber || street2.streetName)
+    ) {
+      factors++;
+      let streetScore = 0;
+
+      // Street number match (important for disambiguation)
+      if (street1.streetNumber && street2.streetNumber) {
+        const numSimilarity = this.areStreetNumbersSimilar(
+          street1.streetNumber,
+          street2.streetNumber,
+        )
+          ? 1.0
+          : 0;
+        streetScore += numSimilarity * 0.6; // 60% of street score
+      }
+
+      // Street name match (using improved normalization)
+      if (street1.streetName && street2.streetName) {
+        const nameSimilarity = this.calculateStreetNameSimilarity(
+          street1.streetName,
+          street2.streetName,
+        );
+        streetScore += nameSimilarity * 0.4; // 40% of street score
+      }
+
+      score += streetScore * 0.3; // Street address gets 30% weight in total similarity
+    }
+
+    // Full address similarity (lower weight now)
     if (addr1.fullAddress && addr2.fullAddress) {
       factors++;
       const fullSimilarity = this.calculateNameSimilarity(
@@ -684,7 +896,8 @@ export class StoreService {
     }
 
     // Normalize score based on available factors
-    return factors > 0 ? score / (factors * 0.25) : 0;
+    // Updated total weights: postal(0.4) + city(0.3) + province(0.2) + street(0.3) + full(0.1) = 1.3 max
+    return factors > 0 ? Math.min(1.0, score / (factors * 0.26)) : 0;
   }
 
   /**
@@ -970,9 +1183,272 @@ export class StoreService {
     // Step 1: Normalize the merchant name with OCR error correction
     const normalizedName = this.normalizeStoreName(merchant);
 
-    // Step 2: If address provided, prioritize address-based matching for chain stores
+    // Collect all potential matches with scores
+    const potentialMatches: Array<{
+      store: Store;
+      confidence: number;
+      matchMethod: string;
+      matchComponents: string[];
+    }> = [];
+
+    // First priority: Try exact name matches
+    const exactNameMatches = await this.storeRepository
+      .createQueryBuilder('store')
+      .where('LOWER(store.name) = LOWER(:name)', { name: normalizedName })
+      .getMany();
+
+    // Process exact name matches with address scoring if available
+    for (const store of exactNameMatches) {
+      let confidence = 0.7; // Base confidence for exact name
+      const matchComponents = ['exact_name'];
+
+      if (store_address && store.fullAddress) {
+        // Compare address components to boost confidence
+        const correctedAddress =
+          this.applyOcrCorrectionsToAddress(store_address);
+        const ocrComponents = this.parseStoreAddress(correctedAddress);
+        const storeComponents = this.parseStoreAddress(store.fullAddress);
+
+        // Parse street-level details for number and name comparison
+        const ocrStreet = this.parseStreetAddress(correctedAddress);
+        const storeStreet = this.parseStreetAddress(store.fullAddress);
+
+        // Street number match (high value)
+        if (ocrStreet.streetNumber && storeStreet.streetNumber) {
+          if (
+            this.areStreetNumbersSimilar(
+              ocrStreet.streetNumber,
+              storeStreet.streetNumber,
+            )
+          ) {
+            confidence += 0.1;
+            matchComponents.push('street_num');
+          }
+        }
+
+        // Street name match (high value)
+        if (ocrStreet.streetName && storeStreet.streetName) {
+          const similarity = this.calculateStreetNameSimilarity(
+            ocrStreet.streetName,
+            storeStreet.streetName,
+          );
+          if (similarity > 0.8) {
+            confidence += 0.1;
+            matchComponents.push('street_name');
+          } else if (similarity > 0.6) {
+            confidence += 0.05;
+            matchComponents.push('partial_street');
+          }
+        }
+
+        // City match (medium value)
+        if (ocrComponents.city && storeComponents.city) {
+          const citySimilarity = this.calculateNameSimilarity(
+            ocrComponents.city.toLowerCase(),
+            storeComponents.city.toLowerCase(),
+          );
+          if (citySimilarity > 0.8) {
+            confidence += 0.05;
+            matchComponents.push('city');
+          }
+        }
+
+        // Province match (low value)
+        if (ocrComponents.province && storeComponents.province) {
+          if (
+            ocrComponents.province.toLowerCase() ===
+            storeComponents.province.toLowerCase()
+          ) {
+            confidence += 0.03;
+            matchComponents.push('province');
+          }
+        }
+
+        // Postal code match (medium value but often missing)
+        if (ocrComponents.postalCode && storeComponents.postalCode) {
+          if (ocrComponents.postalCode === storeComponents.postalCode) {
+            confidence += 0.07;
+            matchComponents.push('postal');
+          }
+        }
+      } else if (!store_address) {
+        // No address provided, boost confidence for exact name
+        confidence = 0.85;
+      }
+
+      potentialMatches.push({
+        store,
+        confidence: Math.min(1.0, confidence),
+        matchMethod: 'exact_name',
+        matchComponents,
+      });
+    }
+
+    // Second priority: Fuzzy name matching with address
     if (store_address) {
-      // Apply OCR error corrections to the address first
+      const correctedAddress = this.applyOcrCorrectionsToAddress(store_address);
+      const ocrComponents = this.parseStoreAddress(correctedAddress);
+      const ocrStreet = this.parseStreetAddress(correctedAddress);
+
+      // Find stores with similar names
+      const fuzzyNameMatches = await this.storeRepository
+        .createQueryBuilder('store')
+        .where('store.name ILIKE :pattern', { pattern: `%${normalizedName}%` })
+        .andWhere('LOWER(store.name) != LOWER(:exactName)', {
+          exactName: normalizedName,
+        })
+        .getMany();
+
+      for (const store of fuzzyNameMatches) {
+        const nameSimilarity = this.calculateNameSimilarity(
+          normalizedName,
+          store.name,
+        );
+        if (nameSimilarity > 0.5) {
+          // Lower threshold for consideration
+          let confidence = nameSimilarity * 0.5; // Base from name similarity
+          const matchComponents = [`name_${Math.round(nameSimilarity * 100)}%`];
+
+          if (store.fullAddress) {
+            const storeComponents = this.parseStoreAddress(store.fullAddress);
+            const storeStreet = this.parseStreetAddress(store.fullAddress);
+
+            // Boost for matching address components
+            if (ocrStreet.streetNumber && storeStreet.streetNumber) {
+              if (
+                this.normalizeStreetNumber(ocrStreet.streetNumber) ===
+                this.normalizeStreetNumber(storeStreet.streetNumber)
+              ) {
+                confidence += 0.15;
+                matchComponents.push('street_num');
+              }
+            }
+
+            if (ocrComponents.city && storeComponents.city) {
+              const citySimilarity = this.calculateNameSimilarity(
+                ocrComponents.city.toLowerCase(),
+                storeComponents.city.toLowerCase(),
+              );
+              if (citySimilarity > 0.7) {
+                confidence += 0.1;
+                matchComponents.push('city');
+              }
+            }
+
+            if (ocrComponents.postalCode && storeComponents.postalCode) {
+              if (ocrComponents.postalCode === storeComponents.postalCode) {
+                confidence += 0.15;
+                matchComponents.push('postal');
+              }
+            }
+          }
+
+          if (confidence >= 0.5) {
+            // Only include if reasonable confidence
+            potentialMatches.push({
+              store,
+              confidence: Math.min(1.0, confidence),
+              matchMethod: 'fuzzy_name',
+              matchComponents,
+            });
+          }
+        }
+      }
+
+      // Third priority: Address-based matching (when name doesn't match well)
+      if (ocrComponents.city || ocrComponents.postalCode) {
+        let addressQuery = this.storeRepository.createQueryBuilder('store');
+
+        if (ocrComponents.postalCode) {
+          addressQuery = addressQuery.where('store.postalCode = :postalCode', {
+            postalCode: ocrComponents.postalCode,
+          });
+        } else if (ocrComponents.city) {
+          addressQuery = addressQuery.where('store.city ILIKE :city', {
+            city: `%${ocrComponents.city}%`,
+          });
+        }
+
+        const addressMatches = await addressQuery.getMany();
+
+        for (const store of addressMatches) {
+          // Check if not already in results
+          if (
+            !potentialMatches.find((m) => m.store.storeSk === store.storeSk)
+          ) {
+            const nameSimilarity = this.calculateNameSimilarity(
+              normalizedName,
+              store.name,
+            );
+
+            let confidence = 0.3; // Base for address match
+            const matchComponents: string[] = [];
+
+            if (
+              ocrComponents.postalCode &&
+              store.postalCode === ocrComponents.postalCode
+            ) {
+              confidence += 0.25;
+              matchComponents.push('postal');
+            }
+
+            if (ocrComponents.city && store.city) {
+              const citySimilarity = this.calculateNameSimilarity(
+                ocrComponents.city.toLowerCase(),
+                store.city.toLowerCase(),
+              );
+              if (citySimilarity > 0.7) {
+                confidence += 0.15;
+                matchComponents.push('city');
+              }
+            }
+
+            // Add name similarity bonus
+            confidence += nameSimilarity * 0.35;
+            matchComponents.push(`name_${Math.round(nameSimilarity * 100)}%`);
+
+            if (confidence >= 0.5) {
+              potentialMatches.push({
+                store,
+                confidence: Math.min(1.0, confidence),
+                matchMethod: 'address_based',
+                matchComponents,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Sort potential matches by confidence and return the best one
+    if (potentialMatches.length > 0) {
+      potentialMatches.sort((a, b) => b.confidence - a.confidence);
+      const bestMatch = potentialMatches[0];
+
+      // Log for debugging
+      console.log(
+        `🔍 Store match found: ${bestMatch.store.name} (${bestMatch.confidence.toFixed(2)} confidence)`,
+      );
+      console.log(
+        `   Method: ${bestMatch.matchMethod}, Components: ${bestMatch.matchComponents.join(', ')}`,
+      );
+
+      // Only return if confidence meets threshold
+      if (bestMatch.confidence >= 0.85) {
+        return {
+          store: bestMatch.store,
+          confidence: bestMatch.confidence,
+          matchMethod: bestMatch.matchMethod,
+        };
+      } else {
+        console.log(
+          `   ⚠️ Confidence ${bestMatch.confidence.toFixed(2)} below threshold 0.85`,
+        );
+      }
+    }
+
+    // Legacy fallback code for backward compatibility
+    if (store_address) {
       const correctedAddress = this.applyOcrCorrectionsToAddress(store_address);
       const addressComponents = this.parseStoreAddress(correctedAddress);
 
@@ -1398,7 +1874,7 @@ export class StoreService {
       LOWES: "Lowe's",
       "LOWE'S": "Lowe's",
       'BEST BUY': 'Best Buy',
-      COSTCO: 'Costco',
+      COSTCO: 'Costco Wholesale',
       'SAMS CLUB': "Sam's Club",
       "SAM'S CLUB": "Sam's Club",
       BJS: "BJ's Wholesale Club",
@@ -1489,6 +1965,99 @@ export class StoreService {
   }
 
   /**
+   * Normalize street numbers for consistent comparison
+   * Uses fuzzy matching for OCR errors rather than specific corrections
+   */
+  private normalizeStreetNumber(streetNumber: string): string {
+    if (!streetNumber) return '';
+
+    // Remove any non-numeric characters and normalize
+    return streetNumber.replace(/[^\d]/g, '');
+  }
+
+  /**
+   * Check if two street numbers are similar enough (allowing for OCR errors)
+   */
+  private areStreetNumbersSimilar(num1: string, num2: string): boolean {
+    const clean1 = this.normalizeStreetNumber(num1);
+    const clean2 = this.normalizeStreetNumber(num2);
+
+    if (clean1 === clean2) return true;
+
+    // Allow for single digit differences (OCR misreads)
+    if (Math.abs(clean1.length - clean2.length) <= 1) {
+      // Calculate character similarity
+      const shorter = clean1.length < clean2.length ? clean1 : clean2;
+      const longer = clean1.length >= clean2.length ? clean1 : clean2;
+
+      let matches = 0;
+      for (let i = 0; i < shorter.length; i++) {
+        if (shorter[i] === longer[i]) matches++;
+      }
+
+      // Consider similar if 80% of digits match
+      return matches / longer.length >= 0.8;
+    }
+
+    return false;
+  }
+
+  /**
+   * Calculate similarity between two postal codes, handling partial matches
+   * Examples:
+   * - "V2Y" vs "V2Y 1N5" -> 0.8 (partial match)
+   * - "V2Y 1N5" vs "V2Y 1N5" -> 1.0 (exact match)
+   * - "V2Y" vs "V3J" -> 0.0 (no match)
+   */
+  private calculatePostalCodeSimilarity(
+    postal1: string,
+    postal2: string,
+  ): number {
+    if (!postal1 || !postal2) return 0;
+
+    // Normalize postal codes (remove spaces, convert to uppercase)
+    const clean1 = postal1.replace(/\s+/g, '').toUpperCase();
+    const clean2 = postal2.replace(/\s+/g, '').toUpperCase();
+
+    // Exact match
+    if (clean1 === clean2) return 1.0;
+
+    // Check if one is a prefix of the other (partial match)
+    const shorter = clean1.length < clean2.length ? clean1 : clean2;
+    const longer = clean1.length >= clean2.length ? clean1 : clean2;
+
+    if (longer.startsWith(shorter)) {
+      // Partial match score based on how much of the postal code matches
+      // For Canadian postal codes: first 3 characters are most important (Forward Sortation Area)
+      // "V2Y" matching "V2Y1N5" should get high score since FSA matches completely
+
+      // If the shorter code is at least 3 characters (complete FSA), give high score
+      if (shorter.length >= 3) {
+        return 0.85; // High confidence for FSA match
+      } else if (shorter.length >= 2) {
+        return 0.6; // Medium confidence for partial FSA
+      } else {
+        return 0.3; // Low confidence for single character
+      }
+    }
+
+    // Check for character-by-character similarity (for OCR errors)
+    let matches = 0;
+    const maxLength = Math.max(clean1.length, clean2.length);
+    const minLength = Math.min(clean1.length, clean2.length);
+
+    for (let i = 0; i < minLength; i++) {
+      if (clean1[i] === clean2[i]) {
+        matches++;
+      }
+    }
+
+    // Only consider it a match if at least 60% of characters match
+    const charSimilarity = matches / maxLength;
+    return charSimilarity >= 0.6 ? charSimilarity : 0;
+  }
+
+  /**
    * Calculate similarity between two store names (simple implementation)
    */
   private calculateNameSimilarity(name1: string, name2: string): number {
@@ -1552,15 +2121,20 @@ export class StoreService {
    */
   private calculateStreetNameSimilarity(name1: string, name2: string): number {
     const normalize = (name: string) => {
-      return name
-        .toLowerCase()
-        .replace(
-          /\b(st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|way|hwy|highway|pl|place|ln|lane|ct|court)\.?\b/g,
-          '',
-        )
-        .replace(/[^a-z0-9\s]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      return (
+        name
+          .toLowerCase()
+          // Remove common street type abbreviations and suffixes
+          .replace(
+            /\b(st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|way|hwy|highway|pl|place|ln|lane|ct|court)\.?\b/g,
+            '',
+          )
+          // Handle ordinal numbers: "64th" → "64", "1st" → "1", "22nd" → "22", "33rd" → "33"
+          .replace(/\b(\d+)(st|nd|rd|th)\b/g, '$1')
+          .replace(/[^a-z0-9\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+      );
     };
 
     const clean1 = normalize(name1);

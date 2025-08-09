@@ -6,12 +6,48 @@ export class Migration1753316790537 implements MigrationInterface {
   name = 'Migration1753316790537';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Check if Category table exists first
+    const tableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Category'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (!tableExists[0].exists) {
+      // Still check and add brandName to Product table if it exists
+      const productTableExists = (await queryRunner.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'Product'
+        );
+      `)) as [{ exists: boolean }];
+
+      if (productTableExists[0].exists) {
+        // Check if brandName column exists before adding it
+        const brandNameExists = (await queryRunner.query(`
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'Product' AND column_name = 'brandName'
+        `)) as Array<{ '?column?': number }>;
+
+        if (brandNameExists.length === 0) {
+          await queryRunner.query(
+            `ALTER TABLE "Product" ADD "brandName" character varying`,
+          );
+        }
+      }
+
+      return;
+    }
+
     // Check if constraint exists before dropping it
-    const constraintExists = await queryRunner.query(`
+    const constraintExists = (await queryRunner.query(`
       SELECT 1 FROM information_schema.table_constraints 
       WHERE constraint_name = 'FK_41185546107ec4b4774da68df2f' 
       AND table_name = 'Category'
-    `);
+    `)) as Array<{ '?column?': number }>;
 
     if (constraintExists.length > 0) {
       await queryRunner.query(
@@ -22,10 +58,10 @@ export class Migration1753316790537 implements MigrationInterface {
     // Check if columns exist before dropping them
     const columnsToCheck = ['parent_id', 'level', 'use_yn', 'name', 'slug'];
     for (const column of columnsToCheck) {
-      const columnExists = await queryRunner.query(`
+      const columnExists = (await queryRunner.query(`
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'Category' AND column_name = '${column}'
-      `);
+      `)) as Array<{ '?column?': number }>;
 
       if (columnExists.length > 0) {
         await queryRunner.query(
@@ -37,10 +73,10 @@ export class Migration1753316790537 implements MigrationInterface {
     // Check if columns exist before adding them
     const newColumnsToCheck = ['category1', 'category2', 'category3'];
     for (const column of newColumnsToCheck) {
-      const columnExists = await queryRunner.query(`
+      const columnExists = (await queryRunner.query(`
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'Category' AND column_name = '${column}'
-      `);
+      `)) as Array<{ '?column?': number }>;
 
       if (columnExists.length === 0) {
         await queryRunner.query(`ALTER TABLE "Category" ADD "${column}" text`);
@@ -48,10 +84,10 @@ export class Migration1753316790537 implements MigrationInterface {
     }
 
     // Check if brandName column exists before adding it
-    const brandNameExists = await queryRunner.query(`
+    const brandNameExists = (await queryRunner.query(`
       SELECT 1 FROM information_schema.columns 
       WHERE table_name = 'Product' AND column_name = 'brandName'
-    `);
+    `)) as Array<{ '?column?': number }>;
 
     if (brandNameExists.length === 0) {
       await queryRunner.query(
@@ -61,23 +97,49 @@ export class Migration1753316790537 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Check if brandName column exists before dropping it
-    const brandNameExists = await queryRunner.query(`
-      SELECT 1 FROM information_schema.columns 
-      WHERE table_name = 'Product' AND column_name = 'brandName'
-    `);
+    // Check if Product table exists first
+    const productTableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Product'
+      );
+    `)) as [{ exists: boolean }];
 
-    if (brandNameExists.length > 0) {
-      await queryRunner.query(`ALTER TABLE "Product" DROP COLUMN "brandName"`);
+    if (productTableExists[0].exists) {
+      // Check if brandName column exists before dropping it
+      const brandNameExists = await queryRunner.query(`
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'Product' AND column_name = 'brandName'
+      `);
+
+      if (brandNameExists.length > 0) {
+        await queryRunner.query(
+          `ALTER TABLE "Product" DROP COLUMN "brandName"`,
+        );
+      }
+    }
+
+    // Check if Category table exists first
+    const categoryTableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Category'
+      );
+    `)) as [{ exists: boolean }];
+
+    if (!categoryTableExists[0].exists) {
+      return;
     }
 
     // Check if new category columns exist before dropping them
     const newColumnsToCheck = ['category3', 'category2', 'category1'];
     for (const column of newColumnsToCheck) {
-      const columnExists = await queryRunner.query(`
+      const columnExists = (await queryRunner.query(`
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'Category' AND column_name = '${column}'
-      `);
+      `)) as Array<{ '?column?': number }>;
 
       if (columnExists.length > 0) {
         await queryRunner.query(

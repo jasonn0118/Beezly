@@ -10,6 +10,10 @@ import {
 import { VectorEmbeddingService } from '../product/vector-embedding.service';
 import { StoreService } from '../store/store.service';
 import { Store } from '../entities/store.entity';
+import {
+  DateValidationResult,
+  DateValidationUtil,
+} from '../utils/date-validation.util';
 
 export interface OcrItem {
   name: string;
@@ -88,6 +92,8 @@ export interface OcrResult {
   azure_confidence?: number;
   engine_used: string;
   uploaded_file_path?: string;
+  // Date validation results for user confirmation
+  date_validation?: DateValidationResult;
 }
 
 export interface EnhancedOcrResult extends Omit<OcrResult, 'items'> {
@@ -799,7 +805,7 @@ export class OcrService {
             store_address: extractedAddress,
           });
 
-          if (searchResult && searchResult.confidence >= 0.7) {
+          if (searchResult && searchResult.confidence >= 0.85) {
             // Store found with good confidence
             storeSearchResult = {
               storeFound: true,
@@ -846,10 +852,17 @@ export class OcrService {
         }
       }
 
+      // Add date validation to the result
+      const dateValidation = DateValidationUtil.validateReceiptDate(
+        ocrResult.date,
+      );
+      DateValidationUtil.logValidationResult(dateValidation);
+
       const result: EnhancedOcrResult = {
         ...ocrResult,
         items: enhancedItems,
         normalization_summary: normalizationSummary,
+        date_validation: dateValidation,
       };
 
       if (storeSearchResult) {
@@ -1511,7 +1524,7 @@ export class OcrService {
         store_address: extractedAddress,
       });
 
-      if (storeSearchResult && storeSearchResult.confidence >= 0.7) {
+      if (storeSearchResult && storeSearchResult.confidence >= 0.85) {
         // Store found with good confidence
         return {
           storeFound: true,

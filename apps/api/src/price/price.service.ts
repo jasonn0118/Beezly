@@ -51,6 +51,12 @@ export class PriceService {
       );
     }
 
+    console.log('💰 Price Creation Debug:');
+    console.log(`  Product SK: ${createPriceDto.productSk}`);
+    console.log(`  Store SK: ${createPriceDto.storeSk}`);
+    console.log(`  Price: ${createPriceDto.price}`);
+    console.log(`  Currency: ${createPriceDto.currency || 'CAD'}`);
+
     const price = this.priceRepository.create({
       productSk: createPriceDto.productSk,
       storeSk: createPriceDto.storeSk,
@@ -61,7 +67,13 @@ export class PriceService {
       flaggedCount: 0,
     });
 
-    return await this.priceRepository.save(price);
+    const savedPrice = await this.priceRepository.save(price);
+
+    console.log('✅ Price saved successfully:');
+    console.log(`  Price SK: ${savedPrice.priceSk}`);
+    console.log(`  Recorded at: ${savedPrice.recordedAt.toISOString()}`);
+
+    return savedPrice;
   }
 
   async getPricesByProduct(productSk: string): Promise<PriceWithRelations[]> {

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProductService } from './product.service';
 import { ProductController } from './product.controller';
@@ -13,7 +13,10 @@ import { UnmatchedProductService } from './unmatched-product.service';
 import { ProductConfirmationService } from './product-confirmation.service';
 import { UnprocessedProductService } from './unprocessed-product.service';
 import { ProductSelectionService } from './product-selection.service';
+import { OpenFoodFactsApiService } from './openfoodfacts-api.service';
 import { StoreModule } from '../store/store.module';
+import { GamificationModule } from '../gamification/gamification.module';
+import { AuthModule } from '../auth/auth.module';
 import { Product } from '../entities/product.entity';
 import { Category } from '../entities/category.entity';
 import { Store } from '../entities/store.entity';
@@ -38,6 +41,8 @@ import { ReceiptItemNormalization } from '../entities/receipt-item-normalization
       ReceiptItemNormalization,
     ]),
     StoreModule,
+    GamificationModule, // Import GamificationModule to make GameScoreService available
+    forwardRef(() => AuthModule), // For JwtAuthGuard access
   ],
   controllers: [ProductController],
   providers: [
@@ -53,6 +58,7 @@ import { ReceiptItemNormalization } from '../entities/receipt-item-normalization
     ProductConfirmationService,
     UnprocessedProductService,
     ProductSelectionService,
+    OpenFoodFactsApiService,
   ],
   exports: [
     ProductService,
@@ -67,6 +73,7 @@ import { ReceiptItemNormalization } from '../entities/receipt-item-normalization
     ProductConfirmationService,
     UnprocessedProductService,
     ProductSelectionService,
+    OpenFoodFactsApiService,
   ],
 })
 export class ProductModule {}

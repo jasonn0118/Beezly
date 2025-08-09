@@ -36,10 +36,18 @@ import {
   ProcessReceiptDto,
   ProcessReceiptEnhancedDto,
 } from './dto/process-receipt.dto';
+
+// DTO for store confirmation
+class ConfirmStoreDto {
+  receiptId: string;
+  storeId: string;
+}
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserProfileDTO } from '../../../packages/types/dto/user';
+import { ConfirmReceiptDateDto } from './dto/confirm-receipt-date.dto';
+import { GameScoreService } from '../gamification/game-score.service';
 
 @ApiTags('OCR')
 @Controller('ocr')
@@ -53,6 +61,7 @@ export class OcrController {
     @InjectRepository(ReceiptItemNormalization)
     private readonly receiptItemNormalizationRepository: Repository<ReceiptItemNormalization>,
     private readonly configService: ConfigService,
+    private readonly gameScoreService: GameScoreService,
   ) {}
 
   @Post('health')
@@ -498,6 +507,42 @@ export class OcrController {
         receiptId = receipt.receiptSk;
         console.log(`Receipt created in database with ID: ${receiptId}`);
 
+        // Award points for receipt upload (only for authenticated users)
+        if (request.user?.id) {
+          try {
+            const scoreResult = await this.gameScoreService.awardPoints(
+              request.user.id,
+              'RECEIPT_UPLOAD',
+              receiptId,
+              'receipt',
+              1,
+              {
+                merchant: ocrResult.merchant,
+                itemCount: ocrResult.items?.length || 0,
+                totalAmount: ocrResult.total,
+              },
+            );
+
+            if (scoreResult?.newBadges?.length > 0) {
+              console.log(
+                `User earned ${scoreResult.newBadges.length} new badges for receipt upload`,
+              );
+            }
+
+            if (scoreResult?.rankChange) {
+              console.log(
+                `User rank changed from ${scoreResult.rankChange.oldTier} to ${scoreResult.rankChange.newTier}`,
+              );
+            }
+          } catch (scoringError) {
+            console.warn(
+              'Error awarding points for receipt upload:',
+              scoringError,
+            );
+            // Don't fail the receipt processing if scoring fails
+          }
+        }
+
         // Step 3: Create receipt_item_normalizations to link receipt items with normalized products
         try {
           await this.createReceiptItemNormalizations(
@@ -534,6 +579,44 @@ export class OcrController {
           // Add uploaded file path to response if available
           ...(uploadedFilePath && { uploaded_file_path: uploadedFilePath }),
         },
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('confirm-store-for-receipt')
+  @Public() // Allow non-authenticated users to confirm stores
+  @ApiOperation({
+    summary: 'Confirm/update store for a receipt',
+    description:
+      'Updates the store relationship for a receipt based on user selection during receipt processing workflow',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Store confirmed and receipt updated successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt or store not found',
+  })
+  async confirmStoreForReceipt(
+    @Body() body: ConfirmStoreDto,
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.receiptService.updateReceiptStore(
+        body.receiptId,
+        body.storeId,
+      );
+      return {
+        success: true,
+        message: 'Store confirmed and receipt updated successfully',
       };
     } catch (error) {
       throw new HttpException(
@@ -603,6 +686,62 @@ export class OcrController {
     } else {
       console.log(
         'No normalizations to create - no normalized products found in OCR result',
+      );
+    }
+  }
+
+  @Post('confirm-receipt-date')
+  @Public() // Allow non-authenticated users to confirm dates
+  @ApiOperation({
+    summary: 'Confirm/update receipt purchase date',
+    description:
+      'Updates the purchase date for a receipt based on user confirmation. Used when OCR extracts incorrect dates (e.g., 2028 instead of 2023).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Date confirmed and receipt updated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+        receipt: {
+          type: 'object',
+          description: 'Updated receipt with correct date',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid date provided',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Receipt not found',
+  })
+  async confirmReceiptDate(
+    @Body() body: ConfirmReceiptDateDto,
+  ): Promise<{ success: boolean; message: string; receipt: unknown }> {
+    try {
+      const updatedReceipt = await this.receiptService.updateReceiptDate(
+        body.receiptId,
+        body.confirmedDate,
+        body.confirmedTime,
+      );
+
+      return {
+        success: true,
+        message: 'Date confirmed and receipt updated successfully',
+        receipt: updatedReceipt,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

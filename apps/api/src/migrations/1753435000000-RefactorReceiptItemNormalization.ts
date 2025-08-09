@@ -6,6 +6,9 @@ export class RefactorReceiptItemNormalization1753435000000
   name = 'RefactorReceiptItemNormalization1753435000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Check if ReceiptItem table exists, if not, create it first
+    await this.ensureReceiptItemTableExists(queryRunner);
+
     // Step 1: Create the receipt_item_normalizations table
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "receipt_item_normalizations" (
@@ -56,32 +59,48 @@ export class RefactorReceiptItemNormalization1753435000000
     `);
 
     // Step 2: Migrate existing normalized data from ReceiptItem to receipt_item_normalizations
-    // Only migrate items that have normalized data
-    await queryRunner.query(`
-      INSERT INTO "receipt_item_normalizations" (
-        "receipt_item_sk",
-        "normalized_product_sk",
-        "confidence_score",
-        "normalization_method",
-        "is_selected",
-        "similarity_score"
-      )
-      SELECT DISTINCT ON (ri."receiptitem_sk", np."normalized_product_sk")
-        ri."receiptitem_sk",
-        np."normalized_product_sk",
-        COALESCE(ri."confidence_score", np."confidence_score", 0.5),
-        COALESCE(ri."normalization_method", 'migration'),
-        true, -- Mark migrated items as selected
-        NULL
-      FROM "ReceiptItem" ri
-      INNER JOIN "Receipt" r ON ri."receipt_sk" = r."receipt_sk"
-      INNER JOIN "Store" s ON r."store_sk" = s."store_sk"
-      INNER JOIN "normalized_products" np ON 
-        ri."raw_name" = np."raw_name" AND 
-        s."name" = np."merchant"
-      WHERE ri."normalized_name" IS NOT NULL
-        AND ri."raw_name" IS NOT NULL
-    `);
+    // Only migrate items that have normalized data AND all required tables exist
+    const canMigrateData =
+      await this.checkDataMigrationPrerequisites(queryRunner);
+
+    if (canMigrateData) {
+      console.log(
+        '✅ All prerequisite tables found, migrating existing data...',
+      );
+      await queryRunner.query(`
+        INSERT INTO "receipt_item_normalizations" (
+          "receipt_item_sk",
+          "normalized_product_sk",
+          "confidence_score",
+          "normalization_method",
+          "is_selected",
+          "similarity_score"
+        )
+        SELECT DISTINCT ON (ri."receiptitem_sk", np."normalized_product_sk")
+          ri."receiptitem_sk",
+          np."normalized_product_sk",
+          COALESCE(ri."confidence_score", np."confidence_score", 0.5),
+          COALESCE(ri."normalization_method", 'migration'),
+          true, -- Mark migrated items as selected
+          NULL
+        FROM "ReceiptItem" ri
+        INNER JOIN "Receipt" r ON ri."receipt_sk" = r."receipt_sk"
+        INNER JOIN "Store" s ON r."store_sk" = s."store_sk"
+        INNER JOIN "normalized_products" np ON 
+          ri."raw_name" = np."raw_name" AND 
+          s."name" = np."merchant"
+        WHERE ri."normalized_name" IS NOT NULL
+          AND ri."raw_name" IS NOT NULL
+      `);
+      console.log('✅ Data migration completed');
+    } else {
+      console.log(
+        '⚠️  Skipping data migration - prerequisite tables (Receipt, Store, normalized_products) not found',
+      );
+      console.log(
+        'ℹ️   This is normal for new environments. Data will be created through normal operations.',
+      );
+    }
 
     // Step 3: Add new columns to ReceiptItem
     await this.addColumnIfNotExists(
@@ -112,18 +131,22 @@ export class RefactorReceiptItemNormalization1753435000000
       'integer',
     );
 
-    // Step 4: Update boolean flags based on existing data
-    await queryRunner.query(`
-      UPDATE "ReceiptItem" 
-      SET "is_discount_line" = "is_discount"
-      WHERE "is_discount" = true
-    `);
+    // Step 4: Update boolean flags based on existing data (only if columns exist)
+    if (await this.columnExists(queryRunner, 'ReceiptItem', 'is_discount')) {
+      await queryRunner.query(`
+        UPDATE "ReceiptItem" 
+        SET "is_discount_line" = "is_discount"
+        WHERE "is_discount" = true
+      `);
+    }
 
-    await queryRunner.query(`
-      UPDATE "ReceiptItem" 
-      SET "is_adjustment_line" = "is_adjustment"
-      WHERE "is_adjustment" = true
-    `);
+    if (await this.columnExists(queryRunner, 'ReceiptItem', 'is_adjustment')) {
+      await queryRunner.query(`
+        UPDATE "ReceiptItem" 
+        SET "is_adjustment_line" = "is_adjustment"
+        WHERE "is_adjustment" = true
+      `);
+    }
 
     // Step 5: Drop normalization-related columns from ReceiptItem
     // Keep raw_name and item_code as they're OCR data
@@ -272,10 +295,29 @@ export class RefactorReceiptItemNormalization1753435000000
     columnName: string,
     columnDefinition: string,
   ): Promise<void> {
-    const table = await queryRunner.getTable(tableName);
-    const column = table?.findColumnByName(columnName);
+    // First check if the table exists
+    const tableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = '${tableName}'
+      );
+    `)) as [{ exists: boolean }];
 
-    if (!column) {
+    if (!tableExists[0].exists) {
+      console.log(
+        `⚠️  Table ${tableName} does not exist. Skipping column ${columnName} addition.`,
+      );
+      return;
+    }
+
+    // Check if column already exists
+    const columnExists = (await queryRunner.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = '${tableName}' AND column_name = '${columnName}'
+    `)) as Array<{ '?column?': number }>;
+
+    if (columnExists.length === 0) {
       await queryRunner.query(
         `ALTER TABLE "${tableName}" ADD "${columnName}" ${columnDefinition}`,
       );
@@ -295,10 +337,29 @@ export class RefactorReceiptItemNormalization1753435000000
     tableName: string,
     columnName: string,
   ): Promise<void> {
-    const table = await queryRunner.getTable(tableName);
-    const column = table?.findColumnByName(columnName);
+    // First check if the table exists
+    const tableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = '${tableName}'
+      );
+    `)) as [{ exists: boolean }];
 
-    if (column) {
+    if (!tableExists[0].exists) {
+      console.log(
+        `⚠️  Table ${tableName} does not exist. Skipping column ${columnName} removal.`,
+      );
+      return;
+    }
+
+    // Check if column exists
+    const columnExists = (await queryRunner.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = '${tableName}' AND column_name = '${columnName}'
+    `)) as Array<{ '?column?': number }>;
+
+    if (columnExists.length > 0) {
       await queryRunner.query(
         `ALTER TABLE "${tableName}" DROP COLUMN "${columnName}"`,
       );
@@ -307,6 +368,108 @@ export class RefactorReceiptItemNormalization1753435000000
       console.log(
         `ℹ️  Column ${columnName} doesn't exist in ${tableName}, skipping`,
       );
+    }
+  }
+
+  /**
+   * Helper method to check if a column exists in a table
+   */
+  private async columnExists(
+    queryRunner: QueryRunner,
+    tableName: string,
+    columnName: string,
+  ): Promise<boolean> {
+    const result = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = '${tableName}' 
+        AND column_name = '${columnName}'
+      )
+    `)) as [{ exists: boolean }];
+
+    return result[0]?.exists || false;
+  }
+
+  /**
+   * Helper method to check if all tables needed for data migration exist
+   */
+  private async checkDataMigrationPrerequisites(
+    queryRunner: QueryRunner,
+  ): Promise<boolean> {
+    const requiredTables = [
+      'ReceiptItem',
+      'Receipt',
+      'Store',
+      'normalized_products',
+    ];
+
+    for (const tableName of requiredTables) {
+      const tableExists = (await queryRunner.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = '${tableName}'
+        )
+      `)) as [{ exists: boolean }];
+
+      if (!tableExists[0]?.exists) {
+        console.log(`⚠️  Required table "${tableName}" not found`);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Helper method to ensure ReceiptItem table exists
+   * Creates it if it doesn't exist (for new environments)
+   */
+  private async ensureReceiptItemTableExists(
+    queryRunner: QueryRunner,
+  ): Promise<void> {
+    const tableExists = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'ReceiptItem'
+      )
+    `)) as [{ exists: boolean }];
+
+    if (!tableExists[0]?.exists) {
+      console.log('⚠️  ReceiptItem table not found, creating it...');
+
+      // Create UUID extension if it doesn't exist
+      await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
+
+      // Create ReceiptItem table (from InitialSchema)
+      await queryRunner.query(`
+        INSERT INTO "typeorm_metadata"("database", "schema", "table", "type", "name", "value") 
+        VALUES (current_database(), 'public', 'ReceiptItem', 'GENERATED_COLUMN', 'line_total', '"price" * "quantity"')
+      `);
+
+      await queryRunner.query(`
+        CREATE TABLE "ReceiptItem" (
+          "id" SERIAL NOT NULL, 
+          "created_at" TIMESTAMP NOT NULL DEFAULT now(), 
+          "updated_at" TIMESTAMP NOT NULL DEFAULT now(), 
+          "receiptitem_sk" uuid NOT NULL DEFAULT uuid_generate_v4(), 
+          "receipt_sk" uuid, 
+          "product_sk" uuid, 
+          "price" numeric NOT NULL, 
+          "quantity" integer NOT NULL DEFAULT '1', 
+          "line_total" numeric GENERATED ALWAYS AS ("price" * "quantity") STORED NOT NULL, 
+          "raw_name" character varying(255),
+          "item_code" character varying(50),
+          CONSTRAINT "UQ_ccaa04aaef141c8c0706bba5f33" UNIQUE ("receiptitem_sk"), 
+          CONSTRAINT "PK_63dbeaf2451849f0f8b492ea3e5" PRIMARY KEY ("id")
+        )
+      `);
+
+      console.log('✅ Created ReceiptItem table');
+    } else {
+      console.log('✅ ReceiptItem table already exists');
     }
   }
 }

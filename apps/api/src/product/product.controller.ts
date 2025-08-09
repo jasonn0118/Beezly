@@ -1,67 +1,74 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
+  Delete,
   Get,
+  NotFoundException,
+  Param,
   Post,
   Put,
-  Delete,
-  Body,
-  Param,
   Query,
-  UseInterceptors,
   UploadedFile,
-  BadRequestException,
-  NotFoundException,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiConsumes,
+  ApiBearerAuth,
   ApiBody,
+  ApiConsumes,
+  ApiOperation,
   ApiQuery,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
-import { ProductService } from './product.service';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
-import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
-import { ProductSearchResponseDto } from './dto/product-search-response.dto';
-import {
-  EmbeddingSearchRequestDto,
-  EmbeddingSearchResponseDto,
-  EmbeddingSearchResultDto,
-  BatchEmbeddingSearchRequestDto,
-  BatchEmbeddingSearchResponseDto,
-  BatchEmbeddingSearchResultDto,
-} from './dto/embedding-search.dto';
-import { VectorEmbeddingService } from './vector-embedding.service';
-import { ProductLinkingService } from './product-linking.service';
-import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
-import { ProductConfirmationService } from './product-confirmation.service';
-import { EnhancedReceiptLinkingService } from './enhanced-receipt-linking.service';
-import { ReceiptWorkflowIntegrationService } from './receipt-workflow-integration.service';
-import { EnhancedProductResponseDto } from '../barcode/dto/enhanced-product-response.dto';
+import { UserProfileDTO } from '../../../packages/types/dto/user';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   AddProductPriceDto,
   AddProductPriceResponseDto,
 } from '../barcode/dto/add-product-price.dto';
+import { EnhancedProductResponseDto } from '../barcode/dto/enhanced-product-response.dto';
+import { Product } from '../entities/product.entity';
 import {
-  ProcessReceiptConfirmationDto,
-  ReceiptConfirmationResponseDto,
-  GetConfirmationCandidatesResponseDto,
+  UnprocessedProductReason,
+  UnprocessedProductStatus,
+} from '../entities/unprocessed-product.entity';
+import { GameScoreService } from '../gamification/game-score.service';
+import {
+  BatchEmbeddingSearchRequestDto,
+  BatchEmbeddingSearchResponseDto,
+  BatchEmbeddingSearchResultDto,
+  EmbeddingSearchRequestDto,
+  EmbeddingSearchResponseDto,
+  EmbeddingSearchResultDto,
+} from './dto/embedding-search.dto';
+import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
+import { ProductSearchResponseDto } from './dto/product-search-response.dto';
+import {
   ConfirmationStatsResponseDto,
-  ReceiptPendingSelectionsResponseDto,
+  GetConfirmationCandidatesResponseDto,
+  ProcessReceiptConfirmationDto,
   ProcessReceiptSelectionsDto,
+  ReceiptConfirmationResponseDto,
+  ReceiptPendingSelectionsResponseDto,
   ReceiptSelectionsResponseDto,
 } from './dto/receipt-confirmation.dto';
+import { EnhancedReceiptLinkingService } from './enhanced-receipt-linking.service';
+import { OpenFoodFactsApiService } from './openfoodfacts-api.service';
+import { ProductConfirmationService } from './product-confirmation.service';
+import { ProductLinkingService } from './product-linking.service';
+import { ProductService } from './product.service';
+import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
+import { ReceiptWorkflowIntegrationService } from './receipt-workflow-integration.service';
 import {
-  UnprocessedProductService,
   BulkReviewAction,
+  UnprocessedProductService,
 } from './unprocessed-product.service';
-import {
-  UnprocessedProductStatus,
-  UnprocessedProductReason,
-} from '../entities/unprocessed-product.entity';
-import { Product } from '../entities/product.entity';
+import { VectorEmbeddingService } from './vector-embedding.service';
 
 @ApiTags('Products')
 @Controller('products')
@@ -75,6 +82,8 @@ export class ProductController {
     private readonly enhancedReceiptLinkingService: EnhancedReceiptLinkingService,
     private readonly receiptWorkflowIntegrationService: ReceiptWorkflowIntegrationService,
     private readonly unprocessedProductService: UnprocessedProductService,
+    private readonly gameScoreService: GameScoreService,
+    private readonly openFoodFactsApiService: OpenFoodFactsApiService,
   ) {}
 
   @Get()
@@ -335,12 +344,205 @@ export class ProductController {
       mimeType = imageFile.mimetype;
     }
 
-    return this.productService.createProductWithPriceAndStore(
+    const result = await this.productService.createProductWithPriceAndStore(
       productData,
       imageBuffer,
       mimeType,
       'default_user', // userSk
     );
+
+    // TODO: Award points for product registration when authentication is implemented
+    // For now, this endpoint doesn't award points since there's no authenticated user
+
+    return result;
+  }
+
+  @Post('authenticated')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Create a new product with authentication and point rewards',
+    description: `
+      **Authenticated Product Creation Endpoint**
+      
+      Same functionality as the main product creation endpoint but:
+      - Requires JWT authentication
+      - Awards +20 points for PRODUCT_REGISTRATION
+      - Returns scoring information in response
+      
+      Creates a new product with flexible store linking options and awards gamification points.
+    `,
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Product data with optional image and store selection',
+    schema: {
+      type: 'object',
+      properties: {
+        // Core product fields
+        name: { type: 'string', example: 'Organic Apple' },
+        barcode: { type: 'string', example: '1234567890123' },
+        barcodeType: {
+          type: 'string',
+          example: 'ean13',
+          description: 'Type of barcode (optional)',
+          enum: [
+            'code39',
+            'ean8',
+            'ean13',
+            'codabar',
+            'itf14',
+            'code128',
+            'upc_a',
+            'upc_e',
+          ],
+        },
+        category: { type: 'number', example: 101001 },
+        brandName: {
+          type: 'string',
+          example: 'Cheil Jedang',
+          description: 'Brand name (optional)',
+        },
+        price: {
+          type: 'number',
+          example: 5000,
+          description: 'Product price at selected store (optional)',
+        },
+        currency: {
+          type: 'string',
+          example: 'CAD',
+          description: 'Currency code (default: CAD)',
+        },
+        storeSk: {
+          type: 'string',
+          format: 'uuid',
+          example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+          description: 'Existing store UUID (optional)',
+        },
+        googlePlacesStore: {
+          type: 'object',
+          description: 'Google Places store data (optional)',
+        },
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: 'Product image file (optional)',
+        },
+      },
+      required: ['name', 'barcode', 'category'],
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description:
+      'Product successfully created with gamification points awarded',
+    schema: {
+      type: 'object',
+      allOf: [
+        { $ref: '#/components/schemas/ProductResponseDto' },
+        {
+          type: 'object',
+          properties: {
+            pointsAwarded: { type: 'number', example: 20 },
+            newBadges: { type: 'number', example: 0 },
+            rankChange: {
+              type: 'object',
+              properties: {
+                oldTier: { type: 'string', example: 'busy_bee' },
+                newTier: { type: 'string', example: 'queen_bee' },
+              },
+            },
+          },
+        },
+      ],
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - validation errors or conflicting store data',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - valid JWT token required',
+  })
+  @UseInterceptors(FileInterceptor('image'))
+  async createProductAuthenticated(
+    @CurrentUser() user: UserProfileDTO,
+    @Body() productData: ProductCreateDto,
+    @UploadedFile() imageFile?: Express.Multer.File,
+  ): Promise<
+    ProductResponseDto & {
+      pointsAwarded?: number;
+      newBadges?: number;
+      rankChange?: any;
+    }
+  > {
+    // Validate store selection logic - either storeSk OR googlePlacesStore, not both
+    const hasStoreSk = !!productData.storeSk;
+    const hasGoogleStore = !!productData.googlePlacesStore;
+
+    if (hasStoreSk && hasGoogleStore) {
+      throw new BadRequestException(
+        'Provide either storeSk OR googlePlacesStore, not both',
+      );
+    }
+
+    // Handle optional image upload
+    let imageBuffer: Buffer | undefined;
+    let mimeType: string | undefined;
+
+    if (imageFile) {
+      imageBuffer = imageFile.buffer;
+      mimeType = imageFile.mimetype;
+    }
+
+    // Create the product
+    const result = await this.productService.createProductWithPriceAndStore(
+      productData,
+      imageBuffer,
+      mimeType,
+      user.id, // Use authenticated user ID
+    );
+
+    // Award points for product registration
+    let pointsAwarded = 0;
+    let newBadges = 0;
+    let rankChange: any;
+
+    try {
+      const scoreResult = await this.gameScoreService.awardPoints(
+        user.id,
+        'PRODUCT_REGISTRATION',
+        result.product_sk,
+        'product_creation',
+        1,
+        {
+          productName: productData.name,
+          barcode: productData.barcode,
+          category: productData.category,
+          hasImage: !!imageFile,
+          hasStore: hasStoreSk || hasGoogleStore,
+          hasPrice: !!productData.price,
+        },
+      );
+
+      pointsAwarded = scoreResult.activityLog.pointsAwarded;
+      newBadges = scoreResult.newBadges?.length || 0;
+      rankChange = scoreResult.rankChange;
+    } catch (scoringError) {
+      // Don't fail product creation if scoring fails, just log it
+      console.warn(
+        'Failed to award points for product registration:',
+        scoringError,
+      );
+    }
+
+    return {
+      ...result,
+      pointsAwarded,
+      newBadges,
+      rankChange,
+    };
   }
 
   @Put(':id')
@@ -406,7 +608,7 @@ export class ProductController {
   @ApiQuery({
     name: 'maxDistance',
     description:
-      'Maximum distance in kilometers for nearby stores (default: 10km)',
+      'Maximum distance in kilometers for nearby stores (default: 50km)',
     required: false,
     type: Number,
     example: 10,
@@ -456,7 +658,7 @@ export class ProductController {
       storeSk,
       latitude,
       longitude,
-      maxDistance || 10, // Default to 10km radius
+      maxDistance || 50, // Default to 10km radius
     );
   }
 
@@ -941,6 +1143,52 @@ export class ProductController {
         confirmationRequest.items,
         confirmationRequest.userId,
       );
+
+    // Award points for OCR verification (if user successfully confirmed items)
+    if (confirmationRequest.userId && confirmationRequest.items?.length > 0) {
+      try {
+        const verifiedItemsCount = confirmationRequest.items.filter(
+          (item) => item.isConfirmed === true || item.normalizedName,
+        ).length;
+
+        if (verifiedItemsCount > 0) {
+          // Award points with multiplier based on number of verified items
+          const multiplier = Math.min(verifiedItemsCount / 5, 3); // Cap at 3x for very large receipts
+
+          const scoreResult = await this.gameScoreService.awardPoints(
+            confirmationRequest.userId,
+            'OCR_VERIFICATION',
+            confirmationRequest.receiptId || 'unknown',
+            'confirmation',
+            multiplier,
+            {
+              totalItems: confirmationRequest.items.length,
+              verifiedItems: verifiedItemsCount,
+              accuracy: verifiedItemsCount / confirmationRequest.items.length,
+            },
+          );
+
+          if (scoreResult?.newBadges?.length > 0) {
+            console.log(
+              `User earned ${scoreResult.newBadges.length} new badges for OCR verification`,
+            );
+          }
+
+          if (scoreResult?.rankChange) {
+            console.log(
+              `User rank changed from ${scoreResult.rankChange.oldTier} to ${scoreResult.rankChange.newTier}`,
+            );
+          }
+        }
+      } catch (scoringError) {
+        console.warn(
+          'Error awarding points for OCR verification:',
+          scoringError,
+        );
+        // Don't fail the confirmation process if scoring fails
+      }
+    }
+
     // Map the service result to our DTO structure
     return result as ReceiptConfirmationResponseDto;
   }
@@ -1694,5 +1942,183 @@ export class ProductController {
     return this.unprocessedProductService.cleanupProcessedUnprocessedProducts(
       olderThanDays || 30,
     );
+  }
+
+  // OpenFoodFacts Integration Endpoints
+
+  @Post('openfoodfacts/fetch')
+  @ApiOperation({
+    summary: 'Fetch and import products from OpenFoodFacts API',
+    description: `
+      **OpenFoodFacts Product Import**
+      
+      Fetches products from OpenFoodFacts API and maps them to our Product database.
+      Supports filtering by store and country, with automatic category mapping.
+      
+      🏪 **Store Filtering**: Target specific stores (default: Costco)
+      🌍 **Country Filtering**: Target specific countries (default: US & Canada)
+      📊 **Category Mapping**: Automatically creates categories from OpenFoodFacts taxonomy
+      🔄 **Duplicate Prevention**: Skips products that already exist by barcode
+      
+      **Use Cases**:
+      - Initial product catalog population
+      - Store-specific product updates
+      - Category enrichment
+    `,
+  })
+  @ApiQuery({
+    name: 'pages',
+    description: 'Number of pages to fetch (each page = ~1000 products)',
+    required: false,
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'stores',
+    description: 'Store filter (OpenFoodFacts store tag)',
+    required: false,
+    type: String,
+    example: 'costco',
+  })
+  @ApiQuery({
+    name: 'countries',
+    description: 'Country filter (pipe-separated OpenFoodFacts country tags)',
+    required: false,
+    type: String,
+    example: 'en:united-states|en:canada',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'OpenFoodFacts import results',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        totalFetched: { type: 'number', example: 985 },
+        totalMapped: { type: 'number', example: 743 },
+        duplicatesSkipped: { type: 'number', example: 231 },
+        newCategories: { type: 'number', example: 47 },
+        errors: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['Failed to map product 1234567890: Invalid barcode format'],
+        },
+        processingTimeMs: { type: 'number', example: 45000 },
+        message: {
+          type: 'string',
+          example: 'Successfully imported 743 products from OpenFoodFacts',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - invalid parameters',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: { type: 'string', example: 'Pages must be between 1 and 10' },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 502,
+    description: 'Bad Gateway - OpenFoodFacts API unavailable',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 502 },
+        message: {
+          type: 'string',
+          example: 'Failed to fetch from OpenFoodFacts API: Network timeout',
+        },
+        error: { type: 'string', example: 'Bad Gateway' },
+      },
+    },
+  })
+  async fetchOpenFoodFactsProducts(
+    @Query('pages') pages?: number,
+    @Query('stores') stores?: string,
+    @Query('countries') countries?: string,
+  ) {
+    // Validate parameters
+    const pageCount = pages && pages > 0 ? Math.min(pages, 10) : 1; // Limit to 10 pages max
+    const storeFilter = stores || 'costco';
+    const countryFilter = countries || 'en:united-states|en:canada';
+
+    if (pageCount < 1 || pageCount > 10) {
+      throw new BadRequestException('Pages must be between 1 and 10');
+    }
+
+    try {
+      const result = await this.openFoodFactsApiService.fetchAndMapProducts(
+        pageCount,
+        storeFilter,
+        countryFilter,
+      );
+
+      return {
+        success: true,
+        ...result,
+        message: `Successfully imported ${result.totalMapped} products from OpenFoodFacts`,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(
+        `OpenFoodFacts import failed: ${errorMessage}`,
+      );
+    }
+  }
+
+  @Get('openfoodfacts/stats')
+  @ApiOperation({
+    summary: 'Get OpenFoodFacts integration statistics',
+    description: `
+      **OpenFoodFacts Integration Statistics**
+      
+      Provides insights into the current state of OpenFoodFacts data integration:
+      - Total products from OpenFoodFacts
+      - Category enrichment statistics  
+      - Data quality metrics
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'OpenFoodFacts integration statistics',
+    schema: {
+      type: 'object',
+      properties: {
+        totalOpenFoodFactsProducts: { type: 'number', example: 15420 },
+        productsWithOpenFoodFactsSource: { type: 'number', example: 12340 },
+        categoriesFromOpenFoodFacts: { type: 'number', example: 250 },
+        integrationCoverage: { type: 'number', example: 80.0 },
+        lastFetchDate: {
+          type: 'string',
+          format: 'date-time',
+          example: '2025-01-08T10:30:00Z',
+        },
+      },
+    },
+  })
+  async getOpenFoodFactsStats() {
+    const stats = await this.openFoodFactsApiService.getIntegrationStats();
+
+    const integrationCoverage =
+      stats.totalOpenFoodFactsProducts > 0
+        ? Math.round(
+            (stats.productsWithOpenFoodFactsSource /
+              stats.totalOpenFoodFactsProducts) *
+              100 *
+              100,
+          ) / 100
+        : 0;
+
+    return {
+      ...stats,
+      integrationCoverage,
+    };
   }
 }

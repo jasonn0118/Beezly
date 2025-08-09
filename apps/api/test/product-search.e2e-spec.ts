@@ -11,6 +11,12 @@ import { ProductConfirmationService } from '../src/product/product-confirmation.
 import { EnhancedReceiptLinkingService } from '../src/product/enhanced-receipt-linking.service';
 import { ReceiptWorkflowIntegrationService } from '../src/product/receipt-workflow-integration.service';
 import { UnprocessedProductService } from '../src/product/unprocessed-product.service';
+import { OpenFoodFactsApiService } from '../src/product/openfoodfacts-api.service';
+import { AuthService } from '../src/auth/auth.service';
+import { SupabaseService } from '../src/supabase/supabase.service';
+import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard';
+import { Reflector } from '@nestjs/core';
+import { GameScoreService } from '../src/gamification/game-score.service';
 
 describe('Product Search (e2e)', () => {
   let app: INestApplication;
@@ -131,6 +137,47 @@ describe('Product Search (e2e)', () => {
             cleanupProcessedUnprocessedProducts: jest.fn(),
           },
         },
+        {
+          provide: OpenFoodFactsApiService,
+          useValue: {
+            fetchAndMapProducts: jest.fn(),
+            getIntegrationStats: jest.fn().mockResolvedValue({
+              totalOpenFoodFactsProducts: 0,
+              productsWithOpenFoodFactsSource: 0,
+              categoriesFromOpenFoodFacts: 0,
+              lastFetchDate: null,
+            }),
+          },
+        },
+        {
+          provide: AuthService,
+          useValue: {
+            validateToken: jest.fn(),
+          },
+        },
+        {
+          provide: SupabaseService,
+          useValue: {
+            supabase: {
+              auth: {
+                getUser: jest.fn(),
+              },
+            },
+          },
+        },
+        {
+          provide: JwtAuthGuard,
+          useValue: {
+            canActivate: jest.fn(() => true),
+          },
+        },
+        {
+          provide: GameScoreService,
+          useValue: {
+            awardPoints: jest.fn(),
+          },
+        },
+        Reflector,
       ],
     }).compile();
 

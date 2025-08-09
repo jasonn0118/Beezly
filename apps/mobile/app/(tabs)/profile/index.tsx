@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, FlatList, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, FlatList, Alert, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -8,12 +8,31 @@ import Leaderboard from '../../../src/components/profile/Leaderboard'; // Adjust
 import Badges from '../../../src/components/profile/Badge';             // Adjust path if needed
 import RankCard from '../../../src/components/profile/RankCard'; // Adjust path if needed
 import { useAuth } from '../../../src/contexts/AuthContext';
+import { gamificationService, UserGamificationProfile } from '../../../src/services/gamificationService';
 
 export default function ProfilePage() {
     // State to manage which tab is currently active
     const [activeTab, setActiveTab] = useState('leaderboard'); // 'leaderboard' or 'badges'
+    const [gamificationProfile, setGamificationProfile] = useState<UserGamificationProfile | null>(null);
+    const [showMenu, setShowMenu] = useState(false);
     const { isAuthenticated, isLoading, user, signOut } = useAuth();
     const router = useRouter();
+
+    // Fetch gamification profile for authenticated users
+    const fetchGamificationProfile = async () => {
+        if (!isAuthenticated) return;
+        
+        try {
+            const profile = await gamificationService.getUserProfile();
+            setGamificationProfile(profile);
+        } catch (error) {
+            console.error('Error fetching gamification profile:', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchGamificationProfile();
+    }, [isAuthenticated]);
 
     const handleSignOut = async () => {
         Alert.alert(
@@ -99,36 +118,6 @@ export default function ProfilePage() {
     // Show authenticated user content
     const renderHeader = () => (
         <View>
-            {/* User info section */}
-            <View style={styles.userInfo}>
-                <Ionicons name="person-circle" size={60} color="#FFC107" />
-                <View style={styles.userDetails}>
-                    <Text style={styles.userName}>
-                        {user?.firstName || user?.lastName 
-                            ? `${user?.firstName || ''} ${user?.lastName || ''}`.trim()
-                            : user?.email}
-                    </Text>
-                    <Text style={styles.userEmail}>{user?.email}</Text>
-                    <Text style={styles.userPoints}>{user?.pointBalance || 0} points</Text>
-                </View>
-                <View style={styles.userActions}>
-                    <TouchableOpacity 
-                        style={styles.editButton}
-                        onPress={() => router.push('/profile-edit')}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="pencil-outline" size={18} color="#FFC107" />
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={styles.signOutButton}
-                        onPress={handleSignOut}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="log-out-outline" size={20} color="#dc3545" />
-                    </TouchableOpacity>
-                </View>
-            </View>
-
             {/* Tab switcher */}
             <View style={styles.tabSwitcher}>
                 <TouchableOpacity 
@@ -151,6 +140,17 @@ export default function ProfilePage() {
 
     return (
         <View style={styles.container}>
+            {/* Menu button in top-right corner */}
+            <View style={styles.topBar}>
+                <TouchableOpacity 
+                    style={styles.menuButton}
+                    onPress={() => setShowMenu(true)}
+                    activeOpacity={0.7}
+                >
+                    <Ionicons name="ellipsis-vertical" size={24} color="white" />
+                </TouchableOpacity>
+            </View>
+
             <RankCard />
             <FlatList
                 data={[1]} // Dummy data to render one item
@@ -161,6 +161,48 @@ export default function ProfilePage() {
                 )}
                 showsVerticalScrollIndicator={false}
             />
+
+            {/* Menu Modal */}
+            <Modal
+                visible={showMenu}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowMenu(false)}
+            >
+                <TouchableOpacity 
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowMenu(false)}
+                >
+                    <View style={styles.menuDropdown}>
+                        <TouchableOpacity 
+                            style={styles.menuItem}
+                            onPress={() => {
+                                setShowMenu(false);
+                                router.push('/profile-edit');
+                            }}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="pencil-outline" size={20} color="#1f2937" style={styles.menuIcon} />
+                            <Text style={styles.menuText}>Edit Profile</Text>
+                        </TouchableOpacity>
+                        
+                        <View style={styles.menuSeparator} />
+                        
+                        <TouchableOpacity 
+                            style={styles.menuItem}
+                            onPress={() => {
+                                setShowMenu(false);
+                                handleSignOut();
+                            }}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="log-out-outline" size={20} color="#dc3545" style={styles.menuIcon} />
+                            <Text style={[styles.menuText, styles.menuTextDanger]}>Sign Out</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </View>
     );
 }
@@ -264,53 +306,58 @@ const styles = StyleSheet.create({
         color: '#4b5563',
         marginLeft: 12,
     },
-    userInfo: {
-        backgroundColor: 'white',
-        margin: 20,
-        padding: 20,
-        borderRadius: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 5,
+    topBar: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        zIndex: 10,
     },
-    userDetails: {
-        flex: 1,
-        marginLeft: 16,
-    },
-    userActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    editButton: {
+    menuButton: {
         padding: 8,
-        backgroundColor: '#f3f4f6',
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#FFC107',
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    userName: {
-        fontSize: 18,
-        fontWeight: 'bold',
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-start',
+        alignItems: 'flex-end',
+        paddingTop: 100,
+        paddingRight: 20,
+    },
+    menuDropdown: {
+        backgroundColor: 'white',
+        borderRadius: 12,
+        minWidth: 160,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+    },
+    menuIcon: {
+        marginRight: 12,
+    },
+    menuText: {
+        fontSize: 16,
+        fontWeight: '500',
         color: '#1f2937',
     },
-    userEmail: {
-        fontSize: 14,
-        color: '#6b7280',
-        marginTop: 2,
+    menuTextDanger: {
+        color: '#dc3545',
     },
-    userPoints: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#FFC107',
-        marginTop: 4,
-    },
-    signOutButton: {
-        padding: 8,
+    menuSeparator: {
+        height: 1,
+        backgroundColor: '#e5e7eb',
+        marginHorizontal: 16,
     },
     tabSwitcher: { 
         flexDirection: 'row', 

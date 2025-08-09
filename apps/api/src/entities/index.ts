@@ -14,3 +14,6 @@ export { VerificationLogs } from './verification-logs.entity';
 export { NormalizedProduct } from './normalized-product.entity';
 export { ReceiptItemNormalization } from './receipt-item-normalization.entity';
 export { UnprocessedProduct } from './unprocessed-product.entity';
+export { ActivityLog } from './activity-log.entity';
+export { UserRanking, RankTier } from './user-ranking.entity';
+export { UserDailyActivity } from './user-daily-activity.entity';
