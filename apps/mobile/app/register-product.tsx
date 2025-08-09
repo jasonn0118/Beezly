@@ -380,10 +380,16 @@ export default function RegisterProductScreen() {
                                     const uri = productDetails.image_url;
                                     const uriParts = uri.split('.');
                                     const fileType = uriParts[uriParts.length - 1];
+                                    const fileName = `photo.${fileType}`;
+                                    const imageType = `image/${fileType}`;
+
+                                    // Adjust URI for Android if it's a content:// URI
+                                    const finalUri = Platform.OS === 'android' && uri.startsWith('content://') ? `file://${uri}` : uri;
+
                                     formData.append('image', {
-                                        uri,
-                                        name: `photo.${fileType}`,
-                                        type: `image/${fileType}`,
+                                        uri: finalUri,
+                                        name: fileName,
+                                        type: imageType,
                                     } as any);
                                 }
 
