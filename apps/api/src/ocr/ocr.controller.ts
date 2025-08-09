@@ -47,6 +47,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserProfileDTO } from '../../../packages/types/dto/user';
 import { ConfirmReceiptDateDto } from './dto/confirm-receipt-date.dto';
+import { GameScoreService } from '../gamification/game-score.service';
 
 @ApiTags('OCR')
 @Controller('ocr')
@@ -60,6 +61,7 @@ export class OcrController {
     @InjectRepository(ReceiptItemNormalization)
     private readonly receiptItemNormalizationRepository: Repository<ReceiptItemNormalization>,
     private readonly configService: ConfigService,
+    private readonly gameScoreService: GameScoreService,
   ) {}
 
   @Post('health')
@@ -504,6 +506,42 @@ export class OcrController {
         );
         receiptId = receipt.receiptSk;
         console.log(`Receipt created in database with ID: ${receiptId}`);
+
+        // Award points for receipt upload (only for authenticated users)
+        if (request.user?.id) {
+          try {
+            const scoreResult = await this.gameScoreService.awardPoints(
+              request.user.id,
+              'RECEIPT_UPLOAD',
+              receiptId,
+              'receipt',
+              1,
+              {
+                merchant: ocrResult.merchant,
+                itemCount: ocrResult.items?.length || 0,
+                totalAmount: ocrResult.total,
+              },
+            );
+
+            if (scoreResult?.newBadges?.length > 0) {
+              console.log(
+                `User earned ${scoreResult.newBadges.length} new badges for receipt upload`,
+              );
+            }
+
+            if (scoreResult?.rankChange) {
+              console.log(
+                `User rank changed from ${scoreResult.rankChange.oldTier} to ${scoreResult.rankChange.newTier}`,
+              );
+            }
+          } catch (scoringError) {
+            console.warn(
+              'Error awarding points for receipt upload:',
+              scoringError,
+            );
+            // Don't fail the receipt processing if scoring fails
+          }
+        }
 
         // Step 3: Create receipt_item_normalizations to link receipt items with normalized products
         try {

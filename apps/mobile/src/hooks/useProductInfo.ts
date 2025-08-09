@@ -1,11 +1,18 @@
 import { useState, useEffect } from 'react';
 import ProductService, { Barcode, Product, UseProductInfoProps } from '../services/productService';
 import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
 
 export function useProductInfo({ scannedData, productId }: UseProductInfoProps) {
+    const { isAuthenticated } = useAuth();
     const [productInfo, setProductInfo] = useState<Product | Barcode | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
+    const [scoringResult, setScoringResult] = useState<{
+        pointsAwarded: number;
+        newBadges: number;
+        rankChange?: any;
+    } | null>(null);
 
     useEffect(() => {
         const fetchProductData = async () => {
@@ -15,9 +22,30 @@ export function useProductInfo({ scannedData, productId }: UseProductInfoProps) 
 
             try {
                 let response: Barcode | Product | undefined;
+                let scanResult: any = null;
 
                 if (scannedData?.barcode) {
-                    response = await ProductService.getBarcode(scannedData?.barcode);
+                    if (isAuthenticated) {
+                        // Use authenticated scan endpoint for points
+                        scanResult = await ProductService.scanBarcode(
+                            scannedData.barcode, 
+                            scannedData.type
+                        );
+                        
+                        if (scanResult.success && scanResult.product) {
+                            response = scanResult.product;
+                        }
+
+                        // Store scoring information
+                        setScoringResult({
+                            pointsAwarded: scanResult.pointsAwarded || 0,
+                            newBadges: scanResult.newBadges || 0,
+                            rankChange: scanResult.rankChange,
+                        });
+                    } else {
+                        // Use public endpoint for non-authenticated users
+                        response = await ProductService.getBarcode(scannedData.barcode);
+                    }
                 } else if (productId) {
                     response = await ProductService.getProduct(productId);
                 }
@@ -46,7 +74,7 @@ export function useProductInfo({ scannedData, productId }: UseProductInfoProps) 
         }else{
             setLoading(false);
         }
-    }, [productId, scannedData?.barcode]);
+    }, [productId, scannedData?.barcode, isAuthenticated]);
 
-    return { productInfo, loading, error };
+    return { productInfo, loading, error, scoringResult };
 }

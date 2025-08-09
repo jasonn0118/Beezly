@@ -7,12 +7,16 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { BarcodeType } from '@beezly/types/dto/barcode'; // Assuming this path is correct
 import { useRouter } from 'expo-router';
 import ReceiptScanResult from '../../../src/components/ReceiptScanResult'; // Assuming this path is correct
+import { useAchievementTracking } from '../../../src/hooks/useAchievementTracking';
+import { useAuth } from '../../../src/contexts/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
 export default function ScanPage() {
     const [currentView, setCurrentView] = useState<'barcodeScan' | 'receiptScan' | 'barcodeResult' | 'receiptResult'>('barcodeScan');
     const router = useRouter();
+    const { isAuthenticated } = useAuth();
+    const { trackBarcodeScanned } = useAchievementTracking();
     const [permission, requestPermission] = useCameraPermissions();
     const [scanStatus, setScanStatus] = useState('Searching for barcode...');
     const [scannedData, setScannedData] = useState<{ barcode: string; type: string } | null>(null);
@@ -55,6 +59,9 @@ export default function ScanPage() {
         setScannedData({ barcode: data, type: type as BarcodeType });
         setScanStatus('Scan Complete!');
         setCurrentView('barcodeResult');
+        
+        // Note: Achievement tracking is now handled by the backend in useProductInfo hook
+        // No need to call trackBarcodeScanned here to avoid duplicate notifications
     };
 
     useEffect(() => {

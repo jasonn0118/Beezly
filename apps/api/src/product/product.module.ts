@@ -14,6 +14,7 @@ import { ProductConfirmationService } from './product-confirmation.service';
 import { UnprocessedProductService } from './unprocessed-product.service';
 import { ProductSelectionService } from './product-selection.service';
 import { StoreModule } from '../store/store.module';
+import { GamificationModule } from '../gamification/gamification.module';
 import { Product } from '../entities/product.entity';
 import { Category } from '../entities/category.entity';
 import { Store } from '../entities/store.entity';
@@ -38,6 +39,7 @@ import { ReceiptItemNormalization } from '../entities/receipt-item-normalization
       ReceiptItemNormalization,
     ]),
     StoreModule,
+    GamificationModule, // Import GamificationModule to make GameScoreService available
   ],
   controllers: [ProductController],
   providers: [

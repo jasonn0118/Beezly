@@ -11,6 +11,7 @@ import {
   UploadedFile,
   BadRequestException,
   NotFoundException,
+  UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -20,6 +21,7 @@ import {
   ApiConsumes,
   ApiBody,
   ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
@@ -62,6 +64,10 @@ import {
   UnprocessedProductReason,
 } from '../entities/unprocessed-product.entity';
 import { Product } from '../entities/product.entity';
+import { GameScoreService } from '../gamification/game-score.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { UserProfileDTO } from '../../../packages/types/dto/user';
 
 @ApiTags('Products')
 @Controller('products')
@@ -75,6 +81,7 @@ export class ProductController {
     private readonly enhancedReceiptLinkingService: EnhancedReceiptLinkingService,
     private readonly receiptWorkflowIntegrationService: ReceiptWorkflowIntegrationService,
     private readonly unprocessedProductService: UnprocessedProductService,
+    private readonly gameScoreService: GameScoreService,
   ) {}
 
   @Get()
@@ -335,12 +342,205 @@ export class ProductController {
       mimeType = imageFile.mimetype;
     }
 
-    return this.productService.createProductWithPriceAndStore(
+    const result = await this.productService.createProductWithPriceAndStore(
       productData,
       imageBuffer,
       mimeType,
       'default_user', // userSk
     );
+
+    // TODO: Award points for product registration when authentication is implemented
+    // For now, this endpoint doesn't award points since there's no authenticated user
+
+    return result;
+  }
+
+  @Post('authenticated')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Create a new product with authentication and point rewards',
+    description: `
+      **Authenticated Product Creation Endpoint**
+      
+      Same functionality as the main product creation endpoint but:
+      - Requires JWT authentication
+      - Awards +20 points for PRODUCT_REGISTRATION
+      - Returns scoring information in response
+      
+      Creates a new product with flexible store linking options and awards gamification points.
+    `,
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Product data with optional image and store selection',
+    schema: {
+      type: 'object',
+      properties: {
+        // Core product fields
+        name: { type: 'string', example: 'Organic Apple' },
+        barcode: { type: 'string', example: '1234567890123' },
+        barcodeType: {
+          type: 'string',
+          example: 'ean13',
+          description: 'Type of barcode (optional)',
+          enum: [
+            'code39',
+            'ean8',
+            'ean13',
+            'codabar',
+            'itf14',
+            'code128',
+            'upc_a',
+            'upc_e',
+          ],
+        },
+        category: { type: 'number', example: 101001 },
+        brandName: {
+          type: 'string',
+          example: 'Cheil Jedang',
+          description: 'Brand name (optional)',
+        },
+        price: {
+          type: 'number',
+          example: 5000,
+          description: 'Product price at selected store (optional)',
+        },
+        currency: {
+          type: 'string',
+          example: 'CAD',
+          description: 'Currency code (default: CAD)',
+        },
+        storeSk: {
+          type: 'string',
+          format: 'uuid',
+          example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+          description: 'Existing store UUID (optional)',
+        },
+        googlePlacesStore: {
+          type: 'object',
+          description: 'Google Places store data (optional)',
+        },
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: 'Product image file (optional)',
+        },
+      },
+      required: ['name', 'barcode', 'category'],
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description:
+      'Product successfully created with gamification points awarded',
+    schema: {
+      type: 'object',
+      allOf: [
+        { $ref: '#/components/schemas/ProductResponseDto' },
+        {
+          type: 'object',
+          properties: {
+            pointsAwarded: { type: 'number', example: 20 },
+            newBadges: { type: 'number', example: 0 },
+            rankChange: {
+              type: 'object',
+              properties: {
+                oldTier: { type: 'string', example: 'busy_bee' },
+                newTier: { type: 'string', example: 'queen_bee' },
+              },
+            },
+          },
+        },
+      ],
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - validation errors or conflicting store data',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - valid JWT token required',
+  })
+  @UseInterceptors(FileInterceptor('image'))
+  async createProductAuthenticated(
+    @CurrentUser() user: UserProfileDTO,
+    @Body() productData: ProductCreateDto,
+    @UploadedFile() imageFile?: Express.Multer.File,
+  ): Promise<
+    ProductResponseDto & {
+      pointsAwarded?: number;
+      newBadges?: number;
+      rankChange?: any;
+    }
+  > {
+    // Validate store selection logic - either storeSk OR googlePlacesStore, not both
+    const hasStoreSk = !!productData.storeSk;
+    const hasGoogleStore = !!productData.googlePlacesStore;
+
+    if (hasStoreSk && hasGoogleStore) {
+      throw new BadRequestException(
+        'Provide either storeSk OR googlePlacesStore, not both',
+      );
+    }
+
+    // Handle optional image upload
+    let imageBuffer: Buffer | undefined;
+    let mimeType: string | undefined;
+
+    if (imageFile) {
+      imageBuffer = imageFile.buffer;
+      mimeType = imageFile.mimetype;
+    }
+
+    // Create the product
+    const result = await this.productService.createProductWithPriceAndStore(
+      productData,
+      imageBuffer,
+      mimeType,
+      user.id, // Use authenticated user ID
+    );
+
+    // Award points for product registration
+    let pointsAwarded = 0;
+    let newBadges = 0;
+    let rankChange: any;
+
+    try {
+      const scoreResult = await this.gameScoreService.awardPoints(
+        user.id,
+        'PRODUCT_REGISTRATION',
+        result.product_sk,
+        'product_creation',
+        1,
+        {
+          productName: productData.name,
+          barcode: productData.barcode,
+          category: productData.category,
+          hasImage: !!imageFile,
+          hasStore: hasStoreSk || hasGoogleStore,
+          hasPrice: !!productData.price,
+        },
+      );
+
+      pointsAwarded = scoreResult.activityLog.pointsAwarded;
+      newBadges = scoreResult.newBadges?.length || 0;
+      rankChange = scoreResult.rankChange;
+    } catch (scoringError) {
+      // Don't fail product creation if scoring fails, just log it
+      console.warn(
+        'Failed to award points for product registration:',
+        scoringError,
+      );
+    }
+
+    return {
+      ...result,
+      pointsAwarded,
+      newBadges,
+      rankChange,
+    };
   }
 
   @Put(':id')
@@ -941,6 +1141,52 @@ export class ProductController {
         confirmationRequest.items,
         confirmationRequest.userId,
       );
+
+    // Award points for OCR verification (if user successfully confirmed items)
+    if (confirmationRequest.userId && confirmationRequest.items?.length > 0) {
+      try {
+        const verifiedItemsCount = confirmationRequest.items.filter(
+          (item) => item.isConfirmed === true || item.normalizedName,
+        ).length;
+
+        if (verifiedItemsCount > 0) {
+          // Award points with multiplier based on number of verified items
+          const multiplier = Math.min(verifiedItemsCount / 5, 3); // Cap at 3x for very large receipts
+
+          const scoreResult = await this.gameScoreService.awardPoints(
+            confirmationRequest.userId,
+            'OCR_VERIFICATION',
+            confirmationRequest.receiptId || 'unknown',
+            'confirmation',
+            multiplier,
+            {
+              totalItems: confirmationRequest.items.length,
+              verifiedItems: verifiedItemsCount,
+              accuracy: verifiedItemsCount / confirmationRequest.items.length,
+            },
+          );
+
+          if (scoreResult?.newBadges?.length > 0) {
+            console.log(
+              `User earned ${scoreResult.newBadges.length} new badges for OCR verification`,
+            );
+          }
+
+          if (scoreResult?.rankChange) {
+            console.log(
+              `User rank changed from ${scoreResult.rankChange.oldTier} to ${scoreResult.rankChange.newTier}`,
+            );
+          }
+        }
+      } catch (scoringError) {
+        console.warn(
+          'Error awarding points for OCR verification:',
+          scoringError,
+        );
+        // Don't fail the confirmation process if scoring fails
+      }
+    }
+
     // Map the service result to our DTO structure
     return result as ReceiptConfirmationResponseDto;
   }

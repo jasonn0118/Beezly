@@ -27,6 +27,9 @@ import {
   NormalizedProduct,
   ReceiptItemNormalization,
   UnprocessedProduct,
+  ActivityLog,
+  UserRanking,
+  UserDailyActivity,
 } from './entities';
 import { OcrModule } from './ocr/ocr.module';
 import { PriceModule } from './price/price.module';
@@ -36,6 +39,7 @@ import { ReceiptItemModule } from './receiptItem/receiptItem.module';
 import { StoreModule } from './store/store.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { UserModule } from './user/user.module';
+import { GamificationModule } from './gamification/gamification.module';
 
 @Module({
   imports: [
@@ -90,6 +94,9 @@ import { UserModule } from './user/user.module';
           NormalizedProduct,
           ReceiptItemNormalization,
           UnprocessedProduct,
+          ActivityLog,
+          UserRanking,
+          UserDailyActivity,
         ],
         synchronize: process.env.NODE_ENV === 'test', // Only synchronize for tests, use migrations for dev/prod
         logging:
@@ -114,6 +121,7 @@ import { UserModule } from './user/user.module';
     StoreModule,
     SupabaseModule,
     UserModule,
+    GamificationModule,
   ],
   controllers: [AppController],
   providers: [AppService, DatabaseHealthCheckService],
