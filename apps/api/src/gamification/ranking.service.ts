@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
+
+// TypeORM raw query results are inherently 'any' typed
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import {
   UserRanking,
   RankTier,
@@ -47,7 +50,8 @@ export class RankingService {
   async getLeaderboard(
     userSk?: string,
     tier?: RankTier,
-    period: 'daily' | 'weekly' | 'monthly' | 'all-time' = 'all-time',
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _period: 'daily' | 'weekly' | 'monthly' | 'all-time' = 'all-time',
   ): Promise<LeaderboardResponse> {
     const [global, tierBoard, weekly, contextual, userPosition] =
       await Promise.all([
@@ -267,7 +271,10 @@ export class RankingService {
   /**
    * Generate display name for users
    */
-  private generateDisplayName(user: any, rank: number): string {
+  private generateDisplayName(
+    user: { firstName?: string; lastName?: string } | null,
+    rank: number,
+  ): string {
     // If user has both first and last name, use them
     if (user?.firstName && user?.lastName) {
       return `${user.firstName} ${user.lastName}`;
@@ -296,7 +303,7 @@ export class RankingService {
       .andWhere('log.createdAt >= :oneWeekAgo', { oneWeekAgo })
       .getRawOne();
 
-    return parseInt(result?.weeklyPoints) || 0;
+    return parseInt(result?.weeklyPoints || '0') || 0;
   }
 
   /**

@@ -35,6 +35,9 @@ import {
 } from './dto/gamification.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+
+// TypeORM raw query results are inherently 'any' typed
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import {
   ActivityLog,
   UserRanking,
@@ -437,7 +440,7 @@ export class GamificationController {
       .getRawOne();
 
     const averagePointsPerDay = Math.round(
-      (recentPointsSum?.totalPoints || 0) / 30,
+      (parseInt(recentPointsSum?.totalPoints || '0') || 0) / 30,
     );
 
     return {
@@ -489,7 +492,7 @@ export class GamificationController {
       .andWhere('log.createdAt >= :oneWeekAgo', { oneWeekAgo })
       .getRawOne();
 
-    return parseInt(result?.weeklyPoints) || 0;
+    return parseInt(result?.weeklyPoints || '0') || 0;
   }
 
   private async getBadgeProgress(
@@ -498,36 +501,41 @@ export class GamificationController {
   ): Promise<number | undefined> {
     switch (badgeName) {
       case 'First Receipt':
-      case 'Receipt Master':
+      case 'Receipt Master': {
         const receiptCount = await this.activityLogRepository.count({
           where: { userSk, activityType: 'RECEIPT_UPLOAD' },
         });
         return receiptCount;
+      }
 
-      case 'Data Guardian':
+      case 'Data Guardian': {
         const verificationCount = await this.activityLogRepository.count({
           where: { userSk, activityType: 'OCR_VERIFICATION' },
         });
         return verificationCount;
+      }
 
-      case 'Price Keeper':
+      case 'Price Keeper': {
         const priceUpdateCount = await this.activityLogRepository.count({
           where: { userSk, activityType: 'PRICE_UPDATE' },
         });
         return priceUpdateCount;
+      }
 
-      case 'Searcher':
+      case 'Searcher': {
         const searchCount = await this.activityLogRepository.count({
           where: { userSk, activityType: 'PRODUCT_SEARCH' },
         });
         return searchCount;
+      }
 
       case 'Week Warrior':
-      case 'Month Master':
+      case 'Month Master': {
         const ranking = await this.userRankingRepository.findOne({
           where: { userSk },
         });
         return ranking?.streakDays || 0;
+      }
 
       default:
         return undefined;
@@ -535,7 +543,7 @@ export class GamificationController {
   }
 
   private getBadgeRequirement(badgeName: string): number | undefined {
-    const requirements = {
+    const requirements: Record<string, number> = {
       'First Receipt': 1,
       'Receipt Master': 100,
       'Data Guardian': 50,
@@ -545,6 +553,6 @@ export class GamificationController {
       'Month Master': 30,
     };
 
-    return requirements[badgeName];
+    return requirements[badgeName] as number | undefined;
   }
 }

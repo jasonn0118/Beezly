@@ -115,12 +115,12 @@ export class GameScoreService {
     userSk: string,
     activityType: string,
   ): Promise<boolean> {
-    const dailyLimits = {
+    const dailyLimits: Record<string, number> = {
       PRODUCT_SEARCH: 50, // Max 50 searches per day
       DAILY_LOGIN: 1, // Only once per day
     };
 
-    const limit = dailyLimits[activityType];
+    const limit = dailyLimits[activityType] as number | undefined;
     if (!limit) return false;
 
     const today = new Date().toISOString().split('T')[0];
