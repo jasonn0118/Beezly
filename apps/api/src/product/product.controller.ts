@@ -1,73 +1,74 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
+  Delete,
   Get,
+  NotFoundException,
+  Param,
   Post,
   Put,
-  Delete,
-  Body,
-  Param,
   Query,
-  UseInterceptors,
   UploadedFile,
-  BadRequestException,
-  NotFoundException,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiConsumes,
-  ApiBody,
-  ApiQuery,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
-import { ProductService } from './product.service';
 import { NormalizedProductDTO } from '../../../packages/types/dto/product';
-import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
-import { ProductSearchResponseDto } from './dto/product-search-response.dto';
-import {
-  EmbeddingSearchRequestDto,
-  EmbeddingSearchResponseDto,
-  EmbeddingSearchResultDto,
-  BatchEmbeddingSearchRequestDto,
-  BatchEmbeddingSearchResponseDto,
-  BatchEmbeddingSearchResultDto,
-} from './dto/embedding-search.dto';
-import { VectorEmbeddingService } from './vector-embedding.service';
-import { ProductLinkingService } from './product-linking.service';
-import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
-import { ProductConfirmationService } from './product-confirmation.service';
-import { EnhancedReceiptLinkingService } from './enhanced-receipt-linking.service';
-import { ReceiptWorkflowIntegrationService } from './receipt-workflow-integration.service';
-import { EnhancedProductResponseDto } from '../barcode/dto/enhanced-product-response.dto';
+import { UserProfileDTO } from '../../../packages/types/dto/user';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   AddProductPriceDto,
   AddProductPriceResponseDto,
 } from '../barcode/dto/add-product-price.dto';
+import { EnhancedProductResponseDto } from '../barcode/dto/enhanced-product-response.dto';
+import { Product } from '../entities/product.entity';
 import {
-  ProcessReceiptConfirmationDto,
-  ReceiptConfirmationResponseDto,
-  GetConfirmationCandidatesResponseDto,
+  UnprocessedProductReason,
+  UnprocessedProductStatus,
+} from '../entities/unprocessed-product.entity';
+import { GameScoreService } from '../gamification/game-score.service';
+import {
+  BatchEmbeddingSearchRequestDto,
+  BatchEmbeddingSearchResponseDto,
+  BatchEmbeddingSearchResultDto,
+  EmbeddingSearchRequestDto,
+  EmbeddingSearchResponseDto,
+  EmbeddingSearchResultDto,
+} from './dto/embedding-search.dto';
+import { ProductCreateDto, ProductResponseDto } from './dto/product-create.dto';
+import { ProductSearchResponseDto } from './dto/product-search-response.dto';
+import {
   ConfirmationStatsResponseDto,
-  ReceiptPendingSelectionsResponseDto,
+  GetConfirmationCandidatesResponseDto,
+  ProcessReceiptConfirmationDto,
   ProcessReceiptSelectionsDto,
+  ReceiptConfirmationResponseDto,
+  ReceiptPendingSelectionsResponseDto,
   ReceiptSelectionsResponseDto,
 } from './dto/receipt-confirmation.dto';
+import { EnhancedReceiptLinkingService } from './enhanced-receipt-linking.service';
+import { OpenFoodFactsApiService } from './openfoodfacts-api.service';
+import { ProductConfirmationService } from './product-confirmation.service';
+import { ProductLinkingService } from './product-linking.service';
+import { ProductService } from './product.service';
+import { ReceiptPriceIntegrationService } from './receipt-price-integration.service';
+import { ReceiptWorkflowIntegrationService } from './receipt-workflow-integration.service';
 import {
-  UnprocessedProductService,
   BulkReviewAction,
+  UnprocessedProductService,
 } from './unprocessed-product.service';
-import {
-  UnprocessedProductStatus,
-  UnprocessedProductReason,
-} from '../entities/unprocessed-product.entity';
-import { Product } from '../entities/product.entity';
-import { GameScoreService } from '../gamification/game-score.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { UserProfileDTO } from '../../../packages/types/dto/user';
+import { VectorEmbeddingService } from './vector-embedding.service';
 
 @ApiTags('Products')
 @Controller('products')
@@ -82,6 +83,7 @@ export class ProductController {
     private readonly receiptWorkflowIntegrationService: ReceiptWorkflowIntegrationService,
     private readonly unprocessedProductService: UnprocessedProductService,
     private readonly gameScoreService: GameScoreService,
+    private readonly openFoodFactsApiService: OpenFoodFactsApiService,
   ) {}
 
   @Get()
@@ -1940,5 +1942,183 @@ export class ProductController {
     return this.unprocessedProductService.cleanupProcessedUnprocessedProducts(
       olderThanDays || 30,
     );
+  }
+
+  // OpenFoodFacts Integration Endpoints
+
+  @Post('openfoodfacts/fetch')
+  @ApiOperation({
+    summary: 'Fetch and import products from OpenFoodFacts API',
+    description: `
+      **OpenFoodFacts Product Import**
+      
+      Fetches products from OpenFoodFacts API and maps them to our Product database.
+      Supports filtering by store and country, with automatic category mapping.
+      
+      🏪 **Store Filtering**: Target specific stores (default: Costco)
+      🌍 **Country Filtering**: Target specific countries (default: US & Canada)
+      📊 **Category Mapping**: Automatically creates categories from OpenFoodFacts taxonomy
+      🔄 **Duplicate Prevention**: Skips products that already exist by barcode
+      
+      **Use Cases**:
+      - Initial product catalog population
+      - Store-specific product updates
+      - Category enrichment
+    `,
+  })
+  @ApiQuery({
+    name: 'pages',
+    description: 'Number of pages to fetch (each page = ~1000 products)',
+    required: false,
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'stores',
+    description: 'Store filter (OpenFoodFacts store tag)',
+    required: false,
+    type: String,
+    example: 'costco',
+  })
+  @ApiQuery({
+    name: 'countries',
+    description: 'Country filter (pipe-separated OpenFoodFacts country tags)',
+    required: false,
+    type: String,
+    example: 'en:united-states|en:canada',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'OpenFoodFacts import results',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        totalFetched: { type: 'number', example: 985 },
+        totalMapped: { type: 'number', example: 743 },
+        duplicatesSkipped: { type: 'number', example: 231 },
+        newCategories: { type: 'number', example: 47 },
+        errors: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['Failed to map product 1234567890: Invalid barcode format'],
+        },
+        processingTimeMs: { type: 'number', example: 45000 },
+        message: {
+          type: 'string',
+          example: 'Successfully imported 743 products from OpenFoodFacts',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - invalid parameters',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: { type: 'string', example: 'Pages must be between 1 and 10' },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 502,
+    description: 'Bad Gateway - OpenFoodFacts API unavailable',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 502 },
+        message: {
+          type: 'string',
+          example: 'Failed to fetch from OpenFoodFacts API: Network timeout',
+        },
+        error: { type: 'string', example: 'Bad Gateway' },
+      },
+    },
+  })
+  async fetchOpenFoodFactsProducts(
+    @Query('pages') pages?: number,
+    @Query('stores') stores?: string,
+    @Query('countries') countries?: string,
+  ) {
+    // Validate parameters
+    const pageCount = pages && pages > 0 ? Math.min(pages, 10) : 1; // Limit to 10 pages max
+    const storeFilter = stores || 'costco';
+    const countryFilter = countries || 'en:united-states|en:canada';
+
+    if (pageCount < 1 || pageCount > 10) {
+      throw new BadRequestException('Pages must be between 1 and 10');
+    }
+
+    try {
+      const result = await this.openFoodFactsApiService.fetchAndMapProducts(
+        pageCount,
+        storeFilter,
+        countryFilter,
+      );
+
+      return {
+        success: true,
+        ...result,
+        message: `Successfully imported ${result.totalMapped} products from OpenFoodFacts`,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(
+        `OpenFoodFacts import failed: ${errorMessage}`,
+      );
+    }
+  }
+
+  @Get('openfoodfacts/stats')
+  @ApiOperation({
+    summary: 'Get OpenFoodFacts integration statistics',
+    description: `
+      **OpenFoodFacts Integration Statistics**
+      
+      Provides insights into the current state of OpenFoodFacts data integration:
+      - Total products from OpenFoodFacts
+      - Category enrichment statistics  
+      - Data quality metrics
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'OpenFoodFacts integration statistics',
+    schema: {
+      type: 'object',
+      properties: {
+        totalOpenFoodFactsProducts: { type: 'number', example: 15420 },
+        productsWithOpenFoodFactsSource: { type: 'number', example: 12340 },
+        categoriesFromOpenFoodFacts: { type: 'number', example: 250 },
+        integrationCoverage: { type: 'number', example: 80.0 },
+        lastFetchDate: {
+          type: 'string',
+          format: 'date-time',
+          example: '2025-01-08T10:30:00Z',
+        },
+      },
+    },
+  })
+  async getOpenFoodFactsStats() {
+    const stats = await this.openFoodFactsApiService.getIntegrationStats();
+
+    const integrationCoverage =
+      stats.totalOpenFoodFactsProducts > 0
+        ? Math.round(
+            (stats.productsWithOpenFoodFactsSource /
+              stats.totalOpenFoodFactsProducts) *
+              100 *
+              100,
+          ) / 100
+        : 0;
+
+    return {
+      ...stats,
+      integrationCoverage,
+    };
   }
 }

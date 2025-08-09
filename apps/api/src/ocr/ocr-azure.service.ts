@@ -4,8 +4,51 @@ import { AzureKeyCredential } from '@azure/core-auth';
 import { Injectable } from '@nestjs/common';
 import { OcrItem, OcrResult } from './ocr.service';
 
+interface AzurePollConfig {
+  maxRetries: number;
+  maxWaitTime: number;
+  pollTimeout: number;
+  adaptivePolling: boolean;
+  earlyTermination: boolean;
+}
+
 @Injectable()
 export class OcrAzureService {
+  private readonly defaultPollConfig: AzurePollConfig = {
+    maxRetries: 40,
+    maxWaitTime: 25000, // 25s
+    pollTimeout: 8000, // 8s per poll
+    adaptivePolling: true,
+    earlyTermination: true,
+  };
+
+  /**
+   * Get optimized poll config based on receipt complexity (future enhancement)
+   */
+  private getOptimizedConfig(bufferSize: number): AzurePollConfig {
+    // Larger receipts generally take longer - adjust timeouts accordingly
+    const sizeMB = bufferSize / (1024 * 1024);
+
+    if (sizeMB < 2) {
+      // Small receipts - faster processing expected
+      return {
+        ...this.defaultPollConfig,
+        maxWaitTime: 20000, // 20s
+        maxRetries: 30,
+      };
+    } else if (sizeMB < 5) {
+      // Medium receipts - normal processing
+      return this.defaultPollConfig;
+    } else {
+      // Large receipts - allow more time
+      return {
+        ...this.defaultPollConfig,
+        maxWaitTime: 35000, // 35s
+        maxRetries: 50,
+        pollTimeout: 10000, // 10s per poll
+      };
+    }
+  }
   /**
    * Azure Prebuilt Receipt AI - Specialized receipt processing
    * Uses the prebuilt receipt model for structured data extraction
@@ -150,11 +193,13 @@ export class OcrAzureService {
         throw new Error('Azure API error: No operation location received');
       }
 
-      // Poll for results using the Azure SDK
+      // Poll for results using the Azure SDK with optimized config
       console.log('🔍 Starting polling for results...');
+      const optimizedConfig = this.getOptimizedConfig(buffer.length);
       const result = await this.pollForResultsWithSdk(
         client,
         operationLocation,
+        optimizedConfig,
       );
 
       // Parse the prebuilt receipt response
@@ -171,18 +216,19 @@ export class OcrAzureService {
   }
 
   /**
-   * Poll Azure API for analysis results using SDK with optimized polling strategy
+   * Poll Azure API for analysis results using SDK with optimized adaptive polling strategy
    */
   private async pollForResultsWithSdk(
     client: any,
     operationLocation: string,
+    config: AzurePollConfig = this.defaultPollConfig,
   ): Promise<Record<string, any>> {
-    const maxRetries = 60; // Increased for complex receipts
-    const maxWaitTime = 45000; // Maximum 45 seconds total wait time (increased from 15s)
     let retryCount = 0;
     const startTime = performance.now();
 
-    console.log(`🕰️ Starting Azure OCR polling with optimized strategy...`);
+    console.log(
+      `🕰️ Starting Azure OCR with adaptive polling (max: ${config.maxWaitTime / 1000}s)...`,
+    );
 
     // Extract operation ID from operation location
     const operationId = operationLocation.split('/').pop()?.split('?')[0];
@@ -190,48 +236,57 @@ export class OcrAzureService {
       throw new Error('Could not extract operation ID from operation location');
     }
 
-    while (retryCount < maxRetries) {
+    while (retryCount < config.maxRetries) {
       const elapsed = performance.now() - startTime;
 
-      // Progress indicator every 10 seconds
+      // Progress indicator every 5 seconds (more frequent feedback)
       if (
         retryCount > 0 &&
-        Math.floor(elapsed / 10000) > Math.floor((elapsed - 1000) / 10000)
+        Math.floor(elapsed / 5000) > Math.floor((elapsed - 1000) / 5000)
       ) {
         console.log(
-          `⏳ Azure OCR still processing... ${(elapsed / 1000).toFixed(0)}s elapsed, ${retryCount} polls completed`,
+          `⏳ Azure OCR processing... ${(elapsed / 1000).toFixed(0)}s elapsed, ${retryCount} polls completed`,
         );
       }
 
-      // Early timeout if taking too long
-      if (elapsed > maxWaitTime) {
+      // Early timeout with better messaging
+      if (config.earlyTermination && elapsed > config.maxWaitTime) {
         console.error(
-          `⏱️ Azure OCR timeout after ${(elapsed / 1000).toFixed(1)}s (max ${maxWaitTime / 1000}s)`,
+          `⏱️ Azure OCR timeout after ${(elapsed / 1000).toFixed(1)}s (max ${config.maxWaitTime / 1000}s)`,
         );
-        console.error('📊 Timeout Analysis:', {
-          totalElapsed: `${(elapsed / 1000).toFixed(1)}s`,
-          maxAllowed: `${maxWaitTime / 1000}s`,
-          retryCount,
-          maxRetries,
-          averageTimePerPoll: `${(elapsed / (retryCount || 1)).toFixed(0)}ms`,
-        });
 
         throw new Error(
-          `Azure OCR timeout: Processing exceeded ${maxWaitTime / 1000}s limit. ` +
-            `This may indicate a complex receipt or Azure service delays. ` +
-            `Try again with a simpler receipt or check Azure service status.`,
+          `Azure OCR timeout: Processing exceeded ${config.maxWaitTime / 1000}s limit. ` +
+            `Most receipts complete within 15s. This may indicate Azure service delays or a very complex receipt. ` +
+            `Consider retrying or using a clearer receipt image.`,
         );
       }
 
       try {
         const pollStartTime = performance.now();
-        const response = await client
+
+        // Add timeout for individual poll requests (configurable)
+        const pollPromise = client
           .path(
             '/documentModels/{modelId}/analyzeResults/{resultId}',
             'prebuilt-receipt',
             operationId,
           )
           .get();
+
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Poll request timeout after ${config.pollTimeout / 1000}s`,
+                ),
+              ),
+            config.pollTimeout,
+          );
+        });
+
+        const response = await Promise.race([pollPromise, timeoutPromise]);
         const pollDuration = performance.now() - pollStartTime;
 
         if (response.status === '200') {
@@ -253,40 +308,74 @@ export class OcrAzureService {
           );
         }
 
-        // Dynamic delay based on retry count (faster initial checks, slower later)
-        const dynamicDelay = Math.min(500 + retryCount * 100, 2000); // 500ms to 2s
-        await new Promise((resolve) => setTimeout(resolve, dynamicDelay));
+        // Adaptive polling intervals based on Azure's typical processing patterns
+        let delay: number;
+        if (config.adaptivePolling) {
+          if (retryCount < 3) {
+            // Fast initial polls (most operations complete quickly)
+            delay = 200; // 200ms for first 3 polls
+          } else if (retryCount < 8) {
+            // Medium polling for typical processing
+            delay = 500; // 500ms for polls 4-8
+          } else if (retryCount < 15) {
+            // Slower polling for complex receipts
+            delay = 1000; // 1s for polls 9-15
+          } else {
+            // Very slow polling for edge cases
+            delay = 1500; // 1.5s for remaining polls
+          }
+        } else {
+          // Fixed interval polling (fallback)
+          delay = 1000;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
         retryCount++;
       } catch (error) {
-        if (retryCount >= maxRetries - 1) {
-          throw error;
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+
+        // Handle timeout errors with exponential backoff
+        if (errorMessage.includes('timeout')) {
+          if (retryCount >= 5) {
+            throw new Error(
+              `Repeated polling timeouts (${retryCount + 1} attempts). ` +
+                `Azure service may be experiencing delays. Please retry in a few minutes.`,
+            );
+          }
+          console.warn(
+            `⚠️ Poll ${retryCount + 1} timed out, retrying with longer delay...`,
+          );
+          // Exponential backoff for timeouts
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * Math.pow(2, retryCount)),
+          );
+        } else {
+          // For other errors, fail fast on last retry
+          if (retryCount >= config.maxRetries - 1) {
+            throw error;
+          }
+          console.warn(
+            `⚠️ Poll ${retryCount + 1} failed, retrying:`,
+            errorMessage,
+          );
+          // Short delay for non-timeout errors
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
-        console.warn(
-          `⚠️ Poll ${retryCount + 1} failed, retrying:`,
-          (error as Error).message,
-        );
-        // Continue polling for other errors with shorter delay
-        await new Promise((resolve) => setTimeout(resolve, 500));
+
         retryCount++;
       }
     }
 
     const totalDuration = performance.now() - startTime;
     console.error(
-      `❌ Azure OCR failed after ${(totalDuration / 1000).toFixed(1)}s and ${retryCount} polls`,
+      `❌ Azure OCR polling exhausted after ${(totalDuration / 1000).toFixed(1)}s and ${retryCount} polls`,
     );
-    console.error('📊 Final Analysis:', {
-      totalDuration: `${(totalDuration / 1000).toFixed(1)}s`,
-      retryCount,
-      maxRetries,
-      averageTimePerPoll: `${(totalDuration / retryCount).toFixed(0)}ms`,
-      lastStatus: 'polling_exhausted',
-    });
 
     throw new Error(
       `Azure OCR polling exhausted: Reached ${retryCount} retries over ${(totalDuration / 1000).toFixed(1)}s. ` +
-        `Receipt may be too complex or Azure service is experiencing delays. ` +
-        `Please try again or contact support if this persists.`,
+        `This indicates persistent Azure service delays or an extremely complex receipt. ` +
+        `Please try again later or contact support if this persists.`,
     );
   }
 
