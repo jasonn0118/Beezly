@@ -30,11 +30,15 @@ import { ListUsersDto } from './dto/list-users.dto';
 import { SignUpDto } from './dto/signup.dto';
 import { SignInDto } from './dto/signin.dto';
 import { OAuthCallbackDto, OAuthUrlDto } from './dto/oauth-callback.dto';
+import { GameScoreService } from '../gamification/game-score.service';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly gameScoreService: GameScoreService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
@@ -55,7 +59,27 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Successfully signed in' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async signIn(@Body() signInDto: SignInDto): Promise<AuthDTO> {
-    return this.authService.signIn(signInDto.email, signInDto.password);
+    const authResult = await this.authService.signIn(
+      signInDto.email,
+      signInDto.password,
+    );
+
+    // Award daily login points
+    try {
+      await this.gameScoreService.awardPoints(
+        authResult.user.id,
+        'DAILY_LOGIN',
+        undefined,
+        'auth',
+        1,
+        { signInMethod: 'email_password' },
+      );
+    } catch (error) {
+      // Don't fail the signin if scoring fails, just log it
+      console.error('Failed to award daily login points:', error);
+    }
+
+    return authResult;
   }
 
   @Post('signup')
@@ -180,7 +204,24 @@ export class AuthController {
   async handleOAuthCallback(
     @Body() oauthData: OAuthCallbackDto,
   ): Promise<AuthDTO> {
-    return this.authService.handleOAuthCallback(oauthData);
+    const authResult = await this.authService.handleOAuthCallback(oauthData);
+
+    // Award daily login points
+    try {
+      await this.gameScoreService.awardPoints(
+        authResult.user.id,
+        'DAILY_LOGIN',
+        undefined,
+        'auth',
+        1,
+        { signInMethod: 'oauth_google' },
+      );
+    } catch (error) {
+      // Don't fail the signin if scoring fails, just log it
+      console.error('Failed to award daily login points:', error);
+    }
+
+    return authResult;
   }
 
   // Admin-only endpoints

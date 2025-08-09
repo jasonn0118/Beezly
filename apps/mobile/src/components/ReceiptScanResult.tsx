@@ -11,6 +11,8 @@ import CalendarDatePicker from './CalendarDatePicker';
 import TimePicker from './TimePicker';
 import ModernDateTimePicker from './ModernDateTimePicker';
 import { isAxiosError } from 'axios';
+import { useAchievementTracking } from '../hooks/useAchievementTracking';
+import { useAuth } from '../contexts/AuthContext';
 
 // Enhanced Design System Colors
 const COLORS = {
@@ -63,6 +65,8 @@ const formatDateString = (dateValue: string | Date): string => {
 
 export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictureData: string | null, onScanAgain: () => void }) {
     const router = useRouter();
+    const { isAuthenticated } = useAuth();
+    const { trackReceiptUpload, trackOCRVerification, checkForNewBadgesAndTiers } = useAchievementTracking();
     const [loading, setLoading] = useState(true);
     const swipeableRefs = useRef<Swipeable[]>([]);
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -374,14 +378,40 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
             const formData = new FormData();
             formData.append('file', { uri: pictureData, name: 'receipt.jpg', type: 'image/jpeg' } as any);
             const response = await ReceiptService.processReceipt(formData);
+            
             if (response.success && response.data) {
                 if (response.data.items.length > 0) {
                     // Handle product items
-                    setProductInfo(response.data.items.map((item: any, index: number) => ({ 
+                    const items = response.data.items.map((item: any, index: number) => ({ 
                         ...item, 
                         id: item.id || `temp-${index}`, 
                         price: parseFloat(item.price) || 0 
-                    })) || []);
+                    })) || [];
+                    
+                    setProductInfo(items);
+                    
+                    // Track receipt upload achievement for authenticated users
+                    if (isAuthenticated) {
+                        const receiptData = {
+                            merchant: response.data.merchant,
+                            items: items.map(item => ({
+                                name: item.normalized_name || item.name,
+                                price: item.final_price || item.price
+                            })),
+                            total: items.reduce((sum, item) => sum + (item.final_price || item.price), 0)
+                        };
+                        
+                        // Track receipt upload
+                        await trackReceiptUpload(receiptData);
+                        
+                        // Track OCR verification for the number of items processed
+                        trackOCRVerification(items.length);
+                        
+                        // Check for new badges and tiers after a delay
+                        setTimeout(() => {
+                            checkForNewBadgesAndTiers();
+                        }, 2000);
+                    }
                     
                     // Handle merchant and address
                     setMerchantName(response.data.merchant || null);
@@ -440,6 +470,15 @@ export default function ReceiptScanResult({ pictureData, onScanAgain }: { pictur
 
         try {
             const response = await ReceiptService.processConfirmations(userId, receiptId, itemsToConfirm);
+            
+            // Track receipt processing completion for authenticated users
+            if (isAuthenticated && response.success) {
+                // Check for new badges and tier promotions after successful save
+                setTimeout(() => {
+                    checkForNewBadgesAndTiers();
+                }, 1000);
+            }
+            
             if (response.pendingSelectionProducts && response.pendingSelectionProducts.length > 0) {
                 router.push({
                     pathname: '/product-selection',

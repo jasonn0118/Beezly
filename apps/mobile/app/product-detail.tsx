@@ -11,7 +11,7 @@ export default function ProductDetailScreen() {
     ? JSON.parse(scannedDataString)
     : undefined;
     
-  const { productInfo, loading } = useProductInfo({ 
+  const { productInfo, loading, scoringResult } = useProductInfo({ 
     productId: productId,
     scannedData: scannedData 
   });
@@ -22,5 +22,5 @@ export default function ProductDetailScreen() {
     }
   }, [loading, productInfo, scannedData, router]);
 
-  return <ProductDetailView productInfo={productInfo} loading={loading} scannedData={scannedData} />;
+  return <ProductDetailView productInfo={productInfo} loading={loading} scannedData={scannedData} scoringResult={scoringResult} />;
 }

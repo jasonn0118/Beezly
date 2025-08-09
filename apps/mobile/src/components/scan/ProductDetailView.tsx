@@ -1,7 +1,7 @@
 import { FontAwesome } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,6 +27,7 @@ import {
   UnifiedStoreSearchResult,
 } from "../../services/productService";
 import { format, isToday, formatDistanceToNowStrict } from 'date-fns';
+import { useAchievementTracking } from '../../hooks/useAchievementTracking';
 
 interface NearbyPrice {
   storeName: string;
@@ -41,6 +42,11 @@ interface ProductDetailViewProps {
   productInfo: Product | Barcode | null;
   loading: boolean;
   scannedData: ScannedDataParam | undefined;
+  scoringResult?: {
+    pointsAwarded: number;
+    newBadges: number;
+    rankChange?: any;
+  } | null;
 }
 
 interface StoreSearchResultWithDisplay extends UnifiedStoreSearchResult {
@@ -52,8 +58,11 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   productInfo,
   loading,
   scannedData,
+  scoringResult,
 }) => {
   const router = useRouter();
+  const { trackAchievement } = useAchievementTracking();
+  const processedScoringRef = useRef<Set<string>>(new Set());
   const [price, setPrice] = useState("");
   const [selectedStore, setSelectedStore] =
     useState<StoreSearchResultWithDisplay | null>(null);
@@ -97,6 +106,48 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     };
     checkLocationPermission();
   }, []);
+
+  // Show achievement notification for barcode scanning
+  useEffect(() => {
+    if (scoringResult && scoringResult.pointsAwarded > 0 && scannedData?.barcode) {
+      // Create a stable identifier for this scoring result
+      const scoringId = `${scannedData.barcode}-${scoringResult.pointsAwarded}-${scoringResult.newBadges}-${scoringResult.rankChange?.newTier || 'none'}`;
+      
+      // Only show notification if we haven't processed this result yet
+      if (!processedScoringRef.current.has(scoringId)) {
+        processedScoringRef.current.add(scoringId);
+        
+        trackAchievement({
+          type: 'barcode_scanned',
+          data: {
+            points: scoringResult.pointsAwarded,
+            barcode: scannedData.barcode,
+            type: scannedData.type,
+            productFound: !!productInfo,
+          }
+        });
+
+        // Show additional notifications for badges or tier changes
+        if (scoringResult.newBadges > 0) {
+          setTimeout(() => {
+            trackAchievement({
+              type: 'badge_earned',
+              data: { badgeName: `You earned ${scoringResult.newBadges} new badge${scoringResult.newBadges > 1 ? 's' : ''}!` }
+            });
+          }, 500); // Slight delay to avoid notification overlap
+        }
+
+        if (scoringResult.rankChange) {
+          setTimeout(() => {
+            trackAchievement({
+              type: 'tier_promoted',
+              data: { newTier: scoringResult.rankChange.newTier }
+            });
+          }, 1000); // Delay tier notification even more
+        }
+      }
+    }
+  }, [scoringResult, scannedData, productInfo, trackAchievement]);
 
   useEffect(() => {
     if (productInfo?.product_sk && userLocation) {

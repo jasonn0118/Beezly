@@ -8,6 +8,7 @@
 
 - [⚡ Quick Start](#-quick-start)
 - [🎯 Core Features](#-core-features)
+- [🎮 Gamification & Achievements](#-gamification--achievements)
 - [🛠️ Technology Stack](#️-technology-stack)
 - [💻 Development](#-development)
 - [🏗️ Architecture](#️-architecture)
@@ -87,6 +88,80 @@ The mobile app is the **primary interface** for Beezly's AI-powered receipt inte
 
 ---
 
+## 🎮 Gamification & Achievements
+
+### 🏆 **Engaging User Experience Design**
+
+The mobile app transforms data collection into an engaging bee-themed game with instant feedback, visual progression, and social competition.
+
+### 📱 **Real-Time Achievement System**
+
+**Instant Notifications:** Users receive immediate visual feedback for all activities:
+- 🍯 **Product Registration**: "+20 points! New honey discovered!" with bee-themed animations
+- 📱 **Barcode Scan**: "+10 points! Nice scan! Product details loading" with purple accent
+- 📄 **Receipt Upload**: "+30 points! Great job capturing your receipt" with green celebration
+- ✅ **OCR Verification**: "+25 points! Thank you for improving accuracy" with blue checkmark
+- 🚪 **Daily Login**: "+5 points! Welcome back!" with warm greeting
+
+### 🐝 **Visual Progression System**
+
+**Bee-Themed Tier System:**
+```
+🥇 Queen Bee      (2000+ pts)  ← Elite contributors
+🐝 Worker Bee     (1000+ pts)  ← Active community members  
+🌼 Busy Bee       (500+ pts)   ← Regular contributors
+🌱 New Bee        (100+ pts)   ← Getting started
+🥚 Egg            (0+ pts)     ← Welcome aboard!
+```
+
+**Smart Badge System:**
+- 📱 **Scanner Badge**: First barcode scan completion
+- 🎯 **Accuracy Expert**: 10+ OCR verifications with high confidence
+- 🍯 **Product Pioneer**: Register 5+ new products
+- 🔥 **Streak Master**: 7-day consecutive login streak
+- 👑 **Community Leader**: Reach leaderboard top 10
+
+### 📊 **Social Leaderboards**
+
+**Dynamic Rankings:**
+- **Weekly Competition**: Fresh leaderboards every week
+- **Anonymous Privacy**: Users display as "bee#001" if no name provided
+- **Real-Time Updates**: Instant rank changes with smooth animations
+- **Achievement Celebrations**: Special recognition for tier promotions
+
+### 🎨 **UI/UX Features**
+
+**Staggered Notifications:** Multiple achievements show with delays:
+1. **Main Achievement** (immediate): Primary action reward
+2. **Badge Earned** (+1 second): New badge celebrations
+3. **Tier Promotion** (+2 seconds): Rank advancement with special effects
+
+**Smart Duplicate Prevention:** Sophisticated tracking prevents notification spam while ensuring genuine achievements are celebrated.
+
+**Contextual Integration:** 
+- Profile screen shows comprehensive stats and progress
+- Leaderboard updates in real-time during usage
+- Achievement tracking integrated into all user flows
+
+### 🛠️ **Technical Implementation**
+
+**State Management:**
+- **AuthContext**: User authentication and profile data
+- **NotificationContext**: Achievement notification system with animation queue
+- **Custom Hooks**: `useAchievementTracking()` for consistent reward handling
+
+**API Integration:**
+- Real-time scoring via authenticated endpoints
+- Automatic point awards for all user activities  
+- Cross-platform synchronization with backend gamification engine
+
+**Performance Optimizations:**
+- **useCallback**: Prevents unnecessary re-renders in notification system
+- **useRef**: Duplicate prevention without state dependency loops
+- **Staggered Timing**: Prevents notification overflow with smooth UX
+
+---
+
 ## 🛠️ Technology Stack
 
 ### 📦 **Core Technologies**
@@ -157,15 +232,23 @@ apps/mobile/
 │   │   ├── AuthGuard.tsx         # Protected route wrapper
 │   │   ├── GoogleSignInButton.tsx # OAuth login button
 │   │   ├── ReceiptScanner.tsx    # Camera component
-│   │   └── profile/              # Profile-specific components
+│   │   ├── profile/              # Profile-specific components
+│   │   │   ├── RankCard.tsx      # User tier display
+│   │   │   └── Leaderboard.tsx   # Social rankings
+│   │   └── scan/                 # Scanning-related components
+│   │       └── ProductDetailView.tsx # Achievement integration
 │   ├── contexts/
-│   │   └── AuthContext.tsx       # Authentication state management
+│   │   ├── AuthContext.tsx       # Authentication state management
+│   │   └── NotificationContext.tsx # Achievement notifications
 │   ├── services/                 # API integration
 │   │   ├── api.ts                # Base API client
 │   │   ├── authService.ts        # Authentication
 │   │   ├── googleOAuthService.ts # Google OAuth
-│   │   └── receiptService.ts     # Receipt processing
+│   │   ├── receiptService.ts     # Receipt processing
+│   │   └── gamificationService.ts # Points, badges, leaderboards
 │   └── hooks/                    # Custom React hooks
+│       ├── useAchievementTracking.ts # Achievement notification system
+│       └── useProductInfo.ts     # Product scanning with scoring
 ├── assets/                       # Images, icons, splash screens
 └── app.config.js                 # Expo configuration
 ```

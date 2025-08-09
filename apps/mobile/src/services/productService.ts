@@ -153,12 +153,50 @@ export class ProductService {
     return apiClient.get<Barcode>(`/barcode/${barcode}`);
   }
 
+  static async scanBarcode(barcode: string, type?: BarcodeType): Promise<{
+    success: boolean;
+    product?: Barcode;
+    message?: string;
+    pointsAwarded?: number;
+    newBadges?: number;
+    rankChange?: any;
+  }> {
+    try {
+      return await apiClient.post('/barcode/scan', { barcode, type });
+    } catch (error) {
+      console.error('Error scanning barcode with authentication:', error);
+      // Fallback to public endpoint if authenticated scan fails
+      try {
+        const product = await this.getBarcode(barcode);
+        return { success: true, product, pointsAwarded: 0 };
+      } catch (fallbackError) {
+        return { 
+          success: false, 
+          message: 'Product not found',
+          pointsAwarded: 0 
+        };
+      }
+    }
+  }
+
   static async getProduct(id: string): Promise<Product> {
     return apiClient.get<Product>(`/products/${id}`);
   }
 
   static async createProduct(formData: FormData): Promise<Product> {
     return apiClient.post<Product>('/products', formData);
+  }
+
+  static async createProductAuthenticated(formData: FormData): Promise<Product & {
+    pointsAwarded?: number;
+    newBadges?: number;
+    rankChange?: any;
+  }> {
+    return apiClient.post<Product & {
+      pointsAwarded?: number;
+      newBadges?: number;
+      rankChange?: any;
+    }>('/products/authenticated', formData);
   }
 
   static async addPrice(productId: string, priceValue: number, currency: string, selectedStore: UnifiedStoreSearchResult): Promise<any> {

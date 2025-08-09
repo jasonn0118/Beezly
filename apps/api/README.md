@@ -8,6 +8,7 @@
 
 - [⚡ Quick Start](#-quick-start)
 - [🤖 What This API Does](#-what-this-api-does)
+- [🎮 Gamification Engine](#-gamification-engine)
 - [🔧 Core Services](#-core-services)
 - [💻 Development Guide](#-development-guide)
 - [🏗️ Architecture](#️-architecture)
@@ -92,6 +93,81 @@ graph LR
     style C fill:#e8f5e8
     style D fill:#fff3e0
 ```
+
+---
+
+## 🎮 Gamification Engine
+
+### 🏆 **Intelligent Scoring System**
+
+Transform user engagement into meaningful data collection through a comprehensive bee-themed gamification engine that rewards valuable contributions.
+
+**🎯 Activity Scoring:**
+```typescript
+// Real-time point awards for user activities
+BARCODE_SCAN: +10 points        // Product discovery
+RECEIPT_UPLOAD: +30 points      // Data collection  
+OCR_VERIFICATION: +25 points    // Data accuracy improvement
+PRODUCT_REGISTRATION: +20 points // New product discovery
+DAILY_LOGIN: +5 points          // User retention
+```
+
+### 🐝 **Bee-Themed Progression System**
+
+**Tier Hierarchy:**
+- 🥇 **Queen Bee** (2000+ points) - Elite contributors
+- 🐝 **Worker Bee** (1000+ points) - Active community members
+- 🌼 **Busy Bee** (500+ points) - Regular contributors
+- 🌱 **New Bee** (100+ points) - Getting started
+- 🥚 **Egg** (0+ points) - Welcome aboard!
+
+### 🏅 **Achievement & Badge System**
+
+**Smart Badge Engine:**
+- **📱 Scanner Badge**: First barcode scan completion
+- **🎯 Accuracy Expert**: 10+ high-confidence OCR verifications
+- **🍯 Product Pioneer**: Register 5+ new products
+- **🔥 Streak Master**: 7-day consecutive login streak
+- **👑 Community Leader**: Reach top 10 on leaderboard
+
+### 📊 **Leaderboard & Analytics**
+
+**Real-Time Ranking Features:**
+- **Weekly Leaderboards**: Dynamic ranking with automatic resets
+- **Anonymous Privacy**: Users without names display as `bee#XXX`
+- **Multiple Periods**: Weekly, monthly, and all-time rankings
+- **Activity Tracking**: Detailed logs of all scoring events
+
+### 🛠️ **Gamification API Endpoints**
+
+```bash
+# User Progress & Profile
+GET /gamification/profile              # Complete user profile with scores
+GET /gamification/profile/:userId      # Public profile view
+GET /gamification/activity-log         # User's scoring history
+
+# Leaderboards
+GET /gamification/leaderboard         # Authenticated rankings
+GET /gamification/leaderboard/public  # Public anonymous rankings
+
+# Badges & Achievements  
+GET /gamification/badges              # User's badge progress
+GET /gamification/badges/earned       # Earned badges only
+
+# Admin & Analytics
+GET /gamification/stats               # System-wide statistics
+POST /gamification/award-points       # Manual point awards (admin)
+```
+
+### 🔄 **Real-Time Integration**
+
+**Automatic Scoring:** All user activities automatically trigger point awards:
+- Barcode scanning endpoints award +10 points immediately
+- Receipt uploads award +30 points with OCR processing
+- Product registration awards +20 points on successful creation
+- Daily login awards +5 points (once per day per user)
+
+**Smart Duplicate Prevention:** Sophisticated deduplication ensures single rewards per activity while tracking meaningful engagement patterns.
 
 ---
 

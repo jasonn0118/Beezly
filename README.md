@@ -8,6 +8,7 @@
 
 - [🚀 Quick Start](#-quick-start)
 - [🤖 What Makes Beezly Special](#-what-makes-beezly-special)
+- [🎮 Gamification System](#-gamification-system)
 - [🏗️ Architecture Overview](#️-architecture-overview)
 - [⚡ How It Works](#-how-it-works)
 - [🛠️ Development](#️-development)
@@ -98,6 +99,55 @@ graph LR
 
 ---
 
+## 🎮 Gamification System
+
+### 🏆 **Engaging User Experience**
+
+Transform shopping data collection into an engaging, bee-themed game where users earn points, unlock badges, and climb the leaderboard through meaningful contributions.
+
+| **Activity** | **Points** | **Purpose** | **Impact** |
+|-------------|------------|-------------|------------|
+| 🔍 **Barcode Scan** | +10 points | Product discovery | Builds product database |
+| 📄 **Receipt Upload** | +30 points | Data collection | Trains AI models |
+| ✅ **OCR Verification** | +25 points | Data accuracy | Improves recognition quality |
+| 🍯 **Product Registration** | +20 points | New product discovery | Expands catalog |
+| 🚪 **Daily Login** | +5 points | User retention | Encourages regular usage |
+
+### 🐝 **Bee-Themed Tier System**
+
+Progressive ranking system inspired by bee colony hierarchy:
+
+```
+🥇 Queen Bee      (2000+ pts)  ← Elite contributors
+🐝 Worker Bee     (1000+ pts)  ← Active community members  
+🌼 Busy Bee       (500+ pts)   ← Regular contributors
+🌱 New Bee        (100+ pts)   ← Getting started
+🥚 Egg            (0+ pts)     ← Welcome aboard!
+```
+
+### 🏅 **Achievement System**
+
+**Smart Badges** earned through specific milestones:
+- 📱 **Scanner Badge**: First successful barcode scan
+- 🎯 **Accuracy Expert**: 10+ OCR verifications with high confidence
+- 🍯 **Product Pioneer**: Register 5+ new products
+- 🔥 **Streak Master**: 7-day consecutive login streak
+- 👑 **Community Leader**: Reach leaderboard top 10
+
+### 🎯 **Real-Time Features**
+- ⚡ **Live Notifications**: Instant achievement feedback with bee-themed animations
+- 📊 **Dynamic Leaderboards**: Weekly rankings with bee#XXX anonymous displays
+- 🎨 **Visual Progression**: Animated tier promotions and badge celebrations
+- 🔄 **Smart Deduplication**: Prevents notification spam and ensures single rewards
+
+### 📱 **Cross-Platform Integration**
+- **Mobile-First**: React Native notifications with staggered timing
+- **Backend Intelligence**: NestJS scoring engine with PostgreSQL persistence
+- **Real-Time Sync**: Immediate point awards and rank updates
+- **Anonymous Privacy**: Users without names get bee-themed identifiers (bee#001)
+
+---
+
 ## 🏗️ Architecture Overview
 
 ### 🧱 **Monorepo Structure**
@@ -106,8 +156,8 @@ graph LR
 beezly/
 ├── apps/
 │   ├── web/        # Next.js 15 (receipt feedback, viral microsite)
-│   ├── api/        # NestJS backend (auth, points, normalization)
-│   ├── mobile/     # React Native + Expo (scanning, profile, leaderboard)
+│   ├── api/        # NestJS backend (auth, gamification, receipt processing)
+│   ├── mobile/     # React Native + Expo (scanning, achievements, leaderboard)
 │   └── ai/         # Python FastAPI (OCR/NLP engine)
 ├── packages/
 │   └── shared/     # Shared TypeScript types and utilities
@@ -118,11 +168,12 @@ beezly/
 
 | **Layer** | **Technology** | **Purpose** |
 |-----------|----------------|-------------|
-| **Frontend** | Next.js 15, React Native + Expo | Web app, mobile app |
-| **Backend** | NestJS, FastAPI + Python | API services, AI processing |
-| **Database** | PostgreSQL + pgvector | Relational data + vector embeddings |
+| **Frontend** | Next.js 15, React Native + Expo | Web app, mobile app with gamification |
+| **Backend** | NestJS, FastAPI + Python | API services, AI processing, gamification engine |
+| **Database** | PostgreSQL + pgvector | Relational data, vector embeddings, user scoring |
 | **AI/ML** | OpenAI GPT-4, Azure Form Recognizer | Receipt processing, OCR |
 | **Authentication** | Supabase Auth + JWT | Secure auth with Google OAuth |
+| **Gamification** | Custom scoring engine, achievement system | Points, badges, leaderboards, notifications |
 | **Infrastructure** | Turborepo, Docker | Monorepo management, containerization |
 | **DevOps** | GitHub Actions, TypeScript | CI/CD, type safety |
 
@@ -214,9 +265,9 @@ pnpm type-check   # TypeScript validation
 
 | **App** | **Purpose** | **Documentation** | **Key Features** |
 |---------|-------------|-------------------|------------------|
-| **🚀 [API](./apps/api/README.md)** | NestJS Backend | **[Complete Guide](./apps/api/README.md)** <br/> [Authentication](./apps/api/docs/AUTH_USAGE_GUIDE.md) \| [OAuth Setup](./apps/api/docs/OAUTH_SETUP.md) \| [Database](./apps/api/docs/DATABASE.md) | Receipt processing, JWT auth, PostgreSQL, Supabase integration |
+| **🚀 [API](./apps/api/README.md)** | NestJS Backend | **[Complete Guide](./apps/api/README.md)** <br/> [Authentication](./apps/api/docs/AUTH_USAGE_GUIDE.md) \| [OAuth Setup](./apps/api/docs/OAUTH_SETUP.md) \| [Database](./apps/api/docs/DATABASE.md) | Receipt processing, JWT auth, PostgreSQL, gamification engine |
 | **🌐 [Web](./apps/web/README.md)** | Next.js Frontend | **[Setup Guide](./apps/web/README.md)** | Receipt feedback, viral microsite, App Router |
-| **📱 [Mobile](./apps/mobile/README.md)** | React Native + Expo | **[Mobile App Guide](./apps/mobile/README.md)** \| [Authentication](./apps/mobile/AUTHENTICATION.md) | Receipt scanning, profile, leaderboard, OAuth |
+| **📱 [Mobile](./apps/mobile/README.md)** | React Native + Expo | **[Mobile App Guide](./apps/mobile/README.md)** \| [Authentication](./apps/mobile/AUTHENTICATION.md) | Receipt scanning, achievements, leaderboards, gamified UX |
 
 **Quick Navigation:**
 - **New Developer?** → Start with [API Guide](./apps/api/README.md) for backend setup
